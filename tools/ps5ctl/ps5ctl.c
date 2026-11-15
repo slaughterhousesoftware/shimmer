@@ -331,6 +331,14 @@ typedef struct
 	double audio_last;
 	// DualSense feedback
 	atomic_long haptic_frames, haptic_active_frames, trigger_events, rumble_events;
+	// drive mode: capture a decodable clip (from an IDR) for a snapshot
+	pthread_mutex_t snap_m;
+	FILE *snap_out;
+	int snap_frames_left;
+	bool snap_waiting_idr;
+	bool hevc;
+	uint8_t params[4096]; // VPS/SPS/PPS from the first keyframe, for snapshot clips
+	size_t params_len;
 } SessionState;
 
 static void event_cb(ChiakiEvent *event, void *user)
@@ -418,6 +426,7 @@ static int cmd_register(const char *duid_hex)
 #undef STEP
 
 	SessionState st = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER };
+	pthread_mutex_init(&st.snap_m, NULL);
 	ChiakiConnectInfo info;
 	memset(&info, 0, sizeof(info));
 	info.ps5 = true;
@@ -538,6 +547,57 @@ static bool video_cb(uint8_t *buf, size_t buf_size, int32_t frames_lost, bool fr
 	atomic_fetch_add(&st->lost, frames_lost);
 	if(st->out)
 		fwrite(buf, 1, buf_size, st->out);
+	pthread_mutex_lock(&st->snap_m);
+	// Walk the NALs: remember parameter sets, note whether this is a keyframe.
+	bool keyframe = false;
+	size_t param_end = 0;
+	for(size_t i = 0; i + 3 < buf_size; i++)
+	{
+		if(!(buf[i] == 0 && buf[i + 1] == 0 && buf[i + 2] == 1)) continue;
+		uint8_t h = buf[i + 3];
+		int type = st->hevc ? (h >> 1) & 0x3f : h & 0x1f;
+		bool param = st->hevc ? (type >= 32 && type <= 34) : (type == 7 || type == 8);
+		bool idr = st->hevc ? (type >= 16 && type <= 21) : type == 5;
+		if(idr) keyframe = true;
+		if(param) param_end = 0; // keep scanning; we copy up to the first non-param NAL
+		else if(!param_end) param_end = i > 0 && buf[i - 1] == 0 ? i - 1 : i;
+	}
+	bool first_is_param = false;
+	if(buf_size > 4)
+	{
+		size_t j = buf[2] == 1 ? 3 : 4;
+		int t = st->hevc ? (buf[j] >> 1) & 0x3f : buf[j] & 0x1f;
+		first_is_param = st->hevc ? (t >= 32 && t <= 34) : (t == 7 || t == 8);
+	}
+	if(first_is_param && param_end == 0)
+		param_end = buf_size; // a headers-only frame
+	if(!first_is_param)
+		param_end = 0;
+	if(param_end > 0 && param_end <= sizeof(st->params) && st->params_len == 0)
+	{
+		memcpy(st->params, buf, param_end);
+		st->params_len = param_end;
+	}
+	if(st->snap_out)
+	{
+		if(st->snap_waiting_idr && keyframe)
+		{
+			st->snap_waiting_idr = false;
+			// a keyframe without its own headers needs the session's
+			if(param_end == 0 && st->params_len)
+				fwrite(st->params, 1, st->params_len, st->snap_out);
+		}
+		if(!st->snap_waiting_idr && st->snap_frames_left > 0)
+		{
+			fwrite(buf, 1, buf_size, st->snap_out);
+			if(--st->snap_frames_left == 0)
+			{
+				fclose(st->snap_out);
+				st->snap_out = NULL;
+			}
+		}
+	}
+	pthread_mutex_unlock(&st->snap_m);
 	return true;
 }
 
@@ -619,6 +679,7 @@ static int cmd_stream(int argc, char **argv)
 	free(s);
 
 	SessionState st = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER };
+	pthread_mutex_init(&st.snap_m, NULL);
 	if(out_path && !(st.out = fopen(out_path, "wb"))) { perror(out_path); return 1; }
 
 	ChiakiConnectInfo info;
@@ -726,6 +787,156 @@ static int cmd_stream(int argc, char **argv)
 	return connected && atomic_load(&st.frames) > 0 ? 0 : 1;
 }
 
+// ---------------------------------------------------------------------------
+// drive: one long session, commands on stdin (or a FIFO given with --control).
+//   press NAME [MS]        tap a button (default 150 ms): cross circle square triangle
+//                          up down left right l1 r1 options share touchpad ps
+//   hold NAME MS           same as press with an explicit duration
+//   wait MS                sleep
+//   snap PATH.png          save the current screen as a PNG (needs ffmpeg)
+//   quit                   end the session
+// Every command prints "ok ..." or "error ..." on stdout, so a caller can
+// pipe a script in or drive it line by line through the FIFO.
+
+static uint32_t button_mask(const char *name)
+{
+	for(size_t b = 0; b < sizeof(kButtons) / sizeof(kButtons[0]); b++)
+		if(!strcmp(kButtons[b].name, name)) return kButtons[b].mask;
+	return 0;
+}
+
+static int cmd_drive(int argc, char **argv)
+{
+	if(argc < 1) { fprintf(stderr, "drive <ip> [--dualsense] [--control FIFO]\n"); return 1; }
+	const char *ip = argv[0];
+	bool dualsense = false;
+	const char *control = NULL;
+	for(int i = 1; i < argc; i++)
+	{
+		if(!strcmp(argv[i], "--dualsense")) dualsense = true;
+		else if(!strcmp(argv[i], "--control") && i + 1 < argc) control = argv[++i];
+	}
+	char acct[64];
+	char *s = keychain_find_any_regist(acct, sizeof(acct));
+	Registration r;
+	if(!s || !regist_parse(s, &r)) { fprintf(stderr, "no registration in the keychain\n"); return 1; }
+	free(s);
+
+	SessionState st = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER };
+	pthread_mutex_init(&st.snap_m, NULL);
+	st.hevc = true;
+	ChiakiConnectInfo info;
+	memset(&info, 0, sizeof(info));
+	info.ps5 = true;
+	info.host = ip;
+	memcpy(info.regist_key, r.regist_key, sizeof(info.regist_key));
+	memcpy(info.morning, r.rp_key, sizeof(info.morning));
+	chiaki_connect_video_profile_preset(&info.video_profile, CHIAKI_VIDEO_RESOLUTION_PRESET_1080p, CHIAKI_VIDEO_FPS_PRESET_60);
+	info.video_profile.codec = CHIAKI_CODEC_H265;
+	info.video_profile_auto_downgrade = true;
+	info.enable_idr_on_fec_failure = true;
+	info.packet_loss_max = 0.05;
+	info.enable_dualsense = dualsense;
+
+	ChiakiSession session;
+	if(chiaki_session_init(&session, &info, &g_log) != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "session init failed\n"); return 1; }
+	chiaki_session_set_event_cb(&session, event_cb, &st);
+	chiaki_session_set_video_sample_cb(&session, video_cb, &st);
+	if(chiaki_session_start(&session) != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "session start failed\n"); chiaki_session_fini(&session); return 1; }
+
+	double deadline = now_s() + 20;
+	pthread_mutex_lock(&st.m);
+	while(!st.connected && !st.quit && now_s() < deadline)
+	{
+		struct timespec until;
+		clock_gettime(CLOCK_REALTIME, &until);
+		until.tv_sec += 1;
+		pthread_cond_timedwait(&st.c, &st.m, &until);
+	}
+	bool connected = st.connected;
+	pthread_mutex_unlock(&st.m);
+	if(!connected)
+	{
+		printf("error did not connect%s%s\n", st.quit_reason[0] ? ": " : "", st.quit_reason);
+		chiaki_session_stop(&session); chiaki_session_join(&session); chiaki_session_fini(&session);
+		return 1;
+	}
+	printf("ok connected\n");
+	fflush(stdout);
+
+	FILE *in = stdin;
+	if(control)
+	{
+		in = fopen(control, "r+"); // r+ keeps the FIFO open between writers
+		if(!in) { perror(control); in = stdin; }
+	}
+	ChiakiControllerState idle;
+	chiaki_controller_state_set_idle(&idle);
+	char line[512];
+	while(!st.quit && fgets(line, sizeof(line), in))
+	{
+		line[strcspn(line, "\r\n")] = 0;
+		char cmd[32] = {0}, arg[400] = {0};
+		int ms = 150;
+		int n = sscanf(line, "%31s %399s %d", cmd, arg, &ms);
+		if(n < 1) continue;
+		if(!strcmp(cmd, "quit")) { printf("ok quit\n"); fflush(stdout); break; }
+		else if(!strcmp(cmd, "wait") && n >= 2) { usleep(atoi(arg) * 1000); printf("ok wait\n"); }
+		else if((!strcmp(cmd, "press") || !strcmp(cmd, "hold")) && n >= 2)
+		{
+			uint32_t mask = button_mask(arg);
+			if(!mask) { printf("error unknown button %s\n", arg); fflush(stdout); continue; }
+			ChiakiControllerState cs = idle;
+			cs.buttons = mask;
+			chiaki_session_set_controller_state(&session, &cs);
+			usleep((ms > 0 ? ms : 150) * 1000);
+			chiaki_session_set_controller_state(&session, &idle);
+			usleep(120000);
+			printf("ok %s %s %d\n", cmd, arg, ms);
+		}
+		else if(!strcmp(cmd, "snap") && n >= 2)
+		{
+			char clip[600];
+			snprintf(clip, sizeof(clip), "%s.h265", arg);
+			pthread_mutex_lock(&st.snap_m);
+			st.snap_out = fopen(clip, "wb");
+			st.snap_frames_left = 8;
+			st.snap_waiting_idr = true;
+			pthread_mutex_unlock(&st.snap_m);
+			chiaki_session_request_idr(&session);
+			bool done = false;
+			for(int i = 0; i < 600 && !done; i++)
+			{
+				usleep(10000);
+				if(i % 70 == 69) chiaki_session_request_idr(&session); // re-ask every 0.7 s
+				pthread_mutex_lock(&st.snap_m);
+				done = st.snap_out == NULL;
+				pthread_mutex_unlock(&st.snap_m);
+			}
+			if(!done)
+			{
+				pthread_mutex_lock(&st.snap_m);
+				if(st.snap_out) { fclose(st.snap_out); st.snap_out = NULL; }
+				pthread_mutex_unlock(&st.snap_m);
+				printf("error no keyframe within 6 s\n");
+			}
+			else
+			{
+				char ff[1400];
+				snprintf(ff, sizeof(ff), "ffmpeg -v error -y -f hevc -i '%s' -update 1 -vf scale=1280:-1 '%s' && rm -f '%s'", clip, arg, clip);
+				printf(system(ff) == 0 ? "ok snap %s\n" : "error ffmpeg failed for %s\n", arg);
+			}
+		}
+		else printf("error unknown command: %s\n", line);
+		fflush(stdout);
+	}
+	chiaki_session_stop(&session);
+	chiaki_session_join(&session);
+	chiaki_session_fini(&session);
+	if(in != stdin) fclose(in);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	if(getenv("PS5CTL_VERBOSE"))
@@ -744,6 +955,7 @@ int main(int argc, char **argv)
 	if(!strcmp(cmd, "register-pin") && argc > 3) return cmd_register_pin(argv[2], argv[3]);
 	if(!strcmp(cmd, "register")) return cmd_register(argc > 3 && !strcmp(argv[2], "--duid") ? argv[3] : NULL);
 	if(!strcmp(cmd, "stream")) return cmd_stream(argc - 2, argv + 2);
+	if(!strcmp(cmd, "drive")) return cmd_drive(argc - 2, argv + 2);
 	fprintf(stderr, "unknown command %s\n", cmd);
 	return 1;
 }

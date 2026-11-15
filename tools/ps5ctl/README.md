@@ -13,6 +13,18 @@ build.noindex/ps5ctl stream 192.168.1.20 --seconds 2 --rest   # then put it in r
 build.noindex/ps5ctl wake 192.168.1.20
 ```
 
+`drive` keeps one session open and takes commands on stdin or a FIFO, so an
+agent can look and act without each step reconnecting (a new session resets the
+console's menus):
+
+```sh
+mkfifo /tmp/ps5.fifo
+build.noindex/ps5ctl drive 192.168.1.20 --dualsense --control /tmp/ps5.fifo > /tmp/ps5.out &
+echo 'snap /tmp/screen.png' > /tmp/ps5.fifo     # the current screen as a PNG
+echo 'press down' > /tmp/ps5.fifo               # tap; `press NAME MS` holds
+echo 'quit' > /tmp/ps5.fifo
+```
+
 `devices` and `register` (PIN-less registration over PSN) need a PSN access
 token. Secrets stay in the login keychain, under the account named by
 `PS5CTL_PSN_ACCOUNT`:
