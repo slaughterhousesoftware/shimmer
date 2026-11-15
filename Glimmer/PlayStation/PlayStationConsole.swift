@@ -74,8 +74,10 @@ final class PlayStationStore {
         write(try? Self.encoder.encode(identity), to: accountURL)
     }
 
-    func isRegistered(hostID discoveryHostID: String) -> Bool {
-        consoles.contains { $0.id == discoveryHostID.lowercased() }
+    /// A discovered console is ours when its host-id or its name matches a
+    /// registration (the name covers a PS5 that reports a new host-id wired).
+    func isRegistered(hostID discoveryHostID: String, name: String? = nil) -> Bool {
+        consoles.contains { $0.id == discoveryHostID.lowercased() || (name != nil && $0.nickname == name) }
     }
 
     func console(hostID: String) -> PlayStationConsole? {

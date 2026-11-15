@@ -77,7 +77,7 @@ struct ComputersTab: View {
 
     /// PS5s answering discovery on this network that aren't registered yet.
     private var unregisteredPlayStations: [PlayStationDiscovery.Found] {
-        nearbyPlayStations.filter { !PlayStationStore.shared.isRegistered(hostID: $0.id) }
+        nearbyPlayStations.filter { !PlayStationStore.shared.isRegistered(hostID: $0.id, name: $0.name) }
     }
 
     private var apps: [LibraryApp] {

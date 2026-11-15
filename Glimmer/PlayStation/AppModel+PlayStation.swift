@@ -60,9 +60,13 @@ extension AppModel {
     /// running a game (named when the console says which); "standby" = rest
     /// mode, which the chip shows as asleep (Stream wakes it).
     func pollPlayStationStatusOnce(host: Host) async {
-        guard let console = playStationConsole(for: host) else { return }
+        guard var console = playStationConsole(for: host) else { return }
         let started = Date()
-        let status = await PlayStationDiscovery.probe(address: console.address)
+        var status = await PlayStationDiscovery.probe(address: console.address)
+        if status == nil, let moved = await relocatePlayStation(console) {
+            console = moved
+            status = await PlayStationDiscovery.probe(address: console.address)
+        }
         let rttMs = Int(Date().timeIntervalSince(started) * 1000)
         let state: HostLiveStatus.State
         switch status?.power {
@@ -91,7 +95,12 @@ extension AppModel {
             return
         }
         Task { [weak self] in
-            let status = await PlayStationDiscovery.probe(address: console.address)
+            var console = console
+            var status = await PlayStationDiscovery.probe(address: console.address)
+            if status == nil, let moved = await self?.relocatePlayStation(console) {
+                console = moved
+                status = await PlayStationDiscovery.probe(address: console.address)
+            }
             if status?.power != .ready {
                 guard let self else { return }
                 self.streamPhase = .connecting(stage: "Waking \(console.nickname)…")
@@ -104,6 +113,21 @@ extension AppModel {
             }
             self?.stream(app: .playStationHome, on: host)
         }
+    }
+
+    /// The saved address didn't answer: look for the console on the LAN (a new
+    /// DHCP lease, or Ethernet instead of Wi-Fi) and remember where it is now.
+    /// Matches the discovery host-id first, then the console's name, since a
+    /// wired PS5 can report a different host-id than it did on Wi-Fi.
+    func relocatePlayStation(_ console: PlayStationConsole) async -> PlayStationConsole? {
+        let found = await PlayStationDiscovery.scan()
+        guard let match = found.first(where: { $0.id.lowercased() == console.id })
+                ?? found.first(where: { $0.name == console.nickname }),
+              match.address != console.address else { return nil }
+        Diag.notice("PS5: \(console.nickname) moved to a new address; using it from now on", "PlayStation")
+        PlayStationStore.shared.updateAddress(id: console.id, address: match.address)
+        loadHosts()
+        return PlayStationStore.shared.consoles.first { $0.id == console.id }
     }
 
     /// The backend for a session on `host`: PS5 hosts get libchiaki, every
