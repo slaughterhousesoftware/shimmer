@@ -289,6 +289,7 @@ extension AppModel {
     /// stays one site - never duplicate any of this elsewhere (a second
     /// "cleanup" is how zombie state is made).
     private func cleanupAfterStream(host: Host, caughtError: Error?) {
+        AWDLGuard.shared.streamEnded()
         if caughtError != nil, Self.connectCancelRequested {
             // The user cancelled this connect from the capsule -
             // start()'s throw is the teardown ARRIVING, not a failure
@@ -485,6 +486,7 @@ extension AppModel {
             // "2h 12m" measures time actually streaming, not handshake.
             // Latched once inside the store - repeat edges are no-ops.
             SessionReceiptStore.markSessionLive()
+            noteStreamLiveForAWDL()
         case .firstFrame:
             markStreamVideo(for: host.id)
             promoteToStreamingOnFirstFrame()
@@ -542,6 +544,13 @@ extension AppModel {
     /// belt-and-suspenders fix for "stuck on Connecting while video is actually
     /// flowing": if .connectionEstablished was lost, the first frame repairs the
     /// transition within ~one frame.
+    /// The stream is live: park AWDL if the user asked and the route is Wi-Fi
+    /// (idempotent - both live edges call it).
+    func noteStreamLiveForAWDL() {
+        guard let host = hosts.first(where: { $0.id == activeStreamHostID }) else { return }
+        AWDLGuard.shared.streamStarted(hostAddress: dialAddress(for: host))
+    }
+
     private func promoteToStreamingOnFirstFrame() {
         guard case .connecting = streamPhase else { return }
         nativeStreamError = nil
@@ -550,6 +559,7 @@ extension AppModel {
         // Same live-edge stamp as .connectionEstablished - whichever edge
         // arrives first starts the receipt clock (store-latched).
         SessionReceiptStore.markSessionLive()
+            noteStreamLiveForAWDL()
     }
 
     // MARK: - Connect cancel + connect-hold adjudication

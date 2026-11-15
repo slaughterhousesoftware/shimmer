@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C678781937558FEE383D8083 /* AWDLGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4B968254E5CDDB992E359B /* AWDLGuard.swift */; };
 		255438963A823424172308BC /* PlayStationPairingPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11D1D86A663B5C4755D8F18 /* PlayStationPairingPane.swift */; };
 		A5935AEA1FCB35DF38388CEA /* PlayStationRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5D380ED9764266B435A5D5A /* PlayStationRegistration.swift */; };
 		016552DD7F7CBB43C47FF3AA /* PlayStationAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9025E83EA79A32F73E1612A0 /* PlayStationAccount.swift */; };
@@ -350,6 +351,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		FE4B968254E5CDDB992E359B /* AWDLGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AWDLGuard.swift; sourceTree = "<group>"; };
 		C11D1D86A663B5C4755D8F18 /* PlayStationPairingPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationPairingPane.swift; sourceTree = "<group>"; };
 		F5D380ED9764266B435A5D5A /* PlayStationRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationRegistration.swift; sourceTree = "<group>"; };
 		9025E83EA79A32F73E1612A0 /* PlayStationAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationAccount.swift; sourceTree = "<group>"; };
@@ -748,6 +750,7 @@
 		A10000031 /* Glimmer */ = {
 			isa = PBXGroup;
 			children = (
+				FE4B968254E5CDDB992E359B /* AWDLGuard.swift */,
 				C11D1D86A663B5C4755D8F18 /* PlayStationPairingPane.swift */,
 				F5D380ED9764266B435A5D5A /* PlayStationRegistration.swift */,
 				9025E83EA79A32F73E1612A0 /* PlayStationAccount.swift */,
@@ -1202,6 +1205,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C678781937558FEE383D8083 /* AWDLGuard.swift in Sources */,
 				255438963A823424172308BC /* PlayStationPairingPane.swift in Sources */,
 				A5935AEA1FCB35DF38388CEA /* PlayStationRegistration.swift in Sources */,
 				016552DD7F7CBB43C47FF3AA /* PlayStationAccount.swift in Sources */,

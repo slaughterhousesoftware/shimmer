@@ -279,14 +279,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (the user didn't open it; the daily scheduled check covers that session).
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMenuBar()
+        MainActor.assumeIsolated { AWDLGuard.shared.recoverAtLaunch() }
         guard !launchedAtLogin else { return }
         UpdaterController.shared.updater.checkForUpdatesInBackground()
     }
     #else
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMenuBar()
+        MainActor.assumeIsolated { AWDLGuard.shared.recoverAtLaunch() }
     }
     #endif
+
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { AWDLGuard.shared.appWillTerminate() }
+    }
 
     /// The menu bar item and its dropdown (AppKit - see MenuBarController).
     /// Held on the main actor, where it is created and lives; the delegate

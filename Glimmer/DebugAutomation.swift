@@ -102,6 +102,19 @@ extension AppModel {
     }
 
     func runDebugAutomationIfRequested() {
+        // `--debug-awdl-park=<seconds>@<host address>`: run the Wi-Fi lag-spike
+        // parker exactly as a stream would (route check, park, watch), then
+        // restore - for testing it without a live session.
+        if let spec = Self.debugKnob("awdl-park") {
+            let parts = spec.split(separator: "@", maxSplits: 1).map(String.init)
+            let seconds = Double(parts.first ?? "") ?? 10
+            let address = parts.count > 1 ? parts[1] : "192.168.1.1"
+            log.notice("DEBUG automation: parking AWDL for \(seconds)s (route to \(address, privacy: .private))")
+            AWDLGuard.shared.streamStarted(hostAddress: address)
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                AWDLGuard.shared.streamEnded()
+            }
+        }
         // `--debug-open-settings=<pane>[,<pane>...]`: open the Settings window
         // on each pane in turn, 3s apart (a screenshot loop for UI work), then
         // quit after --debug-quit-after seconds if given.
