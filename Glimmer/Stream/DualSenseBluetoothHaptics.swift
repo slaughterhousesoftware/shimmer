@@ -76,13 +76,19 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
     private var counter: UInt8 = 0
     private var silentTicks = 0
     private(set) var sent = 0, skipped = 0, failed = 0, yielded = 0
+    /// Writes failed in a row: the pad left Bluetooth (plugged in over USB,
+    /// switched off). After `lostAfter` of them the player gives up.
+    private var failedInARow = 0
+    private static let lostAfter = 20
+    private let onLost: () -> Void
 
-    private init() {}
+    private init(onLost: @escaping () -> Void) { self.onLost = onLost }
 
-    /// Start on a DualSense connected over Bluetooth, or nil if there isn't one.
-    static func start() -> DualSenseBluetoothHaptics? {
+    /// Start on a DualSense connected over Bluetooth, or nil if there isn't
+    /// one. `onLost` runs (on main) once the pad stops taking reports.
+    static func start(onLost: @escaping () -> Void) -> DualSenseBluetoothHaptics? {
         guard DualSenseHID.shared.bluetoothPad() != nil else { return nil }
-        let player = DualSenseBluetoothHaptics()
+        let player = DualSenseBluetoothHaptics(onLost: onLost)
         let thread = Thread { [player] in player.run() }
         thread.name = "Shimmer.DualSense.bt-haptics"
         thread.qualityOfService = .userInteractive
@@ -198,10 +204,19 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
                                                   Self.sentCallback, Unmanaged.passUnretained(self).toOpaque())
         if rc != kIOReturnSuccess {
             busy[slot] = false
-            failed += 1
+            noteFailure()
         } else {
             sent += 1
         }
+    }
+
+    /// Sender thread only.
+    private func noteFailure() {
+        failed += 1
+        failedInARow += 1
+        guard failedInARow == Self.lostAfter else { return }
+        lock.lock(); running = false; lock.unlock()
+        DispatchQueue.main.async { [onLost] in onLost() }
     }
 
     private static let sentCallback: IOHIDReportCallback = { context, result, _, _, _, report, _ in
@@ -212,7 +227,7 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
             me.writeNanos &+= DispatchTime.now().uptimeNanoseconds &- me.sentAt[i]
             me.writesTimed += 1
         }
-        if result != kIOReturnSuccess { me.failed += 1 }
+        if result != kIOReturnSuccess { me.noteFailure() } else { me.failedInARow = 0 }
     }
 
     // MARK: DualSenseHapticsOutput

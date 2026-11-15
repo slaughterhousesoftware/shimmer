@@ -393,6 +393,8 @@ final class DualSenseHID: @unchecked Sendable {
         if wantLeft { outputState.leftTrigger = Self.triggerBlock(mode: typeLeft, params: left) }
         if wantRight { outputState.rightTrigger = Self.triggerBlock(mode: typeRight, params: right) }
         let changed = before != (outputState.leftTrigger, outputState.rightTrigger)
+        triggerUpdates += 1
+        if changed { triggerChanges += 1 }
         lock.unlock()
         // The PS5 repeats the same effect many times a second. Writing it again
         // restarts the pad's effect (a vibrating trigger stutters) and, over
@@ -467,6 +469,18 @@ final class DualSenseHID: @unchecked Sendable {
     /// nothing. That matters over Bluetooth, where a write takes 30 ms or
     /// more and the console sends trigger changes in bursts - one write per
     /// change queued them up into a felt delay.
+    /// Trigger effects the host sent, and how many of them changed anything
+    /// (session breadcrumbs; `lock`).
+    var triggerUpdates = 0
+    var triggerChanges = 0
+
+    /// "<updates> trigger effects (<changes> changes)", then reset.
+    func takeTriggerStats() -> String {
+        lock.lock(); defer { lock.unlock() }
+        defer { triggerUpdates = 0; triggerChanges = 0 }
+        return "\(triggerUpdates) trigger effects (\(triggerChanges) changes)"
+    }
+
     func scheduleWrite() {
         lock.lock()
         let alreadyPending = writePending

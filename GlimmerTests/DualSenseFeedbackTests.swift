@@ -235,3 +235,32 @@ struct GameModeBoostTests {
         #expect(GameModeBoost.parsePolicy("") == .unknown)
     }
 }
+
+struct PadMotionTests {
+    @Test func turningThePadTurnsItsOrientation() {
+        var m = PadMotion()
+        var rest = ChiakiControllerState()
+        chiaki_controller_state_set_idle(&rest)
+        // At rest, then one second of a 90°/s yaw at 200 Hz.
+        m.accel(0, 1, 0, at: 0)
+        m.gyro(0, 0, 0, at: 5_000)
+        chiaki_orientation_tracker_apply_to_controller_state(&m.tracker, &rest)
+        var turned = rest
+        for i in 0..<200 {
+            m.gyro(0, .pi / 2, 0, at: UInt32(10_000 + i * 5_000))
+        }
+        chiaki_orientation_tracker_apply_to_controller_state(&m.tracker, &turned)
+        let moved = abs(turned.orient_y - rest.orient_y) + abs(turned.orient_w - rest.orient_w)
+            + abs(turned.orient_x - rest.orient_x) + abs(turned.orient_z - rest.orient_z)
+        #expect(moved > 0.3)
+        #expect(abs(turned.gyro_y - .pi / 2) < 0.001)
+    }
+
+    @Test func recenterMakesThePoseLevel() {
+        var m = PadMotion()
+        m.accel(0.5, 0.8, 0.2, at: 0)
+        m.recenter()
+        #expect(abs(m.tracker.accel_y - 1) < 0.001)
+        #expect(abs(m.tracker.accel_x) < 0.001)
+    }
+}

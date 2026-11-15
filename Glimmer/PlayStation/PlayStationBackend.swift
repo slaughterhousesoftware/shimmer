@@ -75,6 +75,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     // sticks by largest deflection, motion from the first pad that has any).
     private var pads: [UInt8: ChiakiControllerState] = [:]
     private var touchIDs: [UInt8: [UInt32: Int8]] = [:]
+    /// Each pad's attitude, from its gyro and accelerometer (chiaki-ng's
+    /// Madgwick tracker). The PS5 reads the pad's orientation from the
+    /// controller state, not only the raw rates: without it, tilt and
+    /// gyro aiming see a pad that never moves. Under `lock`.
+    private var motion: [UInt8: PadMotion] = [:]
+    private var lastTriggerTypes: (UInt8, UInt8)?
     private var loggedInputFrom: Set<String> = []
 
     // Video bookkeeping (libchiaki's video thread only).
@@ -444,7 +450,26 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             events?.setAdaptiveTriggers(controller: 0, eventFlags: 0x0C,
                                         typeLeft: effect.type_left, typeRight: effect.type_right,
                                         left: left, right: right)
-            Diag.info("PS5: adaptive triggers L=\(effect.type_left) R=\(effect.type_right)", Self.logCategory)
+            let types = (effect.type_left, effect.type_right)
+            if lock.withLock({ () -> Bool in
+                defer { lastTriggerTypes = types }
+                return lastTriggerTypes.map { $0 != types } ?? true
+            }) {
+                Diag.info("PS5: adaptive triggers L=\(types.0) R=\(types.1)", Self.logCategory)
+            }
+        case CHIAKI_EVENT_MOTION_RESET:
+            // A game re-centred motion: the pad's pose now is "level".
+            lock.withLock {
+                for (num, var m) in motion {
+                    m.recenter()
+                    motion[num] = m
+                    if var pad = pads[num] {
+                        chiaki_orientation_tracker_apply_to_controller_state(&m.tracker, &pad)
+                        pads[num] = pad
+                    }
+                }
+            }
+            _ = pushPad()
         case CHIAKI_EVENT_LED_COLOR:
             let (events, usbHaptics) = lock.withLock { (self.events, audioHaptics != nil) }
             let led = event.led_state
@@ -648,10 +673,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private func startAudioHaptics(bluetoothWait: Int = 20) {
         guard !lock.withLock({ stopped }) else { return }
         if let player = DualSenseAudioHaptics.start(onLost: { [weak self] in
-            self?.stopAudioHaptics(reason: "the DualSense audio device changed", fallBackToRumble: true)
+            self?.restartAudioHaptics(reason: "the DualSense audio device changed")
         }) {
             useActuators(player)
-        } else if let player = DualSenseBluetoothHaptics.start() {
+        } else if let player = DualSenseBluetoothHaptics.start(onLost: { [weak self] in
+            self?.restartAudioHaptics(reason: "the DualSense left Bluetooth")
+        }) {
             useActuators(player)
         } else if bluetoothWait > 0 {
             // The HID reader may still be matching the pad: look again shortly.
@@ -661,6 +688,16 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         } else {
             Diag.info("PS5: no DualSense haptics output - haptics play as rumble", Self.logCategory)
             hapticsQueue.async { [weak self] in self?.startHapticsTimer() }
+        }
+    }
+
+    /// The pad changed transport mid-stream (USB cable in or out): follow it.
+    /// It takes a few seconds to come back on Bluetooth, so look for up to 10 s;
+    /// rumble covers the gap if it never does.
+    private func restartAudioHaptics(reason: String) {
+        stopAudioHaptics(reason: reason)
+        hapticsQueue.asyncAfter(deadline: .now() + .milliseconds(300)) { [weak self] in
+            self?.startAudioHaptics(bluetoothWait: 100)
         }
     }
 
@@ -689,7 +726,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         DualSenseHID.shared.setAudioHapticsMode(false)
         let frames = lock.withLock { hapticsFrames }
         Diag.info("PS5: DualSense haptics stopped (\(reason)); \(frames.active)/\(frames.total) frames with "
-            + "signal in \(stats.runs) runs (\(stats.cut) cut short), buffer \(stats.targetMs) ms"
+            + "signal in \(stats.runs) runs (\(stats.cut) cut short), buffer \(stats.targetMs) ms; "
+            + "\(DualSenseHID.shared.takeTriggerStats())"
             + ((player as? DualSenseBluetoothHaptics).map { "; Bluetooth: \($0.linkStats)" } ?? ""), Self.logCategory)
         if fallBackToRumble, !lock.withLock({ stopped }) {
             hapticsQueue.async { [weak self] in
@@ -814,8 +852,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         lock.withLock { retainedHID = true }
         startAudioHaptics()
         let events = lock.withLock { self.events }
-        events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_ACCEL), reportRateHz: 100)
-        events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_GYRO), reportRateHz: 100)
+        events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_ACCEL), reportRateHz: 200)
+        events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_GYRO), reportRateHz: 200)
     }
 
     // MARK: Input uplink
@@ -926,16 +964,20 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     }
 
     func sendControllerMotion(num: UInt8, motionType: UInt8, x: Float, y: Float, z: Float) -> Int32 {
+        let now = UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1000)
         updatePad(num, kind: "motion") { pad in
+            var m = motion[num] ?? PadMotion()
             if Int32(motionType) == StreamProtocol.LI_MOTION_TYPE_GYRO {
                 // deg/s → rad/s
                 let k = Float.pi / 180
-                pad.gyro_x = x * k; pad.gyro_y = y * k; pad.gyro_z = z * k
+                m.gyro(x * k, y * k, z * k, at: now)
             } else if Int32(motionType) == StreamProtocol.LI_MOTION_TYPE_ACCEL {
                 // m/s² → g
                 let g: Float = 9.80665
-                pad.accel_x = x / g; pad.accel_y = y / g; pad.accel_z = z / g
+                m.accel(x / g, y / g, z / g, at: now)
             }
+            chiaki_orientation_tracker_apply_to_controller_state(&m.tracker, &pad)
+            motion[num] = m
         }
         return pushPad()
     }
@@ -1065,4 +1107,40 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     func sendMouseButton(action: Int8, button: Int32) -> Int32 { 0 }
     func sendScroll(_ amount: Int16) -> Int32 { 0 }
     func sendHScroll(_ amount: Int16) -> Int32 { 0 }
+}
+
+/// One pad's motion as the PS5 wants it: rates, gravity, and an attitude
+/// integrated from them (chiaki-ng's ChiakiOrientationTracker, fed the way
+/// its controllermanager.cpp does). Gyro in rad/s, accel in g, SDL axes.
+struct PadMotion {
+    var tracker = ChiakiOrientationTracker()
+    /// Subtracted from the accelerometer after a re-centre.
+    var zero = ChiakiAccelNewZero()
+    /// The last raw accelerometer reading (before `zero`).
+    var raw: (x: Float, y: Float, z: Float) = (0, 1, 0)
+
+    init() {
+        chiaki_orientation_tracker_init(&tracker)
+        chiaki_accel_new_zero_set_inactive(&zero, false)
+    }
+
+    mutating func gyro(_ x: Float, _ y: Float, _ z: Float, at us: UInt32) {
+        chiaki_orientation_tracker_update(&tracker, x, y, z,
+                                          tracker.accel_x, tracker.accel_y, tracker.accel_z, &zero, true, us)
+    }
+
+    mutating func accel(_ x: Float, _ y: Float, _ z: Float, at us: UInt32) {
+        raw = (x, y, z)
+        chiaki_orientation_tracker_update(&tracker, tracker.gyro_x, tracker.gyro_y, tracker.gyro_z,
+                                          x, y, z, &zero, false, us)
+    }
+
+    /// The pad's current pose becomes level (CHIAKI_EVENT_MOTION_RESET).
+    mutating func recenter() {
+        let g = (tracker.gyro_x, tracker.gyro_y, tracker.gyro_z)
+        let us = tracker.timestamp
+        chiaki_accel_new_zero_set_active(&zero, raw.x, raw.y, raw.z, false)
+        chiaki_orientation_tracker_init(&tracker)
+        chiaki_orientation_tracker_update(&tracker, g.0, g.1, g.2, raw.x, raw.y, raw.z, &zero, false, us)
+    }
 }
