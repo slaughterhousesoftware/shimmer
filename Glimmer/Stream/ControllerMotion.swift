@@ -83,6 +83,10 @@ final class ControllerMotion: @unchecked Sendable {
     /// actuator's quiesced flag). Weak: the backend's lifetime belongs to
     /// StreamSession, not to this singleton.
     @MainActor private weak var uplink: (any StreamingBackend)?
+    /// A host that never asks for motion (the PS5 reads it whenever a game
+    /// wants it): every pad samples at this rate, including pads that attach
+    /// or reconnect mid-stream. 0 = only on host request.
+    @MainActor private var standingRateHz: UInt16 = 0
 
     private init() {}
 
@@ -111,7 +115,31 @@ final class ControllerMotion: @unchecked Sendable {
         }
         guard caps != 0 else { return 0 }
         pads[slot] = Pad(controller: controller)
+        if standingRateHz != 0, uplink != nil {
+            // After the forwarder has finished attaching the pad.
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.applyStandingRate(slot: slot) }
+            }
+        }
         return caps
+    }
+
+    /// Sample every pad, now and as they attach, at `rateHz` (PS5 streams).
+    func enableForAllPads(rateHz: UInt16) {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.standingRateHz = rateHz
+                for slot in self.pads.keys { self.applyStandingRate(slot: slot) }
+            }
+        }
+    }
+
+    @MainActor
+    private func applyStandingRate(slot: UInt8) {
+        guard standingRateHz != 0 else { return }
+        apply(slot: slot, motionType: Self.accelType, reportRateHz: standingRateHz)
+        apply(slot: slot, motionType: Self.gyroType, reportRateHz: standingRateHz)
     }
 
     /// Drop a slot's mapping and halt its sampling (controller detach).
@@ -147,6 +175,7 @@ final class ControllerMotion: @unchecked Sendable {
                     self.halt(pad: pad, slot: slot, why: reason)
                 }
                 self.uplink = nil
+                self.standingRateHz = 0
             }
         }
     }

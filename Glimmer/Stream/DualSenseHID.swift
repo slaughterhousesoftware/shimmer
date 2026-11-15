@@ -323,6 +323,7 @@ final class DualSenseHID: @unchecked Sendable {
         // device deallocation. (The `key` opaque pointer is only an identity
         // token, NOT the retain; do not switch this value to Unmanaged.)
         writeDevices[key] = (device: device, bluetooth: isBluetooth)
+        triggersDirty = true    // a pad that (re)connects gets the current effect
         lock.unlock()
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputReportCallback(device, buf, bufLen, Self.reportCallback, ctx)
@@ -396,7 +397,7 @@ final class DualSenseHID: @unchecked Sendable {
         if wantRight { outputState.rightTrigger = Self.triggerBlock(mode: typeRight, params: right) }
         let changed = before != (outputState.leftTrigger, outputState.rightTrigger)
         triggerUpdates += 1
-        if changed { triggerChanges += 1 }
+        if changed { triggerChanges += 1; triggersDirty = true }
         lock.unlock()
         // The PS5 repeats the same effect many times a second. Writing it again
         // restarts the pad's effect (a vibrating trigger stutters) and, over
@@ -442,6 +443,7 @@ final class DualSenseHID: @unchecked Sendable {
         let hadDevice = !writeDevices.isEmpty
         outputState.leftTrigger = [UInt8](repeating: 0, count: 11)
         outputState.rightTrigger = [UInt8](repeating: 0, count: 11)
+        triggersDirty = true
         lock.unlock()
         guard hadDevice else { return }
         // Synchronous on the write queue so it completes before the manager
@@ -475,6 +477,8 @@ final class DualSenseHID: @unchecked Sendable {
     /// (session breadcrumbs; `lock`).
     var triggerUpdates = 0
     var triggerChanges = 0
+    /// The trigger blocks changed since they were last written (`lock`).
+    var triggersDirty = false
 
     /// "<updates> trigger effects (<changes> changes)", then reset.
     func takeTriggerStats() -> String {
@@ -507,8 +511,18 @@ final class DualSenseHID: @unchecked Sendable {
 
     /// Build the merged OUTPUT report from the current state and write it to
     /// every open device. Runs on `writeQueue`.
+    /// The trigger blocks go out only when they changed (or a write of them
+    /// failed): asserting them again restarts the pad's effect, so a rumble,
+    /// light-bar or mute-light write must not carry them.
     func writeCurrentOutput() {
-        writeToAll(Self.effectsState)
+        lock.lock()
+        let triggers = triggersDirty
+        triggersDirty = false
+        lock.unlock()
+        let ok = writeToAll { Self.effectsState($0, triggers: triggers) }
+        if triggers, !ok {
+            lock.lock(); triggersDirty = true; lock.unlock()
+        }
     }
 
     /// First-success latch (lock-guarded). Returns the PRIOR value so the caller

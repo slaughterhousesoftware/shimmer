@@ -19,6 +19,15 @@ struct DualSenseOutputReportTests {
         #expect(d[1] == 0)        // light bar untouched until the host sets it
     }
 
+    @Test func triggerBlocksOnlyWhenAsked() {
+        var s = DualSenseOutputState()
+        s.rightTrigger = [0x26] + [UInt8](repeating: 7, count: 10)
+        #expect(DualSenseHID.effectsState(s, triggers: false)[0] == 0)
+        #expect(DualSenseHID.effectsState(s, triggers: true)[0] == 0x0C)
+        s.rumbleLeft = 9
+        #expect(DualSenseHID.effectsState(s, triggers: false)[0] == 0x03)
+    }
+
     @Test func micLightOnlyWhenSetAndLeavesHapticsAlone() {
         var s = DualSenseOutputState()
         s.audioHaptics = true
@@ -102,8 +111,8 @@ struct DualSenseOutputReportTests {
 
     @Test func intensityNibbles() {
         #expect(PlayStationBackend.intensityNibbles(Strong) == (0x00, 0x00))
-        #expect(PlayStationBackend.intensityNibbles(Medium) == (0x02, 0x60))
-        #expect(PlayStationBackend.intensityNibbles(Weak) == (0x03, 0x90))
+        #expect(PlayStationBackend.intensityNibbles(Medium) == (0x02, 0x40))
+        #expect(PlayStationBackend.intensityNibbles(Weak) == (0x03, 0x50))
         #expect(PlayStationBackend.intensityNibbles(Off) == (0x0F, 0xF0))
     }
 }

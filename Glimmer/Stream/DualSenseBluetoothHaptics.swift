@@ -44,12 +44,12 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
     static let period: UInt64 = 21_344_000
     /// Reports on the link at once. Every report queued here is one a trigger
     /// or light-bar write waits behind, and queued reports only add delay
-    /// once the link is full - so two, not P5M's four. PXPlay (macOS) keeps
-    /// one. Override: `defaults write com.kevinbpatel.shimmer
+    /// once the link is full - so one, as PXPlay (macOS) keeps, not P5M's
+    /// four. With Game Mode's 7.5 ms sniff interval one carries the stream. Override: `defaults write com.kevinbpatel.shimmer
     /// DualSenseBTInFlight -int N` (1...4), for measuring.
     static let maxInFlight: Int = {
         let n = UserDefaults.standard.integer(forKey: "DualSenseBTInFlight")
-        return (1...4).contains(n) ? n : 2
+        return (1...4).contains(n) ? n : 1
     }()
     /// After the signal stops, keep the pad's queue fed with silence this
     /// long, so an effect that follows a short gap starts at once instead of

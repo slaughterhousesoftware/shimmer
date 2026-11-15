@@ -36,9 +36,9 @@ extension DualSenseHID {
     /// header). Triggers are always asserted so the pad holds what the host
     /// last sent. The rumble bits go in only while the host is rumbling: they
     /// mute USB-audio haptics, and a report without them stops the motors.
-    static func effectsState(_ s: DualSenseOutputState) -> [UInt8] {
+    static func effectsState(_ s: DualSenseOutputState, triggers: Bool = true) -> [UInt8] {
         var d = [UInt8](repeating: 0, count: 47)
-        d[0] = flagRightTrigger | flagLeftTrigger
+        if triggers { d[0] = flagRightTrigger | flagLeftTrigger }
         if s.rumbleLeft != 0 || s.rumbleRight != 0 {
             d[0] |= flagRumbleEmulation | flagRumbleNotHaptics
             d[2] = s.rumbleRight   // high-frequency side
@@ -111,7 +111,8 @@ extension DualSenseHID {
 
     // MARK: Writing
 
-    func writeOutputReport(to device: IOHIDDevice, bluetooth: Bool, effects: [UInt8]) {
+    @discardableResult
+    func writeOutputReport(to device: IOHIDDevice, bluetooth: Bool, effects: [UInt8]) -> Bool {
         let (id, bytes) = Self.outputReport(effects: effects, bluetooth: bluetooth)
         let rc = bytes.withUnsafeBufferPointer { buf -> IOReturn in
             guard let base = buf.baseAddress else { return kIOReturnBadArgument }
@@ -127,18 +128,23 @@ extension DualSenseHID {
             let hex = String(UInt32(bitPattern: rc), radix: 16)
             log.error("DualSense OUTPUT report write refused rc=0x\(hex, privacy: .public)")
         }
+        return rc == kIOReturnSuccess
     }
 
     /// Write `effects` (nil: nothing) to every open pad. writeQueue only.
-    func writeToAll(_ effects: (DualSenseOutputState) -> [UInt8]?) {
+    /// True if every write went through.
+    @discardableResult
+    func writeToAll(_ effects: (DualSenseOutputState) -> [UInt8]?) -> Bool {
         lock.lock()
         let state = outputState
         let devices = writeDevices
         lock.unlock()
-        guard let bytes = effects(state) else { return }
+        guard let bytes = effects(state) else { return true }
+        var ok = true
         for (_, entry) in devices {
-            writeOutputReport(to: entry.device, bluetooth: entry.bluetooth, effects: bytes)
+            ok = writeOutputReport(to: entry.device, bluetooth: entry.bluetooth, effects: bytes) && ok
         }
+        return ok
     }
 
     /// Rumble through our own report (PS5 streams with USB-audio haptics,

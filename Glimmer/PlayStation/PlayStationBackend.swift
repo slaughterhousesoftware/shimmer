@@ -846,8 +846,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     static func intensityNibbles(_ intensity: ChiakiDualSenseEffectIntensity) -> (UInt8, UInt8) {
         switch intensity {
         case Strong: return (0x00, 0x00)
-        case Medium: return (0x02, 0x60)
-        case Weak: return (0x03, 0x90)
+        // Trigger reduction is a 3-bit field (12.5% steps): PXPlay's 4 and 5.
+        // chiaki-ng's 0x90 doesn't fit and read back as 1 (near full force).
+        case Medium: return (0x02, 0x40)
+        case Weak: return (0x03, 0x50)
         default: return (0x0F, 0xF0)   // Off
         }
     }
@@ -865,9 +867,9 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         startAudioHaptics()
         // Chat starts muted, so the mute light is lit, as on the console.
         DualSenseHID.shared.setMicLED(lit: true)
-        let events = lock.withLock { self.events }
-        events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_ACCEL), reportRateHz: 200)
-        events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_GYRO), reportRateHz: 200)
+        // Every pad, whatever its slot, and again whenever one reconnects
+        // (USB <-> Bluetooth, sleep): the PS5 never asks.
+        ControllerMotion.shared.enableForAllPads(rateHz: 200)
     }
 
     // MARK: Input uplink
