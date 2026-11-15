@@ -92,6 +92,12 @@ enum PlayStationRegistration {
             Diag.notice("PS5: registration \(waited == .timedOut ? "timed out" : "was refused")", "PlayStation")
             throw waited == .timedOut ? Failure.unreachable : Failure.rejected
         }
+        return console(from: host, address: address, accountID: accountID)
+    }
+
+    /// The console's registration reply as a saved console: MAC (lowercase hex,
+    /// the discovery host-id), nickname, both keys and the protocol target.
+    static func console(from host: ChiakiRegisteredHost, address: String, accountID: String) -> PlayStationConsole {
         let mac = withUnsafeBytes(of: host.server_mac) { $0.map { String(format: "%02x", $0) }.joined() }
         let nickname = withUnsafeBytes(of: host.server_nickname) {
             String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)

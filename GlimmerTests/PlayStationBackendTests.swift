@@ -103,4 +103,31 @@ struct PlayStationBackendTests {
         reloaded.remove(id: console.id)
         #expect(PlayStationStore(directory: dir).consoles.isEmpty)
     }
+
+    @Test func registrationReplyBecomesAConsole() {
+        var host = ChiakiRegisteredHost()
+        host.target = CHIAKI_TARGET_PS5_1
+        withUnsafeMutableBytes(of: &host.server_mac) { $0.copyBytes(from: [0xAA, 0xBB, 0xCC, 0x0D, 0x0E, 0x0F]) }
+        withUnsafeMutableBytes(of: &host.server_nickname) { $0.copyBytes(from: Array("PS5-123".utf8)) }
+        let registKey = Array("0a1b2c3d".utf8) + [UInt8](repeating: 0, count: 8)
+        withUnsafeMutableBytes(of: &host.rp_regist_key) { $0.copyBytes(from: registKey) }
+        withUnsafeMutableBytes(of: &host.rp_key) { $0.copyBytes(from: [UInt8](1...16)) }
+
+        let console = PlayStationRegistration.console(from: host, address: "10.0.0.9", accountID: "AQIDBAUGBwg=")
+        #expect(console.id == "aabbcc0d0e0f")
+        #expect(console.hostID == "ps5-aabbcc0d0e0f")
+        #expect(console.nickname == "PS5-123")
+        #expect(console.address == "10.0.0.9")
+        #expect(console.registKey == Data(registKey))
+        #expect(console.rpKey == Data([UInt8](1...16)))
+        #expect(console.target == Int32(CHIAKI_TARGET_PS5_1.rawValue))
+        #expect(console.accountID == "AQIDBAUGBwg=")
+        #expect(console.wakeCredential == 0x0a1b2c3d)
+    }
+
+    @Test func registrationReplyWithoutNicknameIsNamedPS5() {
+        let console = PlayStationRegistration.console(from: ChiakiRegisteredHost(), address: "10.0.0.9", accountID: "x")
+        #expect(console.nickname == "PS5")
+        #expect(console.id == "000000000000")
+    }
 }
