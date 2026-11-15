@@ -25,11 +25,9 @@ struct DualSenseOutputReportTests {
         let d = DualSenseHID.effectsState(s)
         #expect(d[0] == 0x0F)
         #expect(d[2] == 10 && d[3] == 200)
-        // Audio haptics: never ask for rumble emulation, it mutes them.
-        s.audioHaptics = true
-        let h = DualSenseHID.effectsState(s)
-        #expect(h[0] == 0x0C)
-        #expect(h[2] == 0 && h[3] == 0)
+        // Stopped: the bits go, which also stops the motors.
+        s.rumbleLeft = 0; s.rumbleRight = 0
+        #expect(DualSenseHID.effectsState(s)[0] == 0x0C)
     }
 
     @Test func lightbarIntensityAndTriggerBlocks() {

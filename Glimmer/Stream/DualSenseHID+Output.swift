@@ -31,12 +31,12 @@ extension DualSenseHID {
 
     /// The 47-byte effects state (the report data after the report ID / BT
     /// header). Triggers are always asserted so the pad holds what the host
-    /// last sent. The rumble bits go in only while the host is rumbling and
-    /// haptics aren't playing through USB audio: they would mute those.
+    /// last sent. The rumble bits go in only while the host is rumbling: they
+    /// mute USB-audio haptics, and a report without them stops the motors.
     static func effectsState(_ s: DualSenseOutputState) -> [UInt8] {
         var d = [UInt8](repeating: 0, count: 47)
         d[0] = flagRightTrigger | flagLeftTrigger
-        if !s.audioHaptics, s.rumbleLeft != 0 || s.rumbleRight != 0 {
+        if s.rumbleLeft != 0 || s.rumbleRight != 0 {
             d[0] |= flagRumbleEmulation | flagRumbleNotHaptics
             d[2] = s.rumbleRight   // high-frequency side
             d[3] = s.rumbleLeft    // low-frequency side
@@ -106,15 +106,26 @@ extension DualSenseHID {
         }
     }
 
-    /// Write `effects` to every open pad. writeQueue only.
-    func writeToAll(_ effects: (DualSenseOutputState) -> [UInt8]) {
+    /// Write `effects` (nil: nothing) to every open pad. writeQueue only.
+    func writeToAll(_ effects: (DualSenseOutputState) -> [UInt8]?) {
         lock.lock()
         let state = outputState
         let devices = writeDevices
         lock.unlock()
+        guard let bytes = effects(state) else { return }
         for (_, entry) in devices {
-            writeOutputReport(to: entry.device, bluetooth: entry.bluetooth, effects: effects(state))
+            writeOutputReport(to: entry.device, bluetooth: entry.bluetooth, effects: bytes)
         }
+    }
+
+    /// Rumble through our own report (PS5 streams with USB-audio haptics,
+    /// where GameController's rumble would fight the keepalive). The pad leaves
+    /// rumble mode, and plays haptics again, once it drops back to zero.
+    func setRumble(left: UInt8, right: UInt8) {
+        lock.lock()
+        outputState.rumbleLeft = left; outputState.rumbleRight = right
+        lock.unlock()
+        scheduleWrite()
     }
 
     // MARK: PS5 feedback
@@ -134,7 +145,10 @@ extension DualSenseHID {
             self.writeCurrentOutput()
             let timer = DispatchSource.makeTimerSource(queue: self.writeQueue)
             timer.schedule(deadline: .now() + 1, repeating: 1)
-            timer.setEventHandler { [weak self] in self?.writeToAll { _ in Self.hapticsKeepAliveState } }
+            // Not while the console rumbles: the neutral report would stop the motors.
+            timer.setEventHandler { [weak self] in
+                self?.writeToAll { $0.rumbleLeft != 0 || $0.rumbleRight != 0 ? nil : Self.hapticsKeepAliveState }
+            }
             timer.resume()
             self.hapticsKeepAlive = timer
         }

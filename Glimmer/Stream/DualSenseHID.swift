@@ -407,8 +407,14 @@ final class DualSenseHID: @unchecked Sendable {
     /// the pad out of rumble mode and would silence GameController's motors.
     func setRumbleState(left: UInt8, right: UInt8) {
         lock.lock()
+        let wasOn = outputState.rumbleLeft != 0 || outputState.rumbleRight != 0
         outputState.rumbleLeft = left; outputState.rumbleRight = right
+        let stopped = wasOn && left == 0 && right == 0
+        let devices = !writeDevices.isEmpty
         lock.unlock()
+        // A trigger write taken just before the stop may still carry the old
+        // motor values; land a report after it so the motors don't stay on.
+        if stopped, devices { scheduleWrite() }
     }
 
     /// Park the triggers to neutral and re-emit, called from stop() while the

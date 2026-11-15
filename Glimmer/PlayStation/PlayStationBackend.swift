@@ -432,9 +432,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 events?.connectionTerminated(code: isError ? Self.terminatedWithError : Self.terminatedCleanly)
             }
         case CHIAKI_EVENT_RUMBLE:
-            let events = lock.withLock { self.events }
-            events?.rumble(controller: 0, lowFreq: UInt16(event.rumble.left) * 257,
-                           highFreq: UInt16(event.rumble.right) * 257)
+            handleRumble(left: event.rumble.left, right: event.rumble.right)
         case CHIAKI_EVENT_TRIGGER_EFFECTS:
             // Trigger effects switched off in the console's settings.
             guard lock.withLock({ triggerNibble }) != Self.intensityOff & 0xF0 else { break }
@@ -715,6 +713,18 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
     }
 
+    /// Plain rumble from the console (PS4 games, mostly). With USB haptics on,
+    /// it goes through our own report; GameController's would be undone by the
+    /// haptics keepalive within a second.
+    private func handleRumble(left: UInt8, right: UInt8) {
+        let (events, usbHaptics) = lock.withLock { (self.events, audioHaptics != nil) }
+        if usbHaptics {
+            DualSenseHID.shared.setRumble(left: left, right: right)
+        } else {
+            events?.rumble(controller: 0, lowFreq: UInt16(left) * 257, highFreq: UInt16(right) * 257)
+        }
+    }
+
     /// Off in chiaki's intensity enum; as a nibble pair, 0xF0 | 0x0F.
     static let intensityOff: UInt8 = 0xFF
 
@@ -934,9 +944,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     static let keyboardKeys: Set<UInt8> = Set(keyButtons.keys).union(
         [VK.w, VK.a, VK.s, VK.d, VK.i, VK.j, VK.k, VK.l, VK.z, VK.c])
 
-    /// Debug: `--debug-ps5-keys=right@3,enter@5,r2@8:2` presses virtual-pad
-    /// buttons (name@seconds-after-connect[:hold seconds]) so a stream can be
-    /// driven with nobody at the Mac. Names: the keyboard map's keys below.
+    /// Debug: `--debug-ps5-keys=right@3,cross@5,r2@8:2,rumble@10:3` presses
+    /// virtual-pad buttons (name@seconds-after-connect[:hold seconds]) so a
+    /// stream can be driven with nobody at the Mac; `rumble` fakes the
+    /// console's rumble event.
     private func runDebugKeys() {
         let prefix = "--debug-ps5-keys="
         guard let spec = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix(prefix) })?
@@ -949,10 +960,20 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         ]
         for step in spec.split(separator: ",") {
             let parts = step.split(separator: "@")
-            guard parts.count == 2, let vk = names[String(parts[0])] else { continue }
+            guard parts.count == 2 else { continue }
             let timing = parts[1].split(separator: ":").compactMap { Double($0) }
             guard let at = timing.first else { continue }
             let hold = timing.count > 1 ? timing[1] : 0.12
+            if parts[0] == "rumble" {          // as if the console sent half-strength rumble
+                DispatchQueue.global().asyncAfter(deadline: .now() + at) { [weak self] in
+                    self?.handleRumble(left: 128, right: 128)
+                    DispatchQueue.global().asyncAfter(deadline: .now() + hold) { [weak self] in
+                        self?.handleRumble(left: 0, right: 0)
+                    }
+                }
+                continue
+            }
+            guard let vk = names[String(parts[0])] else { continue }
             let key = Int16(vk)
             DispatchQueue.global().asyncAfter(deadline: .now() + at) { [weak self] in
                 _ = self?.sendKeyboard(keyCode: key, action: Int8(StreamProtocol.KEY_ACTION_DOWN), modifiers: 0, flags: 0)

@@ -37,9 +37,11 @@ Everything below glimmer 2026.9.0 in this file is upstream glimmer's history.
   intensity settings apply.
 
 ### Controllers
-- Adaptive triggers now work. Shimmer's DualSense output report was missing
-  its report ID, so the controller ignored it - on PC streams as well as PS5
-  ones - and lacked the bits that let trigger effects apply.
+- Adaptive triggers now work (checked on a USB DualSense against the pad's own
+  trigger-status report). Shimmer's DualSense output report was missing its
+  report ID, so the controller ignored it, and lacked the bits that let
+  trigger effects apply. PC streams send their trigger effects through the
+  same report.
 
 ### Wi-Fi
 - "Reduce lag spikes on Wi-Fi" is back, without the background helper: the
