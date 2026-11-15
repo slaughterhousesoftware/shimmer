@@ -96,9 +96,21 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         self.console = console
         self.options = options
         chiakiLog.initialize(to: ChiakiLog())
-        chiaki_log_init(chiakiLog, UInt32(CHIAKI_LOG_ERROR.rawValue | CHIAKI_LOG_WARNING.rawValue | CHIAKI_LOG_INFO.rawValue),
-                        { level, msg, _ in PlayStationBackend.forwardLog(level: level, msg: msg) }, nil)
-        Self.libInitOnce
+        PlayStationBackend.initLog(chiakiLog, includeInfo: true)
+        Self.ensureLibInit()
+    }
+
+    /// libchiaki's process-wide init (crypto, FEC tables, curl). Every entry
+    /// point - discovery, registration, sessions - calls this first.
+    static func ensureLibInit() { _ = libInitOnce }
+
+    /// Route a ChiakiLog into the app log through the hexdump filter.
+    static func initLog(_ log: UnsafeMutablePointer<ChiakiLog>, includeInfo: Bool) {
+        var mask = CHIAKI_LOG_ERROR.rawValue | CHIAKI_LOG_WARNING.rawValue
+        if includeInfo { mask |= CHIAKI_LOG_INFO.rawValue }
+        chiaki_log_init(log, UInt32(mask), { level, msg, _ in
+            PlayStationBackend.forwardLog(level: level, msg: msg)
+        }, nil)
     }
 
     deinit {

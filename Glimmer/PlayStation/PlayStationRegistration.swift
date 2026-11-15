@@ -15,7 +15,7 @@ enum PlayStationRegistration {
             switch self {
             case .invalidAccountID: return "The PlayStation Network account ID is invalid. Sign in again."
             case .invalidPIN: return "The pairing code has 8 digits."
-            case .rejected: return "The PS5 didn't accept the code. Codes expire after a few minutes - get a new one and try again."
+            case .rejected: return "The PS5 refused to pair. Keep Settings › System › Remote Play › Pair Device open with the code on screen, and enter that code - a new code appears each time the screen opens."
             case .unreachable: return "The PS5 didn't answer. Check that it's on, on this network, and has Remote Play enabled."
             }
         }
@@ -45,9 +45,11 @@ enum PlayStationRegistration {
 
     private static func registerBlocking(address: String, account: Data, accountID: String,
                                          pin: UInt32) throws -> PlayStationConsole {
+        PlayStationBackend.ensureLibInit()
         let log = UnsafeMutablePointer<ChiakiLog>.allocate(capacity: 1)
         log.initialize(to: ChiakiLog())
-        chiaki_log_init(log, UInt32(CHIAKI_LOG_ERROR.rawValue), nil, nil)
+        PlayStationBackend.initLog(log, includeInfo: true)
+        Diag.notice("PS5: registering with the console at \(address, privacy: .private)", "PlayStation")
         let hostCString = strdup(address)
         let regist = UnsafeMutablePointer<ChiakiRegist>.allocate(capacity: 1)
         regist.initialize(to: ChiakiRegist())
@@ -86,7 +88,10 @@ enum PlayStationRegistration {
         chiaki_regist_fini(regist)
 
         let host = reply.lock.withLock { reply.host }
-        guard let host else { throw waited == .timedOut ? Failure.unreachable : Failure.rejected }
+        guard let host else {
+            Diag.notice("PS5: registration \(waited == .timedOut ? "timed out" : "was refused")", "PlayStation")
+            throw waited == .timedOut ? Failure.unreachable : Failure.rejected
+        }
         let mac = withUnsafeBytes(of: host.server_mac) { $0.map { String(format: "%02x", $0) }.joined() }
         let nickname = withUnsafeBytes(of: host.server_nickname) {
             String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)

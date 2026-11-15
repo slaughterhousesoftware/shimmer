@@ -27,14 +27,15 @@ enum PlayStationDiscovery {
     nonisolated(unsafe) private static let log: UnsafeMutablePointer<ChiakiLog> = {
         let log = UnsafeMutablePointer<ChiakiLog>.allocate(capacity: 1)
         log.initialize(to: ChiakiLog())
-        chiaki_log_init(log, UInt32(CHIAKI_LOG_ERROR.rawValue), nil, nil)
+        PlayStationBackend.initLog(log, includeInfo: false)
         return log
     }()
 
     /// One status probe; nil when the console does not answer (off, or not
     /// reachable from here).
     static func probe(address: String, timeout: TimeInterval = 2) async -> Status? {
-        await withCheckedContinuation { continuation in
+        PlayStationBackend.ensureLibInit()
+        return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: probeBlocking(address: address, timeout: timeout))
             }
@@ -57,7 +58,8 @@ enum PlayStationDiscovery {
 
     /// Broadcast a search on the LAN and collect every PS5 that answers.
     static func scan(timeout: TimeInterval = 1.5) async -> [Found] {
-        await withCheckedContinuation { continuation in
+        PlayStationBackend.ensureLibInit()
+        return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 continuation.resume(returning: scanBlocking(timeout: timeout))
             }
@@ -128,6 +130,7 @@ enum PlayStationDiscovery {
 
     /// Send the wake packet. Fire-and-forget; poll with waitUntilReady.
     static func wake(console: PlayStationConsole) {
+        PlayStationBackend.ensureLibInit()
         guard let credential = console.wakeCredential else {
             Diag.error("PS5: no wake credential in the registration", "PlayStation")
             return
