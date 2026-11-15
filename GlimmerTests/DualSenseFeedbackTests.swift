@@ -180,3 +180,38 @@ struct ArrivalJitterTests {
         #expect(j.hapticsTargetMs == 15)
     }
 }
+
+struct DualSenseBluetoothHapticsTests {
+
+    @Test func reportLayoutFollowsSAxense() {
+        let samples = (0..<64).map { Int8(truncatingIfNeeded: $0 - 32) }
+        let r = DualSenseBluetoothHaptics.report(samples: samples, counter: 7)
+        #expect(r.count == 142)
+        #expect(Array(r[0...12]) == [0x32, 0x00, 0x91, 7, 0xFE, 0, 0, 0, 0, 0xFF, 7, 0x92, 64])
+        #expect(r[13] == UInt8(bitPattern: -32) && r[76] == 31)
+        #expect(r[77...137].allSatisfy { $0 == 0 })
+        let crc = DualSenseHID.bluetoothCRC(r[0..<138])
+        #expect(UInt32(r[138]) | UInt32(r[139]) << 8 | UInt32(r[140]) << 16 | UInt32(r[141]) << 24 == crc)
+    }
+
+    @Test func samplesBecomeSignedEightBit() {
+        #expect(DualSenseBluetoothHaptics.s8(0) == 0)
+        #expect(DualSenseBluetoothHaptics.s8(0.5) == 64)
+        #expect(DualSenseBluetoothHaptics.s8(-1) == -128)
+        #expect(DualSenseBluetoothHaptics.s8(1) == 127)
+    }
+
+    @Test func atTheConsolesRateTheBufferPassesSamplesThrough() {
+        var b = HapticsBuffer(outputRate: 3000, targetMs: 0)
+        var bytes: [UInt8] = []
+        for v: Int16 in [0, 8192, 16_384, -16_384] {
+            bytes += [UInt8(truncatingIfNeeded: v), UInt8(truncatingIfNeeded: v >> 8)]
+            bytes += [UInt8(truncatingIfNeeded: v), UInt8(truncatingIfNeeded: v >> 8)]
+        }
+        bytes.withUnsafeBytes { b.push($0) }
+        var out: [Float] = []
+        b.render(frames: 4) { _, l, _ in out.append(l) }
+        // One sample of delay from the interpolator, no filtering.
+        #expect(out == [0, 0, 0.25, 0.5])
+    }
+}

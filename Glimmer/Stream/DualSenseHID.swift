@@ -443,6 +443,12 @@ final class DualSenseHID: @unchecked Sendable {
         return block
     }
 
+    /// The first open DualSense connected over Bluetooth, if any.
+    func bluetoothPad() -> IOHIDDevice? {
+        lock.lock(); defer { lock.unlock() }
+        return writeDevices.values.first { $0.bluetooth }?.device
+    }
+
     func scheduleWrite() {
         writeQueue.async { [weak self] in self?.writeCurrentOutput() }
     }

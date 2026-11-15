@@ -54,6 +54,8 @@ struct HapticsBuffer {
     private var previous: (Float, Float) = (0, 0)
     private var lowPassLeft: Biquad
     private var lowPassRight: Biquad
+    /// Off when the output is the console's own 3 kHz (Bluetooth): no images.
+    private let lowPass: Bool
 
     /// Rendered output frames so far, and when the waiting run's first sample came.
     private var renderedFrames = 0
@@ -62,6 +64,7 @@ struct HapticsBuffer {
 
     init(outputRate: Double, targetMs: Double = 40, extraMs: Double = 100) {
         self.outputRate = outputRate
+        lowPass = outputRate > Self.sourceRate
         targetFrames = Int(targetMs / 1000 * outputRate)
         maxExtraFrames = Int(extraMs / 1000 * outputRate)
         let capacity = Int(outputRate)              // 1 s
@@ -106,8 +109,8 @@ struct HapticsBuffer {
             queued -= 1
         }
         let at = (readIndex + queued) % capacity
-        left[at] = lowPassLeft.process(l)
-        right[at] = lowPassRight.process(r)
+        left[at] = lowPass ? lowPassLeft.process(l) : l
+        right[at] = lowPass ? lowPassRight.process(r) : r
         queued += 1
     }
 
@@ -196,10 +199,21 @@ struct Biquad {
 
 // MARK: - Player
 
+/// Where a PS5 stream's haptics PCM goes: the USB pad's audio channels or
+/// the Bluetooth pad's haptics report.
+protocol DualSenseHapticsOutput: AnyObject, Sendable {
+    var deviceName: String { get }
+    func push(_ pcm: UnsafeRawBufferPointer)
+    func setGain(_ gain: Float)
+    func setTarget(ms: Double)
+    var stats: (targetMs: Int, runs: Int, cut: Int) { get }
+    func stop()
+}
+
 /// Plays haptics PCM on a USB DualSense's actuator channels. `start()` returns
 /// nil when no such device is present (Bluetooth pads have no audio device),
 /// and the caller falls back to rumble.
-final class DualSenseAudioHaptics: @unchecked Sendable {
+final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
 
     /// Lock + buffer shared with the render block (which must not capture self).
     private final class Shared: @unchecked Sendable {

@@ -27,9 +27,9 @@ PlayStation Network once, and enter the code from the PS5's Settings › System 
 Remote Play › Pair Device. After that the PS5 is listed like a PC: Stream wakes
 it from rest mode, and the stream gets the same window, Picture in Picture,
 audio and controller support, including the DualSense touchpad and gyro, and
-the console's feedback: light bar, adaptive triggers, and haptics. With the
-DualSense on USB the console's haptics play on the controller's own actuators,
-as they would on the PS5; over Bluetooth they play as rumble.
+the console's feedback: light bar, adaptive triggers, and haptics, played on
+the controller's own actuators as they would be on the PS5 (over USB through
+its audio channels, over Bluetooth through its haptics report).
 
 The PS5 sends 1080p or 720p at up to 60 fps. It takes controller input only,
 so the keyboard drives a virtual controller (WASD and IJKL for the sticks,
@@ -68,8 +68,7 @@ Picture are in its menu.
 - A second address per PC, such as a Tailscale address, used when the home
   address isn't reachable.
 - PS5 Remote Play: registration, wake from rest mode, 1080p60 HEVC streams, and
-  DualSense light bar, adaptive triggers and HD haptics (USB; rumble over
-  Bluetooth).
+  DualSense light bar, adaptive triggers and HD haptics over USB or Bluetooth.
 - "Reduce lag spikes on Wi-Fi" pauses AirDrop, AirPlay and Sidecar while you
   stream over Wi-Fi; turning it on asks for your Mac password once.
 - `shimmerctl`, a command-line tool a coding agent can use to check and fix the

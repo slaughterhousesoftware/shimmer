@@ -111,7 +111,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private var hapticsActive = false
     private var loggedHaptics = false
     /// The USB DualSense haptics player, while one is open (guarded by `lock`).
-    private var audioHaptics: DualSenseAudioHaptics?
+    private var audioHaptics: DualSenseHapticsOutput?
     /// We hold the raw-HID writer open for the session (triggers, light bar).
     private var retainedHID = false
     /// The console's intensity settings, as the pad's power-reduction nibbles
@@ -643,15 +643,28 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     static let hapticsFloor: UInt64 = 300
 
     /// Open the USB DualSense's actuators, or fall back to rumble.
-    private func startAudioHaptics() {
-        let player = DualSenseAudioHaptics.start { [weak self] in
+    /// The pad's actuators: over USB through its audio device, over Bluetooth
+    /// through its haptics report. Neither (another pad): rumble.
+    private func startAudioHaptics(bluetoothWait: Int = 20) {
+        guard !lock.withLock({ stopped }) else { return }
+        if let player = DualSenseAudioHaptics.start(onLost: { [weak self] in
             self?.stopAudioHaptics(reason: "the DualSense audio device changed", fallBackToRumble: true)
-        }
-        guard let player else {
-            Diag.info("PS5: no USB DualSense audio device - haptics play as rumble", Self.logCategory)
+        }) {
+            useActuators(player)
+        } else if let player = DualSenseBluetoothHaptics.start() {
+            useActuators(player)
+        } else if bluetoothWait > 0 {
+            // The HID reader may still be matching the pad: look again shortly.
+            hapticsQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+                self?.startAudioHaptics(bluetoothWait: bluetoothWait - 1)
+            }
+        } else {
+            Diag.info("PS5: no DualSense haptics output - haptics play as rumble", Self.logCategory)
             hapticsQueue.async { [weak self] in self?.startHapticsTimer() }
-            return
         }
+    }
+
+    private func useActuators(_ player: DualSenseHapticsOutput) {
         let muted = lock.withLock { () -> Bool in
             audioHaptics = player
             return hapticsNibble == Self.intensityOff & 0x0F
@@ -662,7 +675,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     }
 
     private func stopAudioHaptics(reason: String, fallBackToRumble: Bool = false) {
-        guard let player = lock.withLock({ () -> DualSenseAudioHaptics? in
+        guard let player = lock.withLock({ () -> DualSenseHapticsOutput? in
             defer { audioHaptics = nil }
             return audioHaptics
         }) else { return }
@@ -695,7 +708,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     /// Breadcrumbs for the actuator path: the first frame with signal, then a
     /// summary every 30 s of haptics (frames arrive every 10 ms).
-    private func noteActuatorFrame(_ pcm: UnsafeRawBufferPointer, player: DualSenseAudioHaptics) {
+    private func noteActuatorFrame(_ pcm: UnsafeRawBufferPointer, player: DualSenseHapticsOutput) {
         var peak: Int32 = 0
         for i in 0..<(pcm.count / 2) { peak = max(peak, abs(Int32(pcm.loadUnaligned(fromByteOffset: i * 2, as: Int16.self)))) }
         let (total, active) = lock.withLock { () -> (Int, Int) in
@@ -731,7 +744,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// The console's Vibration / Trigger Effect Intensity setting.
     private func applyIntensity(_ intensity: ChiakiDualSenseEffectIntensity, haptics: Bool) {
         let (hapticsLevel, triggerLevel) = Self.intensityNibbles(intensity)
-        let (h, t, player) = lock.withLock { () -> (UInt8, UInt8, DualSenseAudioHaptics?) in
+        let (h, t, player) = lock.withLock { () -> (UInt8, UInt8, DualSenseHapticsOutput?) in
             if haptics { hapticsNibble = hapticsLevel } else { triggerNibble = triggerLevel }
             return (hapticsNibble, triggerNibble, audioHaptics)
         }
