@@ -11,12 +11,14 @@
 //        --press NAME@SEC   tap a button at SEC (repeatable): ps cross circle square triangle
 //                           up down left right options share l1 r1 touchpad
 //        --codec h264|h265  (default h265)    --res 720|1080 (default 1080)    --fps 30|60
+//        --rest             put the console into rest mode at the end
 //
 // Secrets never touch stdout: the PSN token and the registration live in the login keychain.
-//   PSN access token                 service "PSN access token", account psn
-//   PSN account ID                   service "PlayStation Network account ID", account psn
+//   PSN access token                 service "PSN access token", account $PS5CTL_PSN_ACCOUNT
+//   PSN account ID                   service "PlayStation Network account ID", account $PS5CTL_PSN_ACCOUNT
 //   registration                     service "PS5 Remote Play registration", account <console MAC hex>
 
+#include <chiaki/audioreceiver.h>
 #include <chiaki/base64.h>
 #include <chiaki/common.h>
 #include <chiaki/controller.h>
@@ -36,7 +38,17 @@
 #include <time.h>
 #include <unistd.h>
 
-#define PSN_USER "psn"
+// Keychain account name the PSN items are stored under (any label you chose).
+static const char *psn_user(void)
+{
+	const char *user = getenv("PS5CTL_PSN_ACCOUNT");
+	if(!user || !*user)
+	{
+		fprintf(stderr, "set PS5CTL_PSN_ACCOUNT to the keychain account of your PSN items\n");
+		exit(1);
+	}
+	return user;
+}
 #define REGIST_SERVICE "PS5 Remote Play registration"
 
 static ChiakiLog g_log;
@@ -180,7 +192,7 @@ static bool regist_parse(const char *s, Registration *r)
 
 static bool load_account_id(uint8_t out[CHIAKI_PSN_ACCOUNT_ID_SIZE])
 {
-	char *b64 = keychain_get("PlayStation Network account ID", PSN_USER);
+	char *b64 = keychain_get("PlayStation Network account ID", psn_user());
 	if(!b64)
 		return false;
 	size_t n = CHIAKI_PSN_ACCOUNT_ID_SIZE;
@@ -275,7 +287,7 @@ static char *psn_token(void)
 	const char *refresher = getenv("PSN_TOKEN_REFRESH");
 	if(refresher && *refresher)
 		system(refresher);
-	char *t = keychain_get("PSN access token", PSN_USER);
+	char *t = keychain_get("PSN access token", psn_user());
 	if(!t)
 		fprintf(stderr, "no PSN access token in the keychain\n");
 	return t;
@@ -313,6 +325,9 @@ typedef struct
 	// stream stats
 	atomic_long frames, bytes, lost;
 	FILE *out;
+	// audio arrival timing
+	atomic_long audio_frames, audio_gaps_over_30ms, audio_gaps_over_60ms, audio_max_gap_us;
+	double audio_last;
 } SessionState;
 
 static void event_cb(ChiakiEvent *event, void *user)
@@ -517,6 +532,28 @@ static bool video_cb(uint8_t *buf, size_t buf_size, int32_t frames_lost, bool fr
 	return true;
 }
 
+static void audio_header_cb(ChiakiAudioHeader *header, void *user)
+{
+	(void)user;
+	fprintf(stderr, "** audio %u ch %u Hz, %u samples/frame\n", header->channels, header->rate, header->frame_size);
+}
+
+static void audio_frame_cb(uint8_t *buf, size_t buf_size, void *user)
+{
+	(void)buf; (void)buf_size;
+	SessionState *st = user;
+	double t = now_s();
+	if(st->audio_last > 0)
+	{
+		long gap_us = (long)((t - st->audio_last) * 1e6);
+		if(gap_us > 30000) atomic_fetch_add(&st->audio_gaps_over_30ms, 1);
+		if(gap_us > 60000) atomic_fetch_add(&st->audio_gaps_over_60ms, 1);
+		if(gap_us > atomic_load(&st->audio_max_gap_us)) atomic_store(&st->audio_max_gap_us, gap_us);
+	}
+	st->audio_last = t;
+	atomic_fetch_add(&st->audio_frames, 1);
+}
+
 static int cmd_stream(int argc, char **argv)
 {
 	if(argc < 1) { fprintf(stderr, "stream <ip> [options]\n"); return 1; }
@@ -528,10 +565,12 @@ static int cmd_stream(int argc, char **argv)
 	ChiakiVideoFPSPreset fps = CHIAKI_VIDEO_FPS_PRESET_60;
 	Press presses[32];
 	int npress = 0;
+	bool rest_after = false;
 	for(int i = 1; i < argc; i++)
 	{
 		if(!strcmp(argv[i], "--seconds") && i + 1 < argc) seconds = atof(argv[++i]);
 		else if(!strcmp(argv[i], "--out") && i + 1 < argc) out_path = argv[++i];
+		else if(!strcmp(argv[i], "--rest")) rest_after = true;
 		else if(!strcmp(argv[i], "--codec") && i + 1 < argc) { i++; codec = !strcmp(argv[i], "h264") ? CHIAKI_CODEC_H264 : CHIAKI_CODEC_H265; }
 		else if(!strcmp(argv[i], "--res") && i + 1 < argc) { i++; res = atoi(argv[i]) == 720 ? CHIAKI_VIDEO_RESOLUTION_PRESET_720p : CHIAKI_VIDEO_RESOLUTION_PRESET_1080p; }
 		else if(!strcmp(argv[i], "--fps") && i + 1 < argc) { i++; fps = atoi(argv[i]) == 30 ? CHIAKI_VIDEO_FPS_PRESET_30 : CHIAKI_VIDEO_FPS_PRESET_60; }
@@ -577,6 +616,8 @@ static int cmd_stream(int argc, char **argv)
 	if(err != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "session init: %s\n", chiaki_error_string(err)); return 1; }
 	chiaki_session_set_event_cb(&session, event_cb, &st);
 	chiaki_session_set_video_sample_cb(&session, video_cb, &st);
+	ChiakiAudioSink audio_sink = { .user = &st, .header_cb = audio_header_cb, .frame_cb = audio_frame_cb };
+	chiaki_session_set_audio_sink(&session, &audio_sink);
 	err = chiaki_session_start(&session);
 	if(err != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "session start: %s\n", chiaki_error_string(err)); chiaki_session_fini(&session); return 1; }
 
@@ -623,8 +664,11 @@ static int cmd_stream(int argc, char **argv)
 			if(now_s() - last >= 1.0)
 			{
 				long f = atomic_load(&st.frames);
-				fprintf(stderr, "t=%4.1fs fps=%ld total=%ld lost=%ld MB=%.1f rtt=%.1fms\n", t, f - last_frames, f,
-					atomic_load(&st.lost), atomic_load(&st.bytes) / 1e6, session.rtt_us / 1000.0);
+				fprintf(stderr, "t=%4.1fs fps=%ld total=%ld lost=%ld MB=%.1f rtt=%.1fms audio=%ld gaps>30ms=%ld >60ms=%ld max=%.0fms\n", t, f - last_frames, f,
+					atomic_load(&st.lost), atomic_load(&st.bytes) / 1e6, session.rtt_us / 1000.0,
+					atomic_load(&st.audio_frames), atomic_load(&st.audio_gaps_over_30ms), atomic_load(&st.audio_gaps_over_60ms),
+					atomic_load(&st.audio_max_gap_us) / 1000.0);
+				atomic_store(&st.audio_max_gap_us, 0);
 				last_frames = f;
 				last = now_s();
 			}
@@ -632,6 +676,13 @@ static int cmd_stream(int argc, char **argv)
 		}
 	}
 
+	if(connected && rest_after)
+	{
+		// put the console into rest mode; the ctrl thread sends it, so give it a moment
+		ChiakiErrorCode bed = chiaki_session_goto_bed(&session);
+		fprintf(stderr, "** rest mode requested: %s\n", chiaki_error_string(bed));
+		usleep(800000);
+	}
 	chiaki_session_stop(&session);
 	chiaki_session_join(&session);
 	chiaki_session_fini(&session);

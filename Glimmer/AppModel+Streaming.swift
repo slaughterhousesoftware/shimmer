@@ -163,6 +163,17 @@ extension AppModel {
         hostLiveStatus = nil
 
         var cfg = nativeStreamConfig(for: host)
+        if host.isPlayStation {
+            // The console sends a fixed preset (1080p/720p at 60/30, SDR); size
+            // the window, pacer, receipt and stats for that, not for the
+            // Sunshine settings.
+            let ps = playStationStreamOptions()
+            cfg.width = Int(ps.width)
+            cfg.height = Int(ps.height)
+            cfg.fps = ps.fps
+            cfg.hdr = false
+            cfg.bitrateKbps = ps.bitrateKbps ?? (ps.resolution == .p1080 ? 15_000 : 10_000)
+        }
         cfg.windowTitle = Self.streamWindowTitle(hostName: host.displayName, appName: app.name)
         // One line naming how the stream will be shown and what was asked for,
         // so a "why is it 1080p in a window" report answers itself from the log.

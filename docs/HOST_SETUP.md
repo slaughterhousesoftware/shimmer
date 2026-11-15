@@ -54,3 +54,18 @@ the streaming resolution.
 Whatever Glimmer requests must exist on the host. Glimmer accepts any
 `640-7680 × 480-4320 @ 30-240`, so if you stream an unusual mode, add it to the
 VDD config (Windows) or the display server's mode list (Linux) first.
+
+## PlayStation 5
+
+A PS5 needs no extra software, only these settings on the console:
+
+1. **Settings › System › Remote Play › Enable Remote Play** on.
+2. **Settings › System › Power Saving › Features Available in Rest Mode**:
+   turn on **Stay Connected to the Internet** and **Enable Turning On PS5 from
+   Network**, so Shimmer can see the console in rest mode and wake it.
+
+Then select the PS5 under Nearby in Shimmer's Servers tab and follow the
+pairing pane: a one-time PlayStation Network sign-in, then the code from
+**Settings › System › Remote Play › Pair Device**. The console streams 1080p or
+720p at up to 60 fps (Shimmer picks from your Stream settings) and must be on
+the Mac's network or reachable through a Tailscale subnet route.

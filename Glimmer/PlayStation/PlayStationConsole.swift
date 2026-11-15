@@ -48,14 +48,34 @@ final class PlayStationStore {
     static let shared = PlayStationStore()
 
     private(set) var consoles: [PlayStationConsole] = []
+    /// The PSN account new registrations are made for (account.json).
+    private(set) var account: PlayStationAccount.Identity?
     private let url: URL
+    private let accountURL: URL
 
     init(directory: URL? = nil) {
         let base = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Shimmer", isDirectory: true)
             .appendingPathComponent("PlayStation", isDirectory: true)
         url = base.appendingPathComponent("consoles.json")
+        accountURL = base.appendingPathComponent("account.json")
         load()
+        if let data = try? Data(contentsOf: accountURL) {
+            account = try? Self.decoder.decode(PlayStationAccount.Identity.self, from: data)
+        }
+        // A registration made elsewhere (ps5ctl, another Mac) still names its account.
+        if account == nil, let id = consoles.compactMap(\.accountID).first {
+            account = PlayStationAccount.Identity(accountID: id, onlineID: nil)
+        }
+    }
+
+    func setAccount(_ identity: PlayStationAccount.Identity) {
+        account = identity
+        write(try? Self.encoder.encode(identity), to: accountURL)
+    }
+
+    func isRegistered(hostID discoveryHostID: String) -> Bool {
+        consoles.contains { $0.id == discoveryHostID.lowercased() }
     }
 
     func console(hostID: String) -> PlayStationConsole? {
@@ -98,15 +118,19 @@ final class PlayStationStore {
     }
 
     private func save() {
+        write(try? Self.encoder.encode(consoles), to: url)
+    }
+
+    private func write(_ data: Data?, to file: URL) {
+        guard let data else { return }
         do {
             try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700])
-            let data = try Self.encoder.encode(consoles)
-            try data.write(to: url, options: [.atomic])
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            try data.write(to: file, options: [.atomic])
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         } catch {
-            Diag.error("Could not save PlayStation consoles: \(error.localizedDescription)", "PlayStation")
+            Diag.error("Could not save \(file.lastPathComponent): \(error.localizedDescription)", "PlayStation")
         }
     }
 

@@ -8,6 +8,8 @@ struct PCPairingTarget: Identifiable, Equatable {
     let name: String
     let address: String
     var startImmediately = false
+    /// A PS5 to register (PlayStationPairingPane), not a Sunshine PC.
+    var isPlayStation = false
 }
 
 /// Owns one attempt. A cancelled or replaced attempt cannot select a saved

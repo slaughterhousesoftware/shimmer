@@ -41,6 +41,75 @@ enum PlayStationDiscovery {
         }
     }
 
+    /// A PS5 that answered a LAN scan.
+    struct Found: Identifiable, Hashable, Sendable {
+        /// Discovery host-id: the console's MAC, uppercase hex.
+        var id: String
+        var name: String
+        var address: String
+        var ready: Bool
+    }
+
+    private final class ScanReply: @unchecked Sendable {
+        let lock = NSLock()
+        var found: [String: Found] = [:]
+    }
+
+    /// Broadcast a search on the LAN and collect every PS5 that answers.
+    static func scan(timeout: TimeInterval = 1.5) async -> [Found] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(returning: scanBlocking(timeout: timeout))
+            }
+        }
+    }
+
+    private static func scanBlocking(timeout: TimeInterval) -> [Found] {
+        let discovery = UnsafeMutablePointer<ChiakiDiscovery>.allocate(capacity: 1)
+        let thread = UnsafeMutablePointer<ChiakiDiscoveryThread>.allocate(capacity: 1)
+        defer {
+            discovery.deallocate()
+            thread.deallocate()
+        }
+        guard chiaki_discovery_init(discovery, log, sa_family_t(AF_INET)) == CHIAKI_ERR_SUCCESS else { return [] }
+        defer { chiaki_discovery_fini(discovery) }
+        let reply = ScanReply()
+        let ref = Unmanaged.passRetained(reply)
+        defer { ref.release() }
+        guard chiaki_discovery_thread_start(thread, discovery, { host, user in
+            guard let host, let user else { return }
+            let h = host.pointee
+            guard let type = h.host_type.map({ String(cString: $0) }), type == "PS5",
+                  let id = h.host_id.map({ String(cString: $0) }),
+                  let address = h.host_addr.map({ String(cString: $0) }) else { return }
+            let reply = Unmanaged<ScanReply>.fromOpaque(user).takeUnretainedValue()
+            let found = Found(id: id, name: h.host_name.map { String(cString: $0) } ?? "PS5",
+                              address: address, ready: h.state == CHIAKI_DISCOVERY_HOST_STATE_READY)
+            reply.lock.withLock { reply.found[id] = found }
+        }, ref.toOpaque()) == CHIAKI_ERR_SUCCESS else { return [] }
+        defer { chiaki_discovery_thread_stop(thread) }
+
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(UInt16(CHIAKI_DISCOVERY_PORT_PS5).bigEndian)
+        addr.sin_addr.s_addr = INADDR_BROADCAST
+        let version = strdup(CHIAKI_DISCOVERY_PROTOCOL_VERSION_PS5)
+        defer { free(version) }
+        var packet = ChiakiDiscoveryPacket()
+        packet.cmd = CHIAKI_DISCOVERY_CMD_SRCH
+        packet.protocol_version = version
+        for _ in 0..<2 {
+            _ = withUnsafeMutablePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    chiaki_discovery_send(discovery, &packet, $0, MemoryLayout<sockaddr_in>.size)
+                }
+            }
+            Thread.sleep(forTimeInterval: timeout / 2)
+        }
+        return reply.lock.withLock { Array(reply.found.values) }.sorted { $0.name < $1.name }
+    }
+
     /// Poll until the console reports "ready" or `timeout` passes.
     static func waitUntilReady(address: String, timeout: TimeInterval) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)

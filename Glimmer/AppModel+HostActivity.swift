@@ -89,6 +89,10 @@ extension AppModel {
     func recordStreamActivity(for hostID: String, endedAt date: Date = .now,
                               defaults: UserDefaults = .standard) {
         guard activeStreamHostID == hostID, activeStreamHasVideo else { return }
+        if let console = hosts.first(where: { $0.id == hostID && $0.isPlayStation })
+            .flatMap(playStationConsole(for:)) {
+            PlayStationStore.shared.markStreamed(id: console.id)
+        }
         defaults.set(date, forKey: Self.lastStreamedKey(for: hostID))
         defaults.set(date, forKey: "glimmer.lastConnected.\(hostID)")
         if let index = hosts.firstIndex(where: { $0.id == hostID }) {

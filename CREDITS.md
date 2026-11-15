@@ -22,6 +22,21 @@ under the **GNU General Public License v3** (see [LICENSE](LICENSE)), the same
 license as the originals. The GPLv3 notice on the ported files is accurate and
 intentional.
 
+**PS5 Remote Play uses [chiaki-ng](https://github.com/streetpea/chiaki-ng)**
+(the next generation of [Chiaki](https://git.sr.ht/~thestr4ng3r/chiaki) by
+Florian Märkl and contributors), included as the `third_party/chiaki-ng`
+submodule. Shimmer builds its libchiaki (`scripts/build-libchiaki.sh`) and links
+it statically; the PSN hole-punching it leaves out is replaced by
+`Glimmer/PlayStation/chiaki_holepunch_stub.c`, a pattern taken from
+[chiaki-ios](https://github.com/inficity/chiaki-ios). libchiaki is licensed
+under the **GNU Affero General Public License v3 with an OpenSSL exception**
+(LicenseRef-AGPL-3.0-only-OpenSSL); its own bundled nanopb (zlib), Jerasure and
+GF-Complete (BSD-3-Clause) keep their licenses. GPLv3 and AGPLv3 section 13
+permit combining the two; the AGPL's terms, including its network-use clause,
+apply to the libchiaki part. The Remote Play protocol is Sony's; Shimmer is not
+affiliated with or endorsed by Sony Interactive Entertainment. PlayStation, PS5
+and DualSense are trademarks of Sony Interactive Entertainment.
+
 The Steam logo bundled as `Assets.xcassets/SteamGlyph` is a trademark of
 **Valve Corporation**. shimmer is not affiliated with or endorsed by Valve; the
 mark is used only to label the Steam entry a host publishes, the way every

@@ -4,13 +4,14 @@
 
 <h1 align="center">Shimmer</h1>
 <p align="center">Your PC's games, in a corner of your Mac.</p>
-<p align="center">Native macOS · Swift · Sunshine / Moonlight · GPLv3 licensed</p>
+<p align="center">Native macOS · Swift · Sunshine / Moonlight · PS5 Remote Play · GPLv3 licensed</p>
 
 Shimmer streams games from a PC running
 [Sunshine](https://github.com/LizardByte/Sunshine) to your Mac, and can pop the
 stream out into macOS **Picture in Picture**. The game floats over your other
 apps while your controller keeps playing, with no significant frame drops
-through Stage Manager, Mission Control or a locked screen.
+through Stage Manager, Mission Control or a locked screen. It can also stream a
+PlayStation 5 the same way, using PS5 Remote Play.
 
 ### Picture in Picture
 
@@ -18,6 +19,18 @@ Press ⌃⌥P during a stream and the game moves into the system Picture in Pict
 window, over other apps, Spaces and full-screen windows. It can also pop out on
 its own when you switch apps. The controller keeps driving the game, and the
 mouse over the PiP window moves the PC's pointer.
+
+### PlayStation 5
+
+A PS5 on your network shows up in Servers under Nearby. Select it, sign in to
+PlayStation Network once, and enter the code from the PS5's Settings › System ›
+Remote Play › Pair Device. After that the PS5 is listed like a PC: Stream wakes
+it from rest mode, and the stream gets the same window, Picture in Picture,
+audio and controller support, including the DualSense touchpad and gyro.
+
+The PS5 sends 1080p or 720p at up to 60 fps. It takes controller input only,
+and Shimmer connects to it directly, so it has to be on the same network or
+reachable through a Tailscale subnet route.
 
 ### One window
 
@@ -49,10 +62,12 @@ Picture are in its menu.
 - PC discovery, PIN pairing, and import of moonlight-qt pairings.
 - A second address per PC, such as a Tailscale address, used when the home
   address isn't reachable.
+- PS5 Remote Play: registration, wake from rest mode, and 1080p60 HEVC streams.
 - `shimmerctl`, a command-line tool a coding agent can use to check and fix the
   app. See the [CLI guide](docs/CLI.md).
 
-**A PC running Sunshine is required.** See [host setup](docs/HOST_SETUP.md).
+**A PC running Sunshine, or a PS5 with Remote Play enabled, is required.** See
+[host setup](docs/HOST_SETUP.md).
 
 On macOS 27.2, the menu bar icon's menu doesn't open while another app is in
 full screen.
@@ -81,6 +96,9 @@ Shimmer is a fork of [glimmer](https://github.com/Se7enbrc/glimmer) by
 ported from later releases. The whole pipeline is Swift in one process: network,
 VideoToolbox decode, display, audio and input. Picture in Picture uses the same
 display layer the stream already draws into, so there is no second decoder.
+PS5 streams use [chiaki-ng](https://github.com/streetpea/chiaki-ng)'s libchiaki
+for the Remote Play protocol and feed the same decoder, window and controller
+code.
 
 glimmer has moved on since and has features Shimmer doesn't, such as iOS apps
 and its own Mini Player. See [architecture](docs/ARCHITECTURE.md),
@@ -88,11 +106,14 @@ and its own Mini Player. See [architecture](docs/ARCHITECTURE.md),
 
 Shimmer is a [Slaughterhouse Software](https://github.com/slaughterhousesoftware)
 project, built by Kevin Patel with Claude and Codex. It is independent of
-LizardByte, Moonlight and Valve.
+LizardByte, Moonlight, Valve and Sony.
 
 ### License
 
 glimmer is Copyright © 2026 ugfugl.io. Shimmer's additions are Copyright © 2026
 Kevin Patel. Shimmer is licensed under the
 [GNU General Public License, version 3](LICENSE). The streaming protocol code is
-ported from Moonlight, also GPLv3. See [CREDITS.md](CREDITS.md).
+ported from Moonlight, also GPLv3. PS5 Remote Play links chiaki-ng's libchiaki
+(`third_party/chiaki-ng`), which is AGPL-3.0 with an OpenSSL exception; GPLv3
+and AGPLv3 section 13 allow the combination, and the AGPL's terms apply to that
+part. See [CREDITS.md](CREDITS.md).

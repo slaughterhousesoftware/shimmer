@@ -16,6 +16,7 @@ struct ComputersTab: View {
 
     @Binding var pairingTarget: PCPairingTarget?
     @State private var discovered: [HostDiscovery.Discovered] = []
+    @State private var nearbyPlayStations: [PlayStationDiscovery.Found] = []
     @State private var showManualAddress = false
     @State private var pendingManualAddress: String?
     @State private var setupAddress = ""
@@ -74,6 +75,11 @@ struct ComputersTab: View {
         NearbyPCList.available(discovered, saved: model.hosts)
     }
 
+    /// PS5s answering discovery on this network that aren't registered yet.
+    private var unregisteredPlayStations: [PlayStationDiscovery.Found] {
+        nearbyPlayStations.filter { !PlayStationStore.shared.isRegistered(hostID: $0.id) }
+    }
+
     private var apps: [LibraryApp] {
         guard let host = model.selectedHost else { return [] }
         return host.apps.filter { !$0.hidden }
@@ -95,6 +101,15 @@ struct ComputersTab: View {
                     Divider()
                     detail.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+            }
+        }
+        .task(id: model.isStreaming) {
+            // PS5s don't announce over Bonjour; scan with PlayStation discovery
+            // every few seconds while the Servers tab is open (not mid-stream).
+            guard !model.isStreaming else { return }
+            while !Task.isCancelled {
+                nearbyPlayStations = await PlayStationDiscovery.scan()
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
             }
         }
         .task(id: model.pairingInFlight) {
@@ -192,8 +207,8 @@ struct ComputersTab: View {
                             .hostContextMenu(host)
                         }
                     }
-                    if !nearby.isEmpty {
-                        sidebarHeading("Nearby PCs")
+                    if !nearby.isEmpty || !unregisteredPlayStations.isEmpty {
+                        sidebarHeading(unregisteredPlayStations.isEmpty ? "Nearby PCs" : "Nearby")
                             .padding(.top, model.hosts.isEmpty ? 0 : 10)
                         ForEach(nearby) { pc in
                             Button {
@@ -206,6 +221,19 @@ struct ComputersTab: View {
                             .disabled(model.pairingInFlight)
                             .help("Pair with \(pc.displayName) to add this PC")
                             .accessibilityLabel("\(pc.displayName), nearby PC, not added, \(pc.host)")
+                        }
+                        ForEach(unregisteredPlayStations) { ps in
+                            Button {
+                                latencyTest.reset()
+                                pairingTarget = PCPairingTarget(name: ps.name, address: ps.address,
+                                                                isPlayStation: true)
+                            } label: {
+                                NearbyPlayStationRow(console: ps, selected: pairingTarget?.address == ps.address)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(model.pairingInFlight)
+                            .help("Register \(ps.name) to stream it")
+                            .accessibilityLabel("\(ps.name), nearby PlayStation 5, not added, \(ps.address)")
                         }
                     }
                 }
@@ -248,7 +276,15 @@ struct ComputersTab: View {
                     pairingTarget = nil
                     model.selectHost(host)
                 } else {
-                    pairingTarget = PCPairingTarget(name: "Add PC", address: address, startImmediately: true)
+                    // A PS5 answers PlayStation discovery; anything else pairs as a PC.
+                    Task {
+                        if let ps5 = await PlayStationDiscovery.probe(address: address) {
+                            pairingTarget = PCPairingTarget(name: ps5.hostName ?? "PS5", address: address,
+                                                            isPlayStation: true)
+                        } else {
+                            pairingTarget = PCPairingTarget(name: "Add PC", address: address, startImmediately: true)
+                        }
+                    }
                 }
             }
         }
@@ -266,7 +302,15 @@ struct ComputersTab: View {
 
     @ViewBuilder
     private var detail: some View {
-        if let target = pairingTarget {
+        if let target = pairingTarget, target.isPlayStation {
+            PlayStationPairingPane(target: target) { id in
+                if let host = model.hosts.first(where: { $0.id == id }) {
+                    model.selectHost(host)
+                    pairingTarget = nil
+                }
+            }
+            .id(target.id)
+        } else if let target = pairingTarget {
             PCPairingPane(target: target, failed: model.hosts.isEmpty ? { address, message in
                 guard pairingTarget?.id == target.id else { return }
                 setupAddress = address
@@ -839,6 +883,30 @@ struct NearbyPCList {
             return "v6:" + ip.rawValue.base64EncodedString() + zone
         }
         return value.hasSuffix(".") ? String(value.dropLast()) : value
+    }
+}
+
+private struct NearbyPlayStationRow: View {
+    let console: PlayStationDiscovery.Found
+    let selected: Bool
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "playstation.logo")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .frame(width: SettingsMetrics.sidebarIconSize, height: SettingsMetrics.sidebarIconSize)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(console.name).font(.system(size: 13)).lineLimit(1)
+                Text(console.address).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .frame(minHeight: SettingsMetrics.sidebarRowHeight)
+        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.primary.opacity(0.13) : .clear))
+        .contentShape(Rectangle())
     }
 }
 

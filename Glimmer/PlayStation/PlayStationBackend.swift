@@ -68,9 +68,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private var quitMessage: String?
     private let connectSignal = DispatchSemaphore(value: 0)
 
-    // Controller state (one pad: Remote Play takes one controller).
-    private var pad = ChiakiControllerState()
-    private var touchIDs: [UInt32: Int8] = [:]
+    // Controller state per GameStream controller number. Remote Play takes one
+    // controller, so every connected pad is merged into it (buttons OR'd,
+    // sticks by largest deflection, motion from the first pad that has any).
+    private var pads: [UInt8: ChiakiControllerState] = [:]
+    private var touchIDs: [UInt8: [UInt32: Int8]] = [:]
+    private var loggedInputFrom: Set<String> = []
 
     // Video bookkeeping (libchiaki's video thread only).
     private var frameNumber: Int32 = 0
@@ -79,8 +82,15 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// VPS/SPS/PPS alone at session start and on a resolution change); they
     /// ride in front of the next frame.
     private var pendingParameterSets: [UInt8] = []
-    /// Arrival time of the previous audio frame (libchiaki's audio thread only).
+    /// Arrival time of the previous audio frame (libchiaki's thread only).
     private var lastAudioArrivalNanos: UInt64 = 0
+
+    /// libchiaki hands audio and video over on ONE receive thread. Decoding
+    /// inline would hold audio behind every slow video submit (measured: audio
+    /// under-runs clustered on PiP enter/return), so each medium gets its own
+    /// serial queue, as the Sunshine engine has its own receive threads.
+    private let videoQueue = DispatchQueue(label: "Shimmer.PlayStation.video", qos: .userInteractive)
+    private let audioQueue = DispatchQueue(label: "Shimmer.PlayStation.audio", qos: .userInteractive)
 
     init(console: PlayStationConsole, options: PlayStationStreamOptions) {
         self.console = console
@@ -88,7 +98,6 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         chiakiLog.initialize(to: ChiakiLog())
         chiaki_log_init(chiakiLog, UInt32(CHIAKI_LOG_ERROR.rawValue | CHIAKI_LOG_WARNING.rawValue | CHIAKI_LOG_INFO.rawValue),
                         { level, msg, _ in PlayStationBackend.forwardLog(level: level, msg: msg) }, nil)
-        chiaki_controller_state_set_idle(&pad)
         Self.libInitOnce
     }
 
@@ -249,6 +258,9 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             session.deinitialize(count: 1)
             session.deallocate()
         }
+        // Let queued frames finish before the sinks are torn down.
+        videoQueue.sync {}
+        audioQueue.sync {}
         ControllerHaptics.shared.stopAll(reason: "stream teardown")
         ControllerMotion.shared.stopAll(reason: "stream teardown")
         video?.stop()
@@ -332,8 +344,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     }
 
     /// One complete Annex-B access unit from libchiaki (already FEC-recovered and
-    /// reordered). Returns false when the decoder needs an IDR, which tells
-    /// libchiaki not to treat this frame as a good reference.
+    /// reordered). Decoding happens on `videoQueue`; a decoder that needs an IDR
+    /// asks for one from there.
     private func handleVideo(_ frame: UnsafeBufferPointer<UInt8>, framesLost: Int32) -> Bool {
         guard let sink = lock.withLock({ videoSink }) else { return false }
         let hevc = options.codec != .h264
@@ -369,10 +381,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             loggedFirstFrame = true
             Diag.notice("PS5: first video frame (\(data.count) bytes, \(isIDR ? "IDR" : "P"))", Self.logCategory)
         }
-        let result = sink.submitDecodeUnit(unit)
-        if result == StreamProtocol.DR_NEED_IDR {
-            requestIdrFrame()
-            return false
+        videoQueue.async { [weak self] in
+            if sink.submitDecodeUnit(unit) == StreamProtocol.DR_NEED_IDR {
+                self?.requestIdrFrame()
+            }
         }
         return true
     }
@@ -397,15 +409,18 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // silent). Report arrival gaps the way RtpAudioReceiver does, so the
         // decoder reads a gap as dead air, not as a network under-run.
         let now = DispatchTime.now().uptimeNanoseconds
-        if lastAudioArrivalNanos != 0 {
-            let gap = now &- lastAudioArrivalNanos
-            if gap >= RtpAudioReceiver.flowResumeGapNanos {
-                sink.notePacketFlowResumed(afterGapMs: Double(gap) / 1_000_000)
-            }
-            sink.noteArrivalGap(nanos: gap)
-        }
+        let gap: UInt64? = lastAudioArrivalNanos == 0 ? nil : now &- lastAudioArrivalNanos
         lastAudioArrivalNanos = now
-        sink.decodeAndPlay(opus)
+        let packet = Data(opus)
+        audioQueue.async {
+            if let gap {
+                if gap >= RtpAudioReceiver.flowResumeGapNanos {
+                    sink.notePacketFlowResumed(afterGapMs: Double(gap) / 1_000_000)
+                }
+                sink.noteArrivalGap(nanos: gap)
+            }
+            packet.withUnsafeBytes { sink.decodeAndPlay($0) }
+        }
     }
 
     /// Parameter sets (VPS/SPS/PPS) as their own buffers, start codes kept, the
@@ -457,12 +472,36 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     // MARK: Input uplink
 
+    private static var idlePad: ChiakiControllerState {
+        var state = ChiakiControllerState()
+        chiaki_controller_state_set_idle(&state)
+        return state
+    }
+
+    /// Mutate one pad's state under the lock (log its first input of each kind).
+    private func updatePad(_ num: UInt8, kind: String, _ body: (inout ChiakiControllerState) -> Void) {
+        lock.withLock {
+            var state = pads[num] ?? Self.idlePad
+            body(&state)
+            pads[num] = state
+            if loggedInputFrom.insert("\(kind)#\(num)").inserted {
+                Diag.notice("PS5: first \(kind) input from controller \(num)", Self.logCategory)
+            }
+        }
+    }
+
+    /// Merge every pad and send the result.
     private func pushPad() -> Int32 {
         lock.lock()
         defer { lock.unlock() }
         guard connected, let session else { return -2 }
-        var state = pad
-        return chiaki_session_set_controller_state(session, &state) == CHIAKI_ERR_SUCCESS ? 0 : -1
+        var merged = Self.idlePad
+        for num in pads.keys.sorted() {
+            var a = pads[num]!
+            var b = merged
+            chiaki_controller_state_or(&merged, &a, &b)
+        }
+        return chiaki_session_set_controller_state(session, &merged) == CHIAKI_ERR_SUCCESS ? 0 : -1
     }
 
     /// GameStream button flags → DualSense buttons. GameStream's A/B/X/Y are the
@@ -496,7 +535,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     static func flipY(_ v: Int16) -> Int16 { v == Int16.min ? Int16.max : -v }
 
     func sendMultiController(num: Int16, mask: Int16, buttons: Int32, analog: GamepadAnalog) -> Int32 {
-        lock.withLock {
+        updatePad(UInt8(truncatingIfNeeded: num), kind: "button/stick") { pad in
             let analogTriggers = (analog.leftTrigger > 0 ? CHIAKI_CONTROLLER_ANALOG_BUTTON_L2.rawValue : 0)
                 | (analog.rightTrigger > 0 ? CHIAKI_CONTROLLER_ANALOG_BUTTON_R2.rawValue : 0)
             pad.buttons = Self.chiakiButtons(fromGameStream: buttons) | analogTriggers
@@ -517,27 +556,29 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // DualSense touchpad space is 1920 x 1080 (chiaki-ng uses 1919 x 1079).
         let px = UInt16(max(0, min(1919, x * 1919)))
         let py = UInt16(max(0, min(1079, y * 1079)))
-        lock.withLock {
+        updatePad(num, kind: "touch") { pad in
+            var ids = touchIDs[num] ?? [:]
             switch Int32(eventType) {
             case StreamProtocol.LI_TOUCH_EVENT_DOWN:
                 let id = chiaki_controller_state_start_touch(&pad, px, py)
-                if id >= 0 { touchIDs[pointerId] = id }
+                if id >= 0 { ids[pointerId] = id }
             case StreamProtocol.LI_TOUCH_EVENT_MOVE:
-                if let id = touchIDs[pointerId] { chiaki_controller_state_set_touch_pos(&pad, UInt8(id), px, py) }
+                if let id = ids[pointerId] { chiaki_controller_state_set_touch_pos(&pad, UInt8(id), px, py) }
             case StreamProtocol.LI_TOUCH_EVENT_UP, StreamProtocol.LI_TOUCH_EVENT_CANCEL:
-                if let id = touchIDs.removeValue(forKey: pointerId) { chiaki_controller_state_stop_touch(&pad, UInt8(id)) }
+                if let id = ids.removeValue(forKey: pointerId) { chiaki_controller_state_stop_touch(&pad, UInt8(id)) }
             case StreamProtocol.LI_TOUCH_EVENT_CANCEL_ALL:
-                for id in touchIDs.values { chiaki_controller_state_stop_touch(&pad, UInt8(id)) }
-                touchIDs.removeAll()
+                for id in ids.values { chiaki_controller_state_stop_touch(&pad, UInt8(id)) }
+                ids.removeAll()
             default:
                 break
             }
+            touchIDs[num] = ids
         }
         return pushPad()
     }
 
     func sendControllerMotion(num: UInt8, motionType: UInt8, x: Float, y: Float, z: Float) -> Int32 {
-        lock.withLock {
+        updatePad(num, kind: "motion") { pad in
             if Int32(motionType) == StreamProtocol.LI_MOTION_TYPE_GYRO {
                 // deg/s → rad/s
                 let k = Float.pi / 180
