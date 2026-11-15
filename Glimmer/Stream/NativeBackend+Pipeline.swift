@@ -482,6 +482,8 @@ extension NativeConnectionEvents {
     func rumble(controller: UInt16, lowFreq: UInt16, highFreq: UInt16) {
         ControllerHaptics.shared.setRumble(controllerNumber: controller,
                                            lowFreq: lowFreq, highFreq: highFreq)
+        // A trigger write must carry the current rumble or it would stop it.
+        DualSenseHID.shared.setRumbleState(left: UInt8(lowFreq >> 8), right: UInt8(highFreq >> 8))
     }
 
     func rumbleTriggers(controller: UInt16, left: UInt16, right: UInt16) {

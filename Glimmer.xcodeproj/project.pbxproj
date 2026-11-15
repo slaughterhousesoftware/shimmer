@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C7B38447FF55B77D3057A417 /* DualSenseFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25C9B34B062B47C6A38BE6C /* DualSenseFeedbackTests.swift */; };
+		A1161C57B865A160A42693BA /* DualSenseAudioHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84735895916681381B632341 /* DualSenseAudioHaptics.swift */; };
+		3FA260F35FD001EAC1F8B971 /* DualSenseHID+Output.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0510BCD76B0810C57C32E6 /* DualSenseHID+Output.swift */; };
 		C678781937558FEE383D8083 /* AWDLGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4B968254E5CDDB992E359B /* AWDLGuard.swift */; };
 		255438963A823424172308BC /* PlayStationPairingPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11D1D86A663B5C4755D8F18 /* PlayStationPairingPane.swift */; };
 		A5935AEA1FCB35DF38388CEA /* PlayStationRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5D380ED9764266B435A5D5A /* PlayStationRegistration.swift */; };
@@ -351,6 +354,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A25C9B34B062B47C6A38BE6C /* DualSenseFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualSenseFeedbackTests.swift; sourceTree = "<group>"; };
+		84735895916681381B632341 /* DualSenseAudioHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/DualSenseAudioHaptics.swift; sourceTree = "<group>"; };
+		4C0510BCD76B0810C57C32E6 /* DualSenseHID+Output.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/DualSenseHID+Output.swift"; sourceTree = "<group>"; };
 		FE4B968254E5CDDB992E359B /* AWDLGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AWDLGuard.swift; sourceTree = "<group>"; };
 		C11D1D86A663B5C4755D8F18 /* PlayStationPairingPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationPairingPane.swift; sourceTree = "<group>"; };
 		F5D380ED9764266B435A5D5A /* PlayStationRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationRegistration.swift; sourceTree = "<group>"; };
@@ -750,6 +756,8 @@
 		A10000031 /* Glimmer */ = {
 			isa = PBXGroup;
 			children = (
+				84735895916681381B632341 /* DualSenseAudioHaptics.swift */,
+				4C0510BCD76B0810C57C32E6 /* DualSenseHID+Output.swift */,
 				FE4B968254E5CDDB992E359B /* AWDLGuard.swift */,
 				C11D1D86A663B5C4755D8F18 /* PlayStationPairingPane.swift */,
 				F5D380ED9764266B435A5D5A /* PlayStationRegistration.swift */,
@@ -1014,6 +1022,7 @@
 		D2000016 /* GlimmerTests */ = {
 			isa = PBXGroup;
 			children = (
+				A25C9B34B062B47C6A38BE6C /* DualSenseFeedbackTests.swift */,
 				CDF776067011D566A9B013D2 /* PlayStationBackendTests.swift */,
 				D2000020 /* EnetWireTests.swift */,
 				D2000022 /* ReedSolomonTests.swift */,
@@ -1205,6 +1214,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1161C57B865A160A42693BA /* DualSenseAudioHaptics.swift in Sources */,
+				3FA260F35FD001EAC1F8B971 /* DualSenseHID+Output.swift in Sources */,
 				C678781937558FEE383D8083 /* AWDLGuard.swift in Sources */,
 				255438963A823424172308BC /* PlayStationPairingPane.swift in Sources */,
 				A5935AEA1FCB35DF38388CEA /* PlayStationRegistration.swift in Sources */,
@@ -1459,6 +1470,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C7B38447FF55B77D3057A417 /* DualSenseFeedbackTests.swift in Sources */,
 				106BC6DC964BBD0ACFEBC345 /* PlayStationBackendTests.swift in Sources */,
 				D2000021 /* EnetWireTests.swift in Sources */,
 				D2000023 /* ReedSolomonTests.swift in Sources */,

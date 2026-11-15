@@ -74,6 +74,13 @@ struct DualSenseOutputState: Equatable, Sendable {
     /// 11 bytes each: [mode][10 params]. 0x00 mode = trigger off (neutral).
     var leftTrigger: [UInt8] = [UInt8](repeating: 0, count: 11)
     var rightTrigger: [UInt8] = [UInt8](repeating: 0, count: 11)
+    /// The console's haptics/trigger strength (PS5 "Vibration Intensity" and
+    /// "Trigger Effect Intensity"): byte 36 of the effects state, low nibble
+    /// haptics/rumble reduction, high nibble trigger reduction. nil = untouched.
+    var intensity: UInt8?
+    /// True while haptics play through the pad's USB audio device. The report
+    /// must then never set the "rumble instead of haptics" bit.
+    var audioHaptics = false
 }
 
 /// Reference-counted singleton owning one IOHIDManager for the DualSense raw
@@ -84,9 +91,9 @@ struct DualSenseOutputState: Equatable, Sendable {
 final class DualSenseHID: @unchecked Sendable {
     static let shared = DualSenseHID()
 
-    private let log = Logger(subsystem: "io.ugfugl.Glimmer", category: "DualSenseHID")
+    let log = Logger(subsystem: "io.ugfugl.Glimmer", category: "DualSenseHID")
     private let manager: IOHIDManager
-    private let lock = NSLock()
+    let lock = NSLock()
 
     // All mutable state below is guarded by `lock`.
     private var buttonsLocked = DualSenseExtraButtons()
@@ -102,25 +109,28 @@ final class DualSenseHID: @unchecked Sendable {
     // guaranteed to outlive a callback), keyed by the same opaque pointer as
     // `deviceBuffers`. Bluetooth devices need report ID 0x31 + a trailing CRC32;
     // USB uses 0x02 with no CRC, so we cache each device's transport at match.
-    private var writeDevices: [UnsafeMutableRawPointer: (device: IOHIDDevice, bluetooth: Bool)] = [:]
+    var writeDevices: [UnsafeMutableRawPointer: (device: IOHIDDevice, bluetooth: Bool)] = [:]
     /// Merged DualSense OUTPUT state. The 0x02/0x31 report carries lightbar +
     /// rumble + both trigger blocks together (all-or-nothing), so a trigger
     /// write MUST re-send the current lightbar + rumble or it would clobber
     /// them to zero. ControllerHaptics feeds lightbar/rumble here when raw-HID
     /// is live; setAdaptiveTriggers feeds the trigger blocks. Lock-guarded.
-    private var outputState = DualSenseOutputState()
+    var outputState = DualSenseOutputState()
     /// Latch so the "SetReport refused" breadcrumb logs once, not per write
     /// (host re-arms triggers can arrive at frame rate).
     private var loggedWriteFailure = false
     /// Latch for the first successful OUTPUT write (proves the raw-HID write
     /// path reached the device).
     private var loggedWriteSuccess = false
+    /// Re-asserts audio-haptics mode while a PS5 stream plays haptics through
+    /// the pad's USB audio device (see DualSenseHID+Output.swift). writeQueue only.
+    var hapticsKeepAlive: DispatchSourceTimer?
 
     /// Serial queue for the IOKit OUTPUT-report writes. The host feedback
     /// callbacks fire on the enet receive thread; we hop here so a SetReport
     /// (which can block briefly) never stalls the control channel's ACK path,
     /// the same off-thread discipline ControllerHaptics uses for rumble.
-    private let writeQueue = DispatchQueue(label: "io.ugfugl.Glimmer.dualsense-hid-write",
+    let writeQueue = DispatchQueue(label: "io.ugfugl.Glimmer.dualsense-hid-write",
                                            qos: .userInitiated)
 
     /// Called on the main queue whenever the decoded buttons change - lets the
@@ -254,6 +264,7 @@ final class DualSenseHID: @unchecked Sendable {
         // a stream ending mid-effect doesn't strand a stiff trigger on the pad.
         // MUST run BEFORE IOHIDManagerClose - the SetReport needs the manager
         // (and the device's open) still live, and writeDevices still populated.
+        cancelHapticsKeepAlive()
         resetTriggersBeforeClose()
         IOHIDManagerRegisterDeviceMatchingCallback(manager, nil, nil)
         IOHIDManagerRegisterDeviceRemovalCallback(manager, nil, nil)
@@ -352,12 +363,10 @@ final class DualSenseHID: @unchecked Sendable {
 
     // MARK: OUTPUT report (adaptive triggers + lightbar/rumble merge)
     //
-    // The DualSense OUTPUT report (0x02 over USB, 0x31 + CRC over Bluetooth) is
-    // all-or-nothing: rumble, lightbar, and BOTH adaptive-trigger blocks ride
-    // ONE report. So every write re-emits the full merged `outputState`. We own
-    // adaptive triggers exclusively (GameController has no API for them); we
-    // re-emit the host's last lightbar + rumble alongside so a trigger update
-    // doesn't zero them. (Wire facts: SDL SDL_hidapi_ps5.c DS5EffectsState_t,
+    // The DualSense OUTPUT report (0x02 over USB, 0x31 + CRC over Bluetooth)
+    // carries rumble, lightbar and BOTH adaptive-trigger blocks, each gated by
+    // a valid-flag bit. Every write re-emits the merged `outputState` so a
+    // trigger update keeps the host's lightbar and rumble. (Wire facts: SDL SDL_hidapi_ps5.c DS5EffectsState_t,
     // Sunshine adaptive-trigger pass-through, Linux hid-playstation.c CRC seed.)
 
     /// Apply a host SET_ADAPTIVE_TRIGGERS (0x5503) to the open DualSense. Only
@@ -393,7 +402,9 @@ final class DualSenseHID: @unchecked Sendable {
 
     /// Feed the host's latest rumble pair into the merged output state (8-bit,
     /// already down-scaled from the 16-bit wire by the caller). Merge-only, like
-    /// setLightbarState - rumble itself still rides GameController haptics.
+    /// setLightbarState - rumble itself still rides GameController haptics, but
+    /// a trigger write has to carry it: a report without the rumble bits drops
+    /// the pad out of rumble mode and would silence GameController's motors.
     func setRumbleState(left: UInt8, right: UInt8) {
         lock.lock()
         outputState.rumbleLeft = left; outputState.rumbleRight = right
@@ -426,127 +437,29 @@ final class DualSenseHID: @unchecked Sendable {
         return block
     }
 
-    private func scheduleWrite() {
+    func scheduleWrite() {
         writeQueue.async { [weak self] in self?.writeCurrentOutput() }
     }
 
     /// Build the merged OUTPUT report from the current state and write it to
     /// every open device. Runs on `writeQueue`.
-    private func writeCurrentOutput() {
-        lock.lock()
-        let state = outputState
-        let devices = writeDevices
-        lock.unlock()
-        guard !devices.isEmpty else { return }
-        for (_, entry) in devices {
-            writeOutputReport(to: entry.device, bluetooth: entry.bluetooth, state: state)
-        }
-    }
-
-    /// The 47-byte DS5EffectsState payload (the report DATA after any report-ID
-    /// / BT magic byte). Offsets are SDL's DS5EffectsState_t. We set the
-    /// enable/valid flags for rumble + lightbar + the LED effect, and copy both
-    /// trigger blocks unconditionally (the device applies them when present -
-    /// there is no separate trigger valid-flag bit in SDL / mainline Linux).
-    private static func effectsState(_ s: DualSenseOutputState) -> [UInt8] {
-        var d = [UInt8](repeating: 0, count: 47)
-        // valid_flag0: COMPATIBLE_VIBRATION 0x01 | HAPTICS_SELECT 0x02 - enable
-        // the rumble motor bytes. (0,0) here is a harmless "motors off"; the
-        // DualSense's CHHaptics voice-coil path is separate, so we never fight
-        // the live rumble GameController drives.
-        d[0] = 0x01 | 0x02
-        d[2] = s.rumbleRight   // ucRumbleRight (high-freq)
-        d[3] = s.rumbleLeft    // ucRumbleLeft  (low-freq)
-        // valid_flag1: LIGHTBAR_CONTROL_ENABLE 0x04 - ONLY when the host has set
-        // a color this session. Asserting it with the default (0,0,0) would
-        // blank a bar gamecontrollerd/Sunshine already lit before the first
-        // SET_RGB_LED (see DualSenseOutputState.lightSet). Until then we leave
-        // the LED bytes + flag at zero so the bar is left untouched.
-        if s.lightSet {
-            d[1] = 0x04
-            d[44] = s.lightR; d[45] = s.lightG; d[46] = s.lightB
-        }
-        // rgucRightTriggerEffect[11] @10, rgucLeftTriggerEffect[11] @21.
-        for i in 0..<11 { d[10 + i] = s.rightTrigger[i] }
-        for i in 0..<11 { d[21 + i] = s.leftTrigger[i] }
-        return d
-    }
-
-    private func writeOutputReport(to device: IOHIDDevice, bluetooth: Bool,
-                                   state: DualSenseOutputState) {
-        let payload = Self.effectsState(state)
-        let reportID: UInt8
-        var data: [UInt8]
-        if bluetooth {
-            // BT report 0x31: data = [0x02 seq/feature flag][47-byte effects]
-            // [pad to 74][CRC32 LE 4]. The CRC seed is 0xA2 (the BT output report
-            // tag), then the report-ID byte, then the data-up-to-CRC.
-            reportID = 0x31
-            data = [UInt8](repeating: 0, count: 78 - 1) // 77 data bytes (report total 78 incl. ID)
-            data[0] = 0x02
-            for i in 0..<47 { data[1 + i] = payload[i] }
-            let crc = Self.dualSenseBTCrc(reportID: reportID, data: Array(data[0..<(data.count - 4)]))
-            let base = data.count - 4
-            data[base + 0] = UInt8(crc & 0xFF)
-            data[base + 1] = UInt8((crc >> 8) & 0xFF)
-            data[base + 2] = UInt8((crc >> 16) & 0xFF)
-            data[base + 3] = UInt8((crc >> 24) & 0xFF)
-        } else {
-            // USB report 0x02: data = 47-byte effects state (SDL writes 48 incl.
-            // the report ID; the data we hand SetReport is the 47 after it).
-            reportID = 0x02
-            data = payload
-        }
-        let rc = data.withUnsafeBufferPointer { buf -> IOReturn in
-            guard let base = buf.baseAddress else { return kIOReturnBadArgument }
-            return IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, CFIndex(reportID), base, buf.count)
-        }
-        if rc == kIOReturnSuccess {
-            if !loggedWriteWasSuccessful() {
-                log.info("DualSense OUTPUT report write OK over \(bluetooth ? "BT" : "USB", privacy: .public) - adaptive triggers live")
-            }
-        } else if !loggedWriteWasRefused() {
-            // SAFETY no-op: a refused write (e.g. kIOReturnNotPermitted, or an
-            // exclusive grab by gamecontrollerd) degrades to "no adaptive
-            // triggers". Everything else - the read path, buttons, battery - is
-            // unaffected. Logged once so the verdict is in the log.
-            let hex = String(UInt32(bitPattern: rc), radix: 16)
-            log.error("DualSense OUTPUT report write refused rc=0x\(hex, privacy: .public) - adaptive triggers disabled (degraded no-op)")
-        }
+    func writeCurrentOutput() {
+        writeToAll(Self.effectsState)
     }
 
     /// First-success latch (lock-guarded). Returns the PRIOR value so the caller
     /// logs only on the first success.
-    private func loggedWriteWasSuccessful() -> Bool {
+    func loggedWriteWasSuccessful() -> Bool {
         lock.lock(); defer { lock.unlock() }
         let was = loggedWriteSuccess
         loggedWriteSuccess = true
         return was
     }
     /// First-failure latch (lock-guarded), same shape.
-    private func loggedWriteWasRefused() -> Bool {
+    func loggedWriteWasRefused() -> Bool {
         lock.lock(); defer { lock.unlock() }
         let was = loggedWriteFailure
         loggedWriteFailure = true
         return was
-    }
-
-    /// CRC32 over the DualSense Bluetooth OUTPUT report: seed byte 0xA2, then
-    /// the report-ID byte, then the report data up to (not including) the 4 CRC
-    /// bytes. Standard IEEE 802.3 CRC32 (reflected, poly 0xEDB88320), the
-    /// algorithm SDL/Linux use for the BT effects report. Computed on the fly
-    /// (no static table) - this runs at most a few times per second.
-    private static func dualSenseBTCrc(reportID: UInt8, data: [UInt8]) -> UInt32 {
-        var crc: UInt32 = 0xFFFF_FFFF
-        func feed(_ byte: UInt8) {
-            crc ^= UInt32(byte)
-            for _ in 0..<8 {
-                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB8_8320 : (crc >> 1)
-            }
-        }
-        feed(0xA2)          // BT output-report CRC seed tag
-        feed(reportID)      // 0x31
-        for b in data { feed(b) }
-        return crc ^ 0xFFFF_FFFF
     }
 }

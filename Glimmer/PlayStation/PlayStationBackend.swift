@@ -86,6 +86,11 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private var pendingParameterSets: [UInt8] = []
     /// Arrival time of the previous audio frame (libchiaki's thread only).
     private var lastAudioArrivalNanos: UInt64 = 0
+    /// Audio arrival jitter, which sizes the haptics buffer (libchiaki's
+    /// receive thread only).
+    private var audioJitter = ArrivalJitter()
+    private var audioFramesSeen = 0
+    private var lastHapticsTargetMs: Double = 0
 
     /// libchiaki hands audio and video over on ONE receive thread. Decoding
     /// inline would hold audio behind every slow video submit (measured: audio
@@ -95,16 +100,26 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private let audioQueue = DispatchQueue(label: "Shimmer.PlayStation.audio", qos: .userInteractive)
 
     /// DualSense haptics arrive as a 3 kHz stereo PCM stream (10 ms frames).
-    /// They become rumble here, the way chiaki-ng drives non-native pads: each
-    /// 30 ms the mean amplitude of each side sets that side's motor, through
-    /// the same actuator the Sunshine engine's rumble uses (works over USB and
-    /// Bluetooth). Haptics state is touched on libchiaki's audio thread and
-    /// on `hapticsQueue` only.
+    /// With a DualSense on USB they play on its actuators as they are
+    /// (`audioHaptics`). Otherwise they become rumble, the way chiaki-ng drives
+    /// other pads: each 30 ms the mean amplitude of each side sets that side's
+    /// motor. Rumble state is touched on libchiaki's audio thread and on
+    /// `hapticsQueue` only.
     private let hapticsQueue = DispatchQueue(label: "Shimmer.PlayStation.haptics", qos: .userInteractive)
     private var hapticsTimer: DispatchSourceTimer?
     private var hapticsSum: (left: UInt64, right: UInt64, frames: Int) = (0, 0, 0)
     private var hapticsActive = false
     private var loggedHaptics = false
+    /// The USB DualSense haptics player, while one is open (guarded by `lock`).
+    private var audioHaptics: DualSenseAudioHaptics?
+    /// We hold the raw-HID writer open for the session (triggers, light bar).
+    private var retainedHID = false
+    /// The console's intensity settings, as the pad's power-reduction nibbles
+    /// (guarded by `lock`). Off: haptics muted / trigger effects ignored.
+    private var hapticsNibble: UInt8 = 0
+    private var triggerNibble: UInt8 = 0
+    /// Haptics frames played on the actuators / how many carried signal (`lock`).
+    private var hapticsFrames = (total: 0, active: 0)
 
     init(console: PlayStationConsole, options: PlayStationStreamOptions) {
         self.console = console
@@ -229,6 +244,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
         events.stageComplete("PS5 session")
         armControllerFeedback()
+        runDebugKeys()
         events.connectionStarted()
     }
 
@@ -339,6 +355,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             hapticsTimer?.cancel()
             hapticsTimer = nil
         }
+        stopAudioHaptics(reason: "stream ended")
+        if lock.withLock({ () -> Bool in defer { retainedHID = false }; return retainedHID }) {
+            DualSenseHID.shared.release()
+        }
         ControllerHaptics.shared.stopAll(reason: "stream teardown")
         ControllerMotion.shared.stopAll(reason: "stream teardown")
         video?.stop()
@@ -416,6 +436,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             events?.rumble(controller: 0, lowFreq: UInt16(event.rumble.left) * 257,
                            highFreq: UInt16(event.rumble.right) * 257)
         case CHIAKI_EVENT_TRIGGER_EFFECTS:
+            // Trigger effects switched off in the console's settings.
+            guard lock.withLock({ triggerNibble }) != Self.intensityOff & 0xF0 else { break }
             let effect = event.trigger_effects
             let left = withUnsafeBytes(of: effect.left) { Array($0) }
             let right = withUnsafeBytes(of: effect.right) { Array($0) }
@@ -426,9 +448,16 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                                         left: left, right: right)
             Diag.info("PS5: adaptive triggers L=\(effect.type_left) R=\(effect.type_right)", Self.logCategory)
         case CHIAKI_EVENT_LED_COLOR:
-            let events = lock.withLock { self.events }
+            let (events, usbHaptics) = lock.withLock { (self.events, audioHaptics != nil) }
             let led = event.led_state
-            events?.setControllerLED(controller: 0, r: led.0, g: led.1, b: led.2)
+            // GameController's light setter would switch the pad's audio haptics off.
+            if usbHaptics {
+                DualSenseHID.shared.setLightbar(red: led.0, green: led.1, blue: led.2)
+            } else {
+                events?.setControllerLED(controller: 0, r: led.0, g: led.1, b: led.2)
+            }
+        case CHIAKI_EVENT_HAPTIC_INTENSITY, CHIAKI_EVENT_TRIGGER_INTENSITY:
+            applyIntensity(event.intensity, haptics: event.type == CHIAKI_EVENT_HAPTIC_INTENSITY)
         default:
             break
         }
@@ -502,6 +531,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         let now = DispatchTime.now().uptimeNanoseconds
         let gap: UInt64? = lastAudioArrivalNanos == 0 ? nil : now &- lastAudioArrivalNanos
         lastAudioArrivalNanos = now
+        if let gap { tuneHapticsBuffer(gapMs: Double(gap) / 1_000_000) }
         let packet = Data(opus)
         audioQueue.async {
             if let gap {
@@ -552,6 +582,11 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     /// One haptics frame: interleaved Int16 L/R samples. Sum |amplitude| per side.
     private func handleHapticsFrame(_ pcm: UnsafeRawBufferPointer) {
+        if let player = lock.withLock({ audioHaptics }) {
+            player.push(pcm)
+            noteActuatorFrame(pcm, player: player)
+            return
+        }
         let samples = pcm.count / 4
         guard samples > 0 else { return }
         var left: UInt64 = 0, right: UInt64 = 0
@@ -609,6 +644,109 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     }
     static let hapticsFloor: UInt64 = 300
 
+    /// Open the USB DualSense's actuators, or fall back to rumble.
+    private func startAudioHaptics() {
+        let player = DualSenseAudioHaptics.start { [weak self] in
+            self?.stopAudioHaptics(reason: "the DualSense audio device changed", fallBackToRumble: true)
+        }
+        guard let player else {
+            Diag.info("PS5: no USB DualSense audio device - haptics play as rumble", Self.logCategory)
+            hapticsQueue.async { [weak self] in self?.startHapticsTimer() }
+            return
+        }
+        let muted = lock.withLock { () -> Bool in
+            audioHaptics = player
+            return hapticsNibble == Self.intensityOff & 0x0F
+        }
+        if muted { player.setGain(0) }
+        DualSenseHID.shared.setAudioHapticsMode(true)
+        Diag.notice("PS5: haptics play on the DualSense's actuators (\(player.deviceName))", Self.logCategory)
+    }
+
+    private func stopAudioHaptics(reason: String, fallBackToRumble: Bool = false) {
+        guard let player = lock.withLock({ () -> DualSenseAudioHaptics? in
+            defer { audioHaptics = nil }
+            return audioHaptics
+        }) else { return }
+        let stats = player.stats
+        player.stop()
+        DualSenseHID.shared.setAudioHapticsMode(false)
+        let frames = lock.withLock { hapticsFrames }
+        Diag.info("PS5: DualSense haptics stopped (\(reason)); \(frames.active)/\(frames.total) frames with "
+            + "signal in \(stats.runs) runs (\(stats.cut) cut short), buffer \(stats.targetMs) ms", Self.logCategory)
+        if fallBackToRumble, !lock.withLock({ stopped }) {
+            hapticsQueue.async { [weak self] in
+                guard let self, self.hapticsTimer == nil else { return }
+                self.startHapticsTimer()
+            }
+        }
+    }
+
+    /// Every half second of audio, size the haptics buffer from its jitter.
+    private func tuneHapticsBuffer(gapMs: Double) {
+        audioJitter.add(gapMs: gapMs)
+        audioFramesSeen += 1
+        guard audioFramesSeen % 50 == 0, let target = audioJitter.hapticsTargetMs,
+              let player = lock.withLock({ audioHaptics }) else { return }
+        player.setTarget(ms: target)
+        if abs(target - lastHapticsTargetMs) >= 10 {
+            lastHapticsTargetMs = target
+            Diag.info("PS5: haptics buffer \(Int(target)) ms (audio arrival jitter)", Self.logCategory)
+        }
+    }
+
+    /// Breadcrumbs for the actuator path: the first frame with signal, then a
+    /// summary every 30 s of haptics (frames arrive every 10 ms).
+    private func noteActuatorFrame(_ pcm: UnsafeRawBufferPointer, player: DualSenseAudioHaptics) {
+        var peak: Int32 = 0
+        for i in 0..<(pcm.count / 2) { peak = max(peak, abs(Int32(pcm.loadUnaligned(fromByteOffset: i * 2, as: Int16.self)))) }
+        let (total, active) = lock.withLock { () -> (Int, Int) in
+            hapticsFrames.total += 1
+            if peak > 64 { hapticsFrames.active += 1 }
+            return hapticsFrames
+        }
+        if peak > 64, active == 1 {
+            Diag.notice("PS5: first haptics from the console (playing on the actuators)", Self.logCategory)
+        }
+        if total % 3000 == 0 {
+            let stats = player.stats
+            Diag.info("PS5: haptics \(active)/\(total) frames with signal; buffer \(stats.targetMs) ms, "
+                + "\(stats.runs) runs (\(stats.cut) cut short)", Self.logCategory)
+        }
+    }
+
+    /// Off in chiaki's intensity enum; as a nibble pair, 0xF0 | 0x0F.
+    static let intensityOff: UInt8 = 0xFF
+
+    /// The console's Vibration / Trigger Effect Intensity setting.
+    private func applyIntensity(_ intensity: ChiakiDualSenseEffectIntensity, haptics: Bool) {
+        let (hapticsLevel, triggerLevel) = Self.intensityNibbles(intensity)
+        let (h, t, player) = lock.withLock { () -> (UInt8, UInt8, DualSenseAudioHaptics?) in
+            if haptics { hapticsNibble = hapticsLevel } else { triggerNibble = triggerLevel }
+            return (hapticsNibble, triggerNibble, audioHaptics)
+        }
+        if haptics { player?.setGain(intensity == Off ? 0 : 1) }
+        if !haptics, intensity == Off {
+            // Release whatever the triggers hold now.
+            let off = [UInt8](repeating: 0, count: 10)
+            lock.withLock { self.events }?.setAdaptiveTriggers(controller: 0, eventFlags: 0x0C, typeLeft: 0x05,
+                                                               typeRight: 0x05, left: off, right: off)
+        }
+        DualSenseHID.shared.setIntensity(haptics: h, triggers: t)
+        Diag.info("PS5: \(haptics ? "vibration" : "trigger effect") intensity \(intensity.rawValue)", Self.logCategory)
+    }
+
+    /// chiaki-ng's mapping to the pad's power-reduction nibbles:
+    /// (haptics low nibble, triggers high nibble).
+    static func intensityNibbles(_ intensity: ChiakiDualSenseEffectIntensity) -> (UInt8, UInt8) {
+        switch intensity {
+        case Strong: return (0x00, 0x00)
+        case Medium: return (0x02, 0x60)
+        case Weak: return (0x03, 0x90)
+        default: return (0x0F, 0xF0)   // Off
+        }
+    }
+
     // MARK: Controller feedback
 
     /// Same gates NativeBackend arms on connect: haptics actuator live, motion
@@ -617,7 +755,9 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private func armControllerFeedback() {
         ControllerHaptics.shared.streamActivated()
         ControllerMotion.shared.streamActivated(backend: self)
-        hapticsQueue.async { [weak self] in self?.startHapticsTimer() }
+        DualSenseHID.shared.retain()
+        lock.withLock { retainedHID = true }
+        startAudioHaptics()
         let events = lock.withLock { self.events }
         events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_ACCEL), reportRateHz: 100)
         events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_GYRO), reportRateHz: 100)
@@ -793,6 +933,36 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     ]
     static let keyboardKeys: Set<UInt8> = Set(keyButtons.keys).union(
         [VK.w, VK.a, VK.s, VK.d, VK.i, VK.j, VK.k, VK.l, VK.z, VK.c])
+
+    /// Debug: `--debug-ps5-keys=right@3,enter@5,r2@8:2` presses virtual-pad
+    /// buttons (name@seconds-after-connect[:hold seconds]) so a stream can be
+    /// driven with nobody at the Mac. Names: the keyboard map's keys below.
+    private func runDebugKeys() {
+        let prefix = "--debug-ps5-keys="
+        guard let spec = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix(prefix) })?
+            .dropFirst(prefix.count) else { return }
+        let names: [String: UInt8] = [
+            "left": VK.left, "right": VK.right, "up": VK.up, "down": VK.down, "cross": VK.enter,
+            "circle": VK.backspace, "square": VK.f, "triangle": VK.r, "l1": VK.q, "r1": VK.e,
+            "l2": VK.z, "r2": VK.c, "options": VK.o, "ps": VK.h, "touchpad": VK.tab,
+            "lup": VK.w, "ldown": VK.s, "lleft": VK.a, "lright": VK.d,
+        ]
+        for step in spec.split(separator: ",") {
+            let parts = step.split(separator: "@")
+            guard parts.count == 2, let vk = names[String(parts[0])] else { continue }
+            let timing = parts[1].split(separator: ":").compactMap { Double($0) }
+            guard let at = timing.first else { continue }
+            let hold = timing.count > 1 ? timing[1] : 0.12
+            let key = Int16(vk)
+            DispatchQueue.global().asyncAfter(deadline: .now() + at) { [weak self] in
+                _ = self?.sendKeyboard(keyCode: key, action: Int8(StreamProtocol.KEY_ACTION_DOWN), modifiers: 0, flags: 0)
+                DispatchQueue.global().asyncAfter(deadline: .now() + hold) { [weak self] in
+                    _ = self?.sendKeyboard(keyCode: key, action: Int8(StreamProtocol.KEY_ACTION_UP), modifiers: 0, flags: 0)
+                }
+            }
+        }
+        Diag.notice("PS5: debug keys scheduled: \(spec)", Self.logCategory)
+    }
 
     /// Held keys → one pad state. Sticks are full deflection, Y-down (the
     /// console's convention); opposite keys cancel.
