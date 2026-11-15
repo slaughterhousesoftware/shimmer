@@ -146,6 +146,11 @@ extension DualSenseHID {
         scheduleWrite()
     }
 
+    var isRumbling: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return outputState.rumbleLeft != 0 || outputState.rumbleRight != 0
+    }
+
     // MARK: PS5 feedback
 
     /// Haptics are playing on the pad's actuators (PS5 streams). While on,

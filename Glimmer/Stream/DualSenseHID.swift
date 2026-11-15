@@ -389,10 +389,16 @@ final class DualSenseHID: @unchecked Sendable {
         let wantLeft = (eventFlags & 0x08) != 0
         guard wantRight || wantLeft else { return }
         lock.lock()
+        let before = (outputState.leftTrigger, outputState.rightTrigger)
         if wantLeft { outputState.leftTrigger = Self.triggerBlock(mode: typeLeft, params: left) }
         if wantRight { outputState.rightTrigger = Self.triggerBlock(mode: typeRight, params: right) }
+        let changed = before != (outputState.leftTrigger, outputState.rightTrigger)
         lock.unlock()
-        scheduleWrite()
+        // The PS5 repeats the same effect many times a second. Writing it again
+        // restarts the pad's effect (a vibrating trigger stutters) and, over
+        // Bluetooth, takes a link slot from the haptics. The pad holds the
+        // last effect, so only a change goes out.
+        if changed { scheduleWrite() }
     }
 
     /// Feed the host's latest lightbar color into the merged output state

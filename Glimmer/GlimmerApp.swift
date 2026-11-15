@@ -280,6 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMenuBar()
         MainActor.assumeIsolated { AWDLGuard.shared.recoverAtLaunch() }
+        GameModeBoost.shared.recoverAtLaunch()
         guard !launchedAtLogin else { return }
         UpdaterController.shared.updater.checkForUpdatesInBackground()
     }
@@ -287,11 +288,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMenuBar()
         MainActor.assumeIsolated { AWDLGuard.shared.recoverAtLaunch() }
+        GameModeBoost.shared.recoverAtLaunch()
     }
     #endif
 
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { AWDLGuard.shared.appWillTerminate() }
+        GameModeBoost.shared.releaseAllNow()
     }
 
     /// The menu bar item and its dropdown (AppKit - see MenuBarController).

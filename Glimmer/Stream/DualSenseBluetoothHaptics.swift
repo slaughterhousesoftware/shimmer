@@ -32,8 +32,10 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
 
     static let framesPerReport = 64
     static let reportLength = 142
-    /// Frames of audio the pad queues before it plays: 16, the minimum, as P5M uses.
-    static let controllerQueue: UInt8 = 16
+    /// Frames of audio the pad queues before it plays. 48 (16 ms) rides out
+    /// the Bluetooth link's uneven delivery; at 16 (P5M's) the pad ran dry
+    /// between late reports. chiaki-ng's macOS tester found 48 felt like wired.
+    static let controllerQueue: UInt8 = 48
     /// 64 frames at 3 kHz, sent 0.05% slow so the pad's own queue can't creep
     /// up between two crystals (P5M).
     static let period: UInt64 = 21_344_000

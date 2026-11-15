@@ -670,6 +670,9 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             return hapticsNibble == Self.intensityOff & 0x0F
         }
         if muted { player.setGain(0) }
+        // Game Mode halves the Bluetooth controller's polling interval, in any
+        // window mode (GameModeBoost).
+        if player is DualSenseBluetoothHaptics { GameModeBoost.shared.acquire(reason: "PS5 stream") }
         // Over Bluetooth each 0x31 write takes a slot on the link the haptics need.
         DualSenseHID.shared.setAudioHapticsMode(true, keepAliveEvery: player is DualSenseBluetoothHaptics ? 2 : 1)
         Diag.notice("PS5: haptics play on the DualSense's actuators (\(player.deviceName))", Self.logCategory)
@@ -682,6 +685,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }) else { return }
         let stats = player.stats
         player.stop()
+        if player is DualSenseBluetoothHaptics { GameModeBoost.shared.release() }
         DualSenseHID.shared.setAudioHapticsMode(false)
         let frames = lock.withLock { hapticsFrames }
         Diag.info("PS5: DualSense haptics stopped (\(reason)); \(frames.active)/\(frames.total) frames with "
@@ -749,8 +753,17 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// it goes through our own report; GameController's would be undone by the
     /// haptics keepalive within a second.
     private func handleRumble(left: UInt8, right: UInt8) {
-        let (events, usbHaptics) = lock.withLock { (self.events, audioHaptics != nil) }
-        if usbHaptics {
+        let (events, player) = lock.withLock { (self.events, audioHaptics) }
+        if let player {
+            // While the actuators play the console's haptics, its rumble is a
+            // compatibility copy of the same effect. Over Bluetooth a rumble
+            // report costs the haptics a link slot and switches the pad to
+            // rumble emulation, cutting the haptics off; skip it there
+            // (chiaki-ng does the same), and let it through once they go quiet.
+            if player is DualSenseBluetoothHaptics, left != 0 || right != 0, DualSenseHID.shared.hapticsBusy {
+                if DualSenseHID.shared.isRumbling { DualSenseHID.shared.setRumble(left: 0, right: 0) }
+                return
+            }
             DualSenseHID.shared.setRumble(left: left, right: right)
         } else {
             events?.rumble(controller: 0, lowFreq: UInt16(left) * 257, highFreq: UInt16(right) * 257)

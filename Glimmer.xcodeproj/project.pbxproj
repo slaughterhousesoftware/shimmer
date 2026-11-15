@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		5254A6A12DDB56CCE73A2E3D /* DualSenseBluetoothHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6E429195D70138724BDC5E /* DualSenseBluetoothHaptics.swift */; };
+		4498DA722E215754B0CD570A /* GameModeBoost.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF94195794458E8AF3AA0062 /* GameModeBoost.swift */; };
 		C7B38447FF55B77D3057A417 /* DualSenseFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25C9B34B062B47C6A38BE6C /* DualSenseFeedbackTests.swift */; };
 		A1161C57B865A160A42693BA /* DualSenseAudioHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84735895916681381B632341 /* DualSenseAudioHaptics.swift */; };
 		3FA260F35FD001EAC1F8B971 /* DualSenseHID+Output.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0510BCD76B0810C57C32E6 /* DualSenseHID+Output.swift */; };
@@ -356,6 +357,7 @@
 
 /* Begin PBXFileReference section */
 		FF6E429195D70138724BDC5E /* DualSenseBluetoothHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/DualSenseBluetoothHaptics.swift; sourceTree = "<group>"; };
+		CF94195794458E8AF3AA0062 /* GameModeBoost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/GameModeBoost.swift; sourceTree = "<group>"; };
 		A25C9B34B062B47C6A38BE6C /* DualSenseFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualSenseFeedbackTests.swift; sourceTree = "<group>"; };
 		84735895916681381B632341 /* DualSenseAudioHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/DualSenseAudioHaptics.swift; sourceTree = "<group>"; };
 		4C0510BCD76B0810C57C32E6 /* DualSenseHID+Output.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/DualSenseHID+Output.swift"; sourceTree = "<group>"; };
@@ -759,6 +761,7 @@
 			isa = PBXGroup;
 			children = (
 				FF6E429195D70138724BDC5E /* DualSenseBluetoothHaptics.swift */,
+				CF94195794458E8AF3AA0062 /* GameModeBoost.swift */,
 				84735895916681381B632341 /* DualSenseAudioHaptics.swift */,
 				4C0510BCD76B0810C57C32E6 /* DualSenseHID+Output.swift */,
 				FE4B968254E5CDDB992E359B /* AWDLGuard.swift */,
@@ -1218,6 +1221,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5254A6A12DDB56CCE73A2E3D /* DualSenseBluetoothHaptics.swift in Sources */,
+				4498DA722E215754B0CD570A /* GameModeBoost.swift in Sources */,
 				A1161C57B865A160A42693BA /* DualSenseAudioHaptics.swift in Sources */,
 				3FA260F35FD001EAC1F8B971 /* DualSenseHID+Output.swift in Sources */,
 				C678781937558FEE383D8083 /* AWDLGuard.swift in Sources */,

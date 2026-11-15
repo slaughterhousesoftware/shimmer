@@ -200,7 +200,7 @@ struct DualSenseBluetoothHapticsTests {
         let samples = (0..<128).map { Int8(truncatingIfNeeded: $0 - 64) }
         let r = DualSenseBluetoothHaptics.report(samples: samples, sequence: 3, counter: 10)
         #expect(r.count == 142)
-        #expect(Array(r[0...9]) == [0x32, 0x30, 0x91, 4, 0x66, 16, 16, 10, 0xD2, 0x40])
+        #expect(Array(r[0...9]) == [0x32, 0x30, 0x91, 4, 0x66, 48, 48, 10, 0xD2, 0x40])
         #expect(r[10] == UInt8(bitPattern: -64) && r[137] == 63)
         let crc = DualSenseHID.bluetoothCRC(r[0..<138])
         #expect(UInt32(r[138]) | UInt32(r[139]) << 8 | UInt32(r[140]) << 16 | UInt32(r[141]) << 24 == crc)
@@ -225,5 +225,13 @@ struct DualSenseBluetoothHapticsTests {
         b.render(frames: 4) { _, l, _ in out.append(l) }
         // One sample of delay from the interpolator, no filtering.
         #expect(out == [0, 0, 0.25, 0.5])
+    }
+}
+
+struct GameModeBoostTests {
+    @Test func readsGamepolicyctlStatus() {
+        #expect(GameModeBoost.parsePolicy("Game mode is off.\nGame mode enablement policy is currently automatic. The system must meet all specified requirements to enable game mode.") == .automatic)
+        #expect(GameModeBoost.parsePolicy("Game mode is on.\nGame mode enablement policy is currently disabled. Game mode is forced always on.") == .forcedOn)
+        #expect(GameModeBoost.parsePolicy("") == .unknown)
     }
 }
