@@ -18,11 +18,14 @@
 //  (github.com/beecrepaldi-afk/P5M-mac, gui/src/macDualSenseBluetooth.mm):
 //  a blocking IOHIDDeviceSetReport over Bluetooth waits ~16-130 ms for the
 //  pad, so reports go out asynchronously from a dedicated thread with its own
-//  device handle and run loop, at most four in flight; nothing is sent during
-//  silence; when the link falls behind, the oldest haptics give way. The
-//  full-power / haptics-filter settings ride DualSenseHID's 0x31 report.
-//  Measured on Kevin's MacBook (2026-11-15): ~33 reports/s get through, so
-//  dense effects lose up to ~30% of their blocks; short ones fit.
+//  device handle and run loop, few in flight (`maxInFlight`); silence is sent
+//  for a quarter second after an effect, then nothing; when the link falls
+//  behind, the oldest haptics give way. The full-power / haptics-filter
+//  settings ride DualSenseHID's 0x31 report.
+//  Measured on Kevin's MacBook (2026-11-15): ~33 reports/s get through at the
+//  pad's default 15 ms sniff interval; GameModeBoost halves that interval.
+//  PXPlay 3.2 (macOS) does the same job with one report in flight, a 32 ms
+//  queue cap and a 256 ms silence tail; those numbers informed these.
 //
 
 import Foundation
@@ -39,7 +42,19 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
     /// 64 frames at 3 kHz, sent 0.05% slow so the pad's own queue can't creep
     /// up between two crystals (P5M).
     static let period: UInt64 = 21_344_000
-    static let maxInFlight = 4
+    /// Reports on the link at once. Every report queued here is one a trigger
+    /// or light-bar write waits behind, and queued reports only add delay
+    /// once the link is full - so two, not P5M's four. PXPlay (macOS) keeps
+    /// one. Override: `defaults write com.kevinbpatel.shimmer
+    /// DualSenseBTInFlight -int N` (1...4), for measuring.
+    static let maxInFlight: Int = {
+        let n = UserDefaults.standard.integer(forKey: "DualSenseBTInFlight")
+        return (1...4).contains(n) ? n : 2
+    }()
+    /// After the signal stops, keep the pad's queue fed with silence this
+    /// long, so an effect that follows a short gap starts at once instead of
+    /// the pad re-priming its queue (PXPlay: 24 x 10.67 ms).
+    static let silenceTailTicks = 12
 
     /// Report 0x32 for 128 interleaved signed 8-bit samples.
     static func report(samples: [Int8], sequence: UInt8, counter: UInt8) -> [UInt8] {
@@ -61,7 +76,7 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
 
     let deviceName = "DualSense (Bluetooth)"
     private let lock = NSLock()
-    private var buffer = HapticsBuffer(outputRate: HapticsBuffer.sourceRate, extraMs: 60)
+    private var buffer = HapticsBuffer(outputRate: HapticsBuffer.sourceRate, extraMs: 32)
     private var thread: Thread?
     private var running = true            // `lock`
     private let opened = DispatchSemaphore(value: 0)
@@ -192,7 +207,7 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
             DualSenseHID.shared.noteHapticsActivity()
         } else {
             silentTicks += 1
-            if silentTicks > 1 { return }               // one silent report ends a run; then nothing
+            if silentTicks > Self.silenceTailTicks { return }   // after the tail, nothing
         }
         let bytes = Self.report(samples: samples, sequence: sequence, counter: counter)
         sequence = (sequence + 1) & 0x0F
