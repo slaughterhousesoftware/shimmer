@@ -26,7 +26,9 @@ extension DualSenseHID {
     static let flagRightTrigger: UInt8 = 0x04
     static let flagLeftTrigger: UInt8 = 0x08
     /// valid_flag1 bits.
+    static let flagAudioMute: UInt8 = 0x02
     static let flagLightbar: UInt8 = 0x04
+    static let flagHapticsFilter: UInt8 = 0x20
     static let flagIntensity: UInt8 = 0x40
 
     /// The 47-byte effects state (the report data after the report ID / BT
@@ -51,14 +53,30 @@ extension DualSenseHID {
             d[1] |= flagIntensity
             d[36] = intensity
         }
+        // Haptics on the actuators: nothing muted, full motor power (the pad
+        // keeps whatever reduction its last host set - P5M measured 12.5% of
+        // the signal), and the pad's haptics low-pass on, as the console does.
+        if s.audioHaptics {
+            d[1] |= flagAudioMute | flagHapticsFilter | flagIntensity
+            d[9] = 0
+            d[36] = s.intensity ?? 0
+            d[39] = 0x01
+        }
         for i in 0..<11 { d[10 + i] = s.rightTrigger[i] }
         for i in 0..<11 { d[21 + i] = s.leftTrigger[i] }
         return d
     }
 
-    /// A report that changes nothing but leaves rumble emulation, so the pad's
-    /// USB-audio haptics play again after anyone else's write.
-    static let hapticsKeepAliveState = [UInt8](repeating: 0, count: 47)
+    /// The keepalive: the haptics settings (and light bar) again, without
+    /// touching the triggers or asking for rumble, so the pad plays haptics
+    /// again after anyone else's write. Nil while the host rumbles - a report
+    /// without the rumble bits would stop the motors.
+    static func hapticsKeepAliveState(_ s: DualSenseOutputState) -> [UInt8]? {
+        guard s.rumbleLeft == 0, s.rumbleRight == 0 else { return nil }
+        var d = effectsState(s)
+        d[0] = 0
+        return d
+    }
 
     /// The full buffer for IOHIDDeviceSetReport, report ID first.
     /// USB: 0x02 + 47 bytes. Bluetooth: 0x31, a 0x02 tag, the 47 bytes, zero
@@ -130,10 +148,12 @@ extension DualSenseHID {
 
     // MARK: PS5 feedback
 
-    /// Haptics are playing through the pad's USB audio channels (PS5 streams).
-    /// While on, every report leaves rumble emulation off, and a once-a-second
-    /// neutral report undoes any GameController write that switched it on.
-    func setAudioHapticsMode(_ on: Bool) {
+    /// Haptics are playing on the pad's actuators (PS5 streams). While on,
+    /// every report leaves rumble emulation off and asks for full power, and a
+    /// keepalive undoes any GameController write that switched that off. Over
+    /// Bluetooth it waits for a pause in the haptics: each write there costs
+    /// the haptics stream a slot on the link.
+    func setAudioHapticsMode(_ on: Bool, keepAliveEvery seconds: Double = 1) {
         lock.lock()
         outputState.audioHaptics = on
         lock.unlock()
@@ -144,14 +164,25 @@ extension DualSenseHID {
             guard on else { return }
             self.writeCurrentOutput()
             let timer = DispatchSource.makeTimerSource(queue: self.writeQueue)
-            timer.schedule(deadline: .now() + 1, repeating: 1)
-            // Not while the console rumbles: the neutral report would stop the motors.
+            timer.schedule(deadline: .now() + seconds, repeating: seconds)
             timer.setEventHandler { [weak self] in
-                self?.writeToAll { $0.rumbleLeft != 0 || $0.rumbleRight != 0 ? nil : Self.hapticsKeepAliveState }
+                guard let self, !self.hapticsBusy else { return }
+                self.writeToAll(Self.hapticsKeepAliveState)
             }
             timer.resume()
             self.hapticsKeepAlive = timer
         }
+    }
+
+    /// The Bluetooth haptics sender calls this for every report with signal;
+    /// the keepalive stays off the link until 250 ms after the last one.
+    func noteHapticsActivity() {
+        lock.lock(); hapticsActiveAt = DispatchTime.now().uptimeNanoseconds; lock.unlock()
+    }
+
+    var hapticsBusy: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return DispatchTime.now().uptimeNanoseconds &- hapticsActiveAt < 250_000_000
     }
 
     /// Stop the keepalive now (before the manager closes).

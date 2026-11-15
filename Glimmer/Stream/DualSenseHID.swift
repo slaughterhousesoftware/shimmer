@@ -125,6 +125,13 @@ final class DualSenseHID: @unchecked Sendable {
     /// Re-asserts audio-haptics mode while a PS5 stream plays haptics through
     /// the pad's USB audio device (see DualSenseHID+Output.swift). writeQueue only.
     var hapticsKeepAlive: DispatchSourceTimer?
+    /// Last Bluetooth haptics report with signal (uptime ns, `lock`).
+    var hapticsActiveAt: UInt64 = 0
+    /// Write coalescing (`lock`): a write is queued; when the last one was
+    /// requested and when one last finished (uptime ns).
+    var writePending = false
+    var writeRequestedAt: UInt64 = 0
+    var controlWriteDone: UInt64 = 0
 
     /// Serial queue for the IOKit OUTPUT-report writes. The host feedback
     /// callbacks fire on the enet receive thread; we hop here so a SetReport
@@ -449,8 +456,31 @@ final class DualSenseHID: @unchecked Sendable {
         return writeDevices.values.first { $0.bluetooth }?.device
     }
 
+    /// Write the merged state soon. Requests coalesce: a write reads the
+    /// newest state when it runs, so while one is waiting, more requests add
+    /// nothing. That matters over Bluetooth, where a write takes 30 ms or
+    /// more and the console sends trigger changes in bursts - one write per
+    /// change queued them up into a felt delay.
     func scheduleWrite() {
-        writeQueue.async { [weak self] in self?.writeCurrentOutput() }
+        lock.lock()
+        let alreadyPending = writePending
+        writePending = true
+        writeRequestedAt = DispatchTime.now().uptimeNanoseconds
+        lock.unlock()
+        guard !alreadyPending else { return }
+        writeQueue.async { [weak self] in
+            guard let self else { return }
+            self.lock.lock(); self.writePending = false; self.lock.unlock()
+            self.writeCurrentOutput()
+            self.lock.lock(); self.controlWriteDone = DispatchTime.now().uptimeNanoseconds; self.lock.unlock()
+        }
+    }
+
+    /// True from a write request until its report is out: the Bluetooth
+    /// haptics sender holds its next report so the trigger change goes first.
+    var controlWriteWaiting: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return writePending || writeRequestedAt > controlWriteDone
     }
 
     /// Build the merged OUTPUT report from the current state and write it to

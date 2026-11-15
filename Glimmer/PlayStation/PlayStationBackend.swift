@@ -670,7 +670,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             return hapticsNibble == Self.intensityOff & 0x0F
         }
         if muted { player.setGain(0) }
-        DualSenseHID.shared.setAudioHapticsMode(true)
+        // Over Bluetooth each 0x31 write takes a slot on the link the haptics need.
+        DualSenseHID.shared.setAudioHapticsMode(true, keepAliveEvery: player is DualSenseBluetoothHaptics ? 2 : 1)
         Diag.notice("PS5: haptics play on the DualSense's actuators (\(player.deviceName))", Self.logCategory)
     }
 
@@ -684,7 +685,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         DualSenseHID.shared.setAudioHapticsMode(false)
         let frames = lock.withLock { hapticsFrames }
         Diag.info("PS5: DualSense haptics stopped (\(reason)); \(frames.active)/\(frames.total) frames with "
-            + "signal in \(stats.runs) runs (\(stats.cut) cut short), buffer \(stats.targetMs) ms", Self.logCategory)
+            + "signal in \(stats.runs) runs (\(stats.cut) cut short), buffer \(stats.targetMs) ms"
+            + ((player as? DualSenseBluetoothHaptics).map { "; Bluetooth: \($0.linkStats)" } ?? ""), Self.logCategory)
         if fallBackToRumble, !lock.withLock({ stopped }) {
             hapticsQueue.async { [weak self] in
                 guard let self, self.hapticsTimer == nil else { return }
@@ -723,6 +725,23 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             let stats = player.stats
             Diag.info("PS5: haptics \(active)/\(total) frames with signal; buffer \(stats.targetMs) ms, "
                 + "\(stats.runs) runs (\(stats.cut) cut short)", Self.logCategory)
+        }
+    }
+
+    /// Debug: feed `seconds` of a 90 Hz half-scale tone into the haptics path
+    /// in 10 ms frames, the console's shape.
+    private func playDebugHaptics(seconds: Double) {
+        var phase = 0.0
+        for n in 0..<Int(seconds * 100) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(10 * n)) { [weak self] in
+                var frame = [Int16]()
+                for _ in 0..<30 {
+                    let v = Int16(sin(phase) * 16_000)
+                    frame += [v, v]
+                    phase += 2 * .pi * 90 / 3000
+                }
+                frame.withUnsafeBytes { self?.handleHapticsFrame($0) }
+            }
         }
     }
 
@@ -977,6 +996,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             let timing = parts[1].split(separator: ":").compactMap { Double($0) }
             guard let at = timing.first else { continue }
             let hold = timing.count > 1 ? timing[1] : 0.12
+            if parts[0] == "haptics" {         // a 90 Hz tone, as if the console sent it
+                DispatchQueue.global().asyncAfter(deadline: .now() + at) { [weak self] in
+                    self?.playDebugHaptics(seconds: hold)
+                }
+                continue
+            }
             if parts[0] == "rumble" {          // as if the console sent half-strength rumble
                 DispatchQueue.global().asyncAfter(deadline: .now() + at) { [weak self] in
                     self?.handleRumble(left: 128, right: 128)

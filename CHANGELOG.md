@@ -33,8 +33,11 @@ Everything below glimmer 2026.9.0 in this file is upstream glimmer's history.
   touchpad and motion go back to the console. Over USB the haptics play on the
   controller's actuators as the console sends them, through a buffer sized
   from the stream's measured jitter (about 25 ms on a wired Mac). Over
-  Bluetooth they go to the controller in its haptics report (format from
-  SAxense's research); other controllers get them as rumble. The console's vibration and trigger-effect
+  Bluetooth they go in the controller's haptics report (DS5Dongle's layout,
+  after SAxense's research), sent the way P5M for Mac does: asynchronously,
+  a few at a time, with the controller at full motor power. macOS's Bluetooth
+  link carries about 33 reports a second on a MacBook, so dense effects can
+  lose some blocks; short ones come through whole. The console's vibration and trigger-effect
   intensity settings apply.
 
 ### Controllers

@@ -4,21 +4,25 @@
 //  A PS5 game's haptics on a DualSense connected over Bluetooth.
 //
 //  Over Bluetooth the pad has no audio device; it takes haptics in HID output
-//  report 0x32 instead. The format comes from Egor Vorontsov's SAxense
-//  research (https://apps.sdore.me/SAxense, github.com/egormanga/SAxense):
+//  report 0x32. Layout (DS5Dongle's double-block form, after Egor Vorontsov's
+//  SAxense research):
 //
-//    [0]      0x32
-//    [1]      tag (low nibble) / sequence (high nibble), 0
-//    [2...10] packet 0x11 (0x91 = id | "sized"), length 7:
-//             FE 00 00 00 00 FF <counter, +1 per report>
-//    [11..76] packet 0x12 (0x92), length 64: 32 stereo frames of signed
-//             8-bit PCM at 3 kHz, interleaved L/R
-//    [77..137] zero
+//    [0]       0x32
+//    [1]       sequence << 4
+//    [2...7]   packet 0x11, audio control: 0x91 04 66 <queue> <queue> <counter, +2>
+//    [8...9]   packet 0x12, haptics: 0xD2 (sized, two blocks) 0x40
+//    [10..137] 64 stereo frames of signed 8-bit PCM at 3 kHz, interleaved L/R
 //    [138..141] CRC32 (seeded with 0xA2) of bytes 0...137, little-endian
 //
-//  One report every 32 frames (10.67 ms). The console's haptics are already
-//  3 kHz stereo, so they go through the same jitter buffer as the USB path,
-//  without resampling.
+//  One report per 21.33 ms. How it is sent follows P5M for Mac
+//  (github.com/beecrepaldi-afk/P5M-mac, gui/src/macDualSenseBluetooth.mm):
+//  a blocking IOHIDDeviceSetReport over Bluetooth waits ~16-130 ms for the
+//  pad, so reports go out asynchronously from a dedicated thread with its own
+//  device handle and run loop, at most four in flight; nothing is sent during
+//  silence; when the link falls behind, the oldest haptics give way. The
+//  full-power / haptics-filter settings ride DualSenseHID's 0x31 report.
+//  Measured on Kevin's MacBook (2026-11-15): ~33 reports/s get through, so
+//  dense effects lose up to ~30% of their blocks; short ones fit.
 //
 
 import Foundation
@@ -26,16 +30,23 @@ import IOKit.hid
 
 final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendable {
 
-    static let framesPerReport = 32
+    static let framesPerReport = 64
     static let reportLength = 142
+    /// Frames of audio the pad queues before it plays: 16, the minimum, as P5M uses.
+    static let controllerQueue: UInt8 = 16
+    /// 64 frames at 3 kHz, sent 0.05% slow so the pad's own queue can't creep
+    /// up between two crystals (P5M).
+    static let period: UInt64 = 21_344_000
+    static let maxInFlight = 4
 
-    /// Report 0x32 for `samples` (64 interleaved signed 8-bit values).
-    static func report(samples: [Int8], counter: UInt8) -> [UInt8] {
+    /// Report 0x32 for 128 interleaved signed 8-bit samples.
+    static func report(samples: [Int8], sequence: UInt8, counter: UInt8) -> [UInt8] {
         var r = [UInt8](repeating: 0, count: reportLength)
         r[0] = 0x32
-        let header: [UInt8] = [0x91, 7, 0xFE, 0, 0, 0, 0, 0xFF, counter, 0x92, 64]
+        r[1] = (sequence & 0x0F) << 4
+        let header: [UInt8] = [0x91, 4, 0x66, controllerQueue, controllerQueue, counter, 0xD2, 0x40]
         for (i, b) in header.enumerated() { r[2 + i] = b }
-        for i in 0..<min(samples.count, 64) { r[13 + i] = UInt8(bitPattern: samples[i]) }
+        for i in 0..<min(samples.count, 128) { r[10 + i] = UInt8(bitPattern: samples[i]) }
         let crc = DualSenseHID.bluetoothCRC(r[0..<138])
         for i in 0..<4 { r[138 + i] = UInt8((crc >> (8 * UInt32(i))) & 0xFF) }
         return r
@@ -43,56 +54,166 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
 
     /// Float in -1...1 to signed 8-bit.
     static func s8(_ v: Float) -> Int8 {
-        Int8(max(-128, min(127, (v * 128).rounded())))
+        Int8(max(-128, min(127, (v * 127).rounded())))
     }
 
     let deviceName = "DualSense (Bluetooth)"
-    private let device: IOHIDDevice
     private let lock = NSLock()
-    private var buffer = HapticsBuffer(outputRate: HapticsBuffer.sourceRate)
-    private var timer: DispatchSourceTimer?
+    private var buffer = HapticsBuffer(outputRate: HapticsBuffer.sourceRate, extraMs: 60)
+    private var thread: Thread?
+    private var running = true            // `lock`
+    private let opened = DispatchSemaphore(value: 0)
+    private var openedOK = false
+
+    // Sender-thread state (the run loop thread only; callbacks run there too).
+    private var slots: [UnsafeMutablePointer<UInt8>] = []
+    private var busy = [Bool](repeating: false, count: maxInFlight)
+    private var sentAt = [UInt64](repeating: 0, count: maxInFlight)
+    private var writeNanos: UInt64 = 0, writesTimed = 0
+    private var sequence: UInt8 = 0
     private var counter: UInt8 = 0
-    /// Ticks since the buffer last had something to play; reports stop after
-    /// a while of silence and resume with the next effect.
-    private var idleTicks = 0
-    private let queue = DispatchQueue(label: "Shimmer.DualSense.bt-haptics", qos: .userInteractive)
+    private var silentTicks = 0
+    private(set) var sent = 0, skipped = 0, failed = 0, yielded = 0
 
-    private init(device: IOHIDDevice) {
-        self.device = device
-    }
+    private init() {}
 
-    /// Start on the open Bluetooth DualSense, or nil if there isn't one.
+    /// Start on a DualSense connected over Bluetooth, or nil if there isn't one.
     static func start() -> DualSenseBluetoothHaptics? {
-        guard let pad = DualSenseHID.shared.bluetoothPad() else { return nil }
-        let player = DualSenseBluetoothHaptics(device: pad)
-        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: player.queue)
-        let interval = DispatchTimeInterval.nanoseconds(Int(1e9 * Double(framesPerReport) / HapticsBuffer.sourceRate))
-        timer.schedule(deadline: .now(), repeating: interval, leeway: .nanoseconds(0))
-        timer.setEventHandler { [weak player] in player?.tick() }
-        player.timer = timer
-        timer.resume()
+        guard DualSenseHID.shared.bluetoothPad() != nil else { return nil }
+        let player = DualSenseBluetoothHaptics()
+        let thread = Thread { [player] in player.run() }
+        thread.name = "Shimmer.DualSense.bt-haptics"
+        thread.qualityOfService = .userInteractive
+        player.thread = thread
+        thread.start()
+        _ = player.opened.wait(timeout: .now() + 2)
+        guard player.openedOK else {
+            player.stop()
+            return nil
+        }
         return player
     }
 
-    private func tick() {
-        var samples = [Int8](repeating: 0, count: 64)
-        var loud = false
-        lock.lock()
-        buffer.render(frames: Self.framesPerReport) { i, l, r in
-            samples[2 * i] = Self.s8(l)
-            samples[2 * i + 1] = Self.s8(r)
-            if l != 0 || r != 0 { loud = true }
+    private var isRunning: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return running
+    }
+
+    // MARK: Sender thread
+
+    private func run() {
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatchingMultiple(manager, [
+            [kIOHIDVendorIDKey: 0x054C, kIOHIDProductIDKey: 0x0CE6],
+            [kIOHIDVendorIDKey: 0x054C, kIOHIDProductIDKey: 0x0DF2],
+        ] as CFArray)
+        IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        let devices = (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? []
+        guard let device = devices.first(where: {
+            ((IOHIDDeviceGetProperty($0, kIOHIDTransportKey as CFString) as? String) ?? "")
+                .localizedCaseInsensitiveContains("bluetooth")
+        }), IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else {
+            IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+            opened.signal()
+            return
         }
-        idleTicks = loud || buffer.queued > 0 ? 0 : idleTicks + 1
-        let send = idleTicks < 10
-        lock.unlock()
-        guard send else { return }
-        counter &+= 1
-        let bytes = Self.report(samples: samples, counter: counter)
-        _ = bytes.withUnsafeBufferPointer {
-            IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x32, $0.baseAddress!, $0.count)
+        IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        slots = (0..<Self.maxInFlight).map { _ in
+            let p = UnsafeMutablePointer<UInt8>.allocate(capacity: Self.reportLength)
+            p.initialize(repeating: 0, count: Self.reportLength)
+            return p
+        }
+        openedOK = true
+        opened.signal()
+
+        var next = DispatchTime.now().uptimeNanoseconds
+        while isRunning {
+            next += Self.period
+            while true {
+                let now = DispatchTime.now().uptimeNanoseconds
+                guard now < next else { break }
+                // Serves the send callbacks while it waits.
+                CFRunLoopRunInMode(.defaultMode, Double(next - now) / 1e9, true)
+            }
+            let now = DispatchTime.now().uptimeNanoseconds
+            if now > next + 100_000_000 { next = now }   // stalled: don't burst to catch up
+            tick(device)
+        }
+
+        // Let the reports on the link finish before the buffers go.
+        let giveUp = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
+        while busy.contains(true), DispatchTime.now().uptimeNanoseconds < giveUp {
+            CFRunLoopRunInMode(.defaultMode, 0.01, true)
+        }
+        IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        if busy.contains(true) {
+            // A callback may still come: keep its buffers and context alive.
+            _ = Unmanaged.passRetained(self)
+        } else {
+            for p in slots { p.deallocate() }
         }
     }
+
+    private func tick(_ device: IOHIDDevice) {
+        // The link still has four reports on it: leave the haptics queued
+        // (the buffer trims the oldest if this goes on).
+        guard let slot = busy.firstIndex(of: false) else {
+            skipped += 1
+            return
+        }
+        // A trigger / light-bar report is waiting for the link: let it go first
+        // (the haptics stay queued for the next tick).
+        if DualSenseHID.shared.controlWriteWaiting {
+            yielded += 1
+            return
+        }
+        var samples = [Int8](repeating: 0, count: Self.framesPerReport * 2)
+        var signal = false
+        lock.lock()
+        buffer.render(frames: Self.framesPerReport) { i, l, r in
+            let a = Self.s8(l), b = Self.s8(r)
+            samples[2 * i] = a
+            samples[2 * i + 1] = b
+            if a != 0 || b != 0 { signal = true }
+        }
+        lock.unlock()
+        if signal {
+            silentTicks = 0
+            DualSenseHID.shared.noteHapticsActivity()
+        } else {
+            silentTicks += 1
+            if silentTicks > 1 { return }               // one silent report ends a run; then nothing
+        }
+        let bytes = Self.report(samples: samples, sequence: sequence, counter: counter)
+        sequence = (sequence + 1) & 0x0F
+        counter &+= 2
+        slots[slot].update(from: bytes, count: bytes.count)
+        busy[slot] = true
+        sentAt[slot] = DispatchTime.now().uptimeNanoseconds
+        let rc = IOHIDDeviceSetReportWithCallback(device, kIOHIDReportTypeOutput, 0x32, slots[slot], bytes.count, 1.0,
+                                                  Self.sentCallback, Unmanaged.passUnretained(self).toOpaque())
+        if rc != kIOReturnSuccess {
+            busy[slot] = false
+            failed += 1
+        } else {
+            sent += 1
+        }
+    }
+
+    private static let sentCallback: IOHIDReportCallback = { context, result, _, _, _, report, _ in
+        guard let context else { return }
+        let me = Unmanaged<DualSenseBluetoothHaptics>.fromOpaque(context).takeUnretainedValue()
+        if let i = me.slots.firstIndex(where: { $0 == report }) {
+            me.busy[i] = false
+            me.writeNanos &+= DispatchTime.now().uptimeNanoseconds &- me.sentAt[i]
+            me.writesTimed += 1
+        }
+        if result != kIOReturnSuccess { me.failed += 1 }
+    }
+
+    // MARK: DualSenseHapticsOutput
 
     func push(_ pcm: UnsafeRawBufferPointer) {
         lock.lock(); defer { lock.unlock() }
@@ -114,10 +235,15 @@ final class DualSenseBluetoothHaptics: DualSenseHapticsOutput, @unchecked Sendab
         return (Int(Double(buffer.targetFrames) / buffer.outputRate * 1000), buffer.runs, buffer.cutRuns)
     }
 
+    /// Bluetooth link counters for the session summary.
+    var linkStats: String {
+        let avg = writesTimed > 0 ? Double(writeNanos) / Double(writesTimed) / 1e6 : 0
+        return "\(sent) reports sent, \(skipped) ticks skipped (link busy), \(yielded) yielded to trigger writes, "
+            + "\(failed) failed, \(String(format: "%.1f", avg)) ms per write"
+    }
+
     func stop() {
-        queue.sync {
-            timer?.cancel()
-            timer = nil
-        }
+        lock.lock(); running = false; lock.unlock()
+        // The thread notices within one period and closes its handle.
     }
 }

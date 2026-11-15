@@ -30,6 +30,19 @@ struct DualSenseOutputReportTests {
         #expect(DualSenseHID.effectsState(s)[0] == 0x0C)
     }
 
+    @Test func actuatorHapticsAskForFullPowerAndTheFilter() {
+        var s = DualSenseOutputState()
+        s.audioHaptics = true
+        let d = DualSenseHID.effectsState(s)
+        #expect(d[1] == 0x02 | 0x20 | 0x40)
+        #expect(d[36] == 0 && d[39] == 0x01 && d[9] == 0)
+        // The keepalive repeats them without touching the triggers.
+        #expect(DualSenseHID.hapticsKeepAliveState(s)?[0] == 0)
+        #expect(DualSenseHID.hapticsKeepAliveState(s)?[1] == 0x62)
+        s.rumbleLeft = 9
+        #expect(DualSenseHID.hapticsKeepAliveState(s) == nil)
+    }
+
     @Test func lightbarIntensityAndTriggerBlocks() {
         var s = DualSenseOutputState()
         s.lightSet = true; s.lightR = 1; s.lightG = 2; s.lightB = 3
@@ -183,13 +196,12 @@ struct ArrivalJitterTests {
 
 struct DualSenseBluetoothHapticsTests {
 
-    @Test func reportLayoutFollowsSAxense() {
-        let samples = (0..<64).map { Int8(truncatingIfNeeded: $0 - 32) }
-        let r = DualSenseBluetoothHaptics.report(samples: samples, counter: 7)
+    @Test func reportLayoutIsDS5DonglesDoubleBlock() {
+        let samples = (0..<128).map { Int8(truncatingIfNeeded: $0 - 64) }
+        let r = DualSenseBluetoothHaptics.report(samples: samples, sequence: 3, counter: 10)
         #expect(r.count == 142)
-        #expect(Array(r[0...12]) == [0x32, 0x00, 0x91, 7, 0xFE, 0, 0, 0, 0, 0xFF, 7, 0x92, 64])
-        #expect(r[13] == UInt8(bitPattern: -32) && r[76] == 31)
-        #expect(r[77...137].allSatisfy { $0 == 0 })
+        #expect(Array(r[0...9]) == [0x32, 0x30, 0x91, 4, 0x66, 16, 16, 10, 0xD2, 0x40])
+        #expect(r[10] == UInt8(bitPattern: -64) && r[137] == 63)
         let crc = DualSenseHID.bluetoothCRC(r[0..<138])
         #expect(UInt32(r[138]) | UInt32(r[139]) << 8 | UInt32(r[140]) << 16 | UInt32(r[141]) << 24 == crc)
     }
@@ -197,7 +209,7 @@ struct DualSenseBluetoothHapticsTests {
     @Test func samplesBecomeSignedEightBit() {
         #expect(DualSenseBluetoothHaptics.s8(0) == 0)
         #expect(DualSenseBluetoothHaptics.s8(0.5) == 64)
-        #expect(DualSenseBluetoothHaptics.s8(-1) == -128)
+        #expect(DualSenseBluetoothHaptics.s8(-1) == -127)
         #expect(DualSenseBluetoothHaptics.s8(1) == 127)
     }
 

@@ -37,12 +37,17 @@ apply to the libchiaki part. The Remote Play protocol is Sony's; Shimmer is not
 affiliated with or endorsed by Sony Interactive Entertainment. PlayStation, PS5
 and DualSense are trademarks of Sony Interactive Entertainment.
 
-**DualSense haptics over Bluetooth follow
-[SAxense](https://apps.sdore.me/SAxense)**
+**DualSense haptics over Bluetooth** build on three projects:
+[SAxense](https://apps.sdore.me/SAxense)
 ([github.com/egormanga/SAxense](https://github.com/egormanga/SAxense), MPL-2.0)
 by Egor Vorontsov, the first public description of the controller's Bluetooth
-haptics report (0x32). Shimmer uses that research to build the report itself in
-`Glimmer/Stream/DualSenseBluetoothHaptics.swift`; no SAxense code is included.
+haptics report (0x32); [DS5Dongle](https://github.com/awalol/DS5Dongle) (MIT) by
+awalol, whose double-block report layout Shimmer uses; and
+[P5M for Mac](https://github.com/beecrepaldi-afk/P5M-mac) (a chiaki-ng fork,
+AGPL-3.0 with the OpenSSL exception) by beecrepaldi-afk, whose macOS sending
+scheme (asynchronous reports, at most four in flight, the full-power and
+haptics-filter output settings) Shimmer follows. The code in
+`Glimmer/Stream/DualSenseBluetoothHaptics.swift` is Shimmer's own.
 
 The Steam logo bundled as `Assets.xcassets/SteamGlyph` is a trademark of
 **Valve Corporation**. shimmer is not affiliated with or endorsed by Valve; the
