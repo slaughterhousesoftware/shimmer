@@ -1,0 +1,86 @@
+--- a/lib/src/takion.c	2026-11-15 18:46:00
++++ b/lib/src/takion.c	2026-11-15 18:46:00
+@@ -18,6 +18,7 @@
+ #include <TargetConditionals.h>
+ #if TARGET_OS_OSX
+ #include <CoreServices/CoreServices.h>
++#include <pthread/qos.h>
+ #endif
+ #endif
+ 
+@@ -44,10 +45,19 @@
+ 
+ #define TAKION_REORDER_QUEUE_SIZE_EXP 4 // => 16 entries
+ #define TAKION_AV_VIDEO_REORDER_QUEUE_SIZE_EXP 6 // => 64 entries
+-#define TAKION_AV_REORDER_TIMEOUT_US 16000 // ~1 frame at 60fps
++// Shimmer: 16 ms held every packet behind a lost one for a whole frame,
++// parity units included, so a frame FEC could already rebuild arrived late
++// and bunched with the next. A wired or Wi-Fi LAN reorders far less than this.
++#define TAKION_AV_REORDER_TIMEOUT_US 4000
+ 
+ #define TAKION_POSTPONE_PACKETS_SIZE 32
+ 
++// Shimmer: the kernel receive buffer, apart from the window advertised to the
++// console (a_rwnd, 100 KB - smaller than macOS's own default, ~20 ms at
++// 40 Mbps, which an IDR burst or a stalled thread overflows). PXPlay asks for
++// megabytes too.
++#define TAKION_SOCKET_RCVBUF (4 * 1024 * 1024)
++
+ #define TAKION_MESSAGE_HEADER_SIZE 0x10
+ 
+ #define TAKION_PACKET_BASE_TYPE_MASK 0xf
+@@ -189,6 +199,22 @@
+ static void takion_handle_packet_av(ChiakiTakion *takion, uint8_t base_type, uint8_t *buf, size_t buf_size);
+ static ChiakiErrorCode takion_read_extra_sock_messages(ChiakiTakion *takion);
+ 
++// Shimmer: the largest receive buffer the kernel grants, from
++// TAKION_SOCKET_RCVBUF down to the advertised window.
++static int takion_set_rcvbuf(ChiakiTakion *takion)
++{
++	for(int size = TAKION_SOCKET_RCVBUF; size > (int)takion->a_rwnd; size /= 2)
++	{
++		if(setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&size, sizeof(size)) == 0)
++		{
++			CHIAKI_LOGI(takion->log, "Takion receive buffer %d bytes", size);
++			return 0;
++		}
++	}
++	const int size = takion->a_rwnd;
++	return setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&size, sizeof(size));
++}
++
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, ChiakiTakionConnectInfo *info, chiaki_socket_t *sock)
+ {
+ 	ChiakiErrorCode ret = CHIAKI_ERR_SUCCESS;
+@@ -261,8 +287,7 @@
+ 			CHIAKI_LOGE(takion->log, "Takion had problem reading extra messages from socket using PSN Connection with error: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
+ 			goto error_sock;
+ 		}
+-		const int rcvbuf_val = takion->a_rwnd;
+-		int r = setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val));
++		int r = takion_set_rcvbuf(takion);
+ 		if(r < 0)
+ 		{
+ 			CHIAKI_LOGE(takion->log, "Takion failed to setsockopt SO_RCVBUF: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
+@@ -349,8 +374,7 @@
+ 			ret = CHIAKI_ERR_NETWORK;
+ 			goto error_pipe;
+ 		}
+-		const int rcvbuf_val = takion->a_rwnd;
+-		int r = setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val));
++		int r = takion_set_rcvbuf(takion);
+ 		if(r < 0)
+ 		{
+ 			CHIAKI_LOGE(takion->log, "Takion failed to setsockopt SO_RCVBUF: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
+@@ -1098,6 +1122,11 @@
+ {
+ 	ChiakiTakion *takion = user;
+ 	chiaki_thread_set_affinity(CHIAKI_THREAD_NAME_TAKION);
++#ifdef __APPLE__
++	// Shimmer: receive, decrypt, FEC and the frame callback all run here; keep
++	// it ahead of other work (PXPlay runs its receive thread the same way).
++	pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
++#endif
+ 
+ 	takion->video_queue_initialized = false;
+ 	takion->video_queue_head_wait_start_us = 0;

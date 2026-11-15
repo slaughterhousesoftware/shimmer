@@ -8,6 +8,7 @@
 //  /applist, the takeover check, in-place reconnect) skip PS5 hosts.
 //
 
+import AppKit
 import Foundation
 
 extension Host {
@@ -46,11 +47,22 @@ extension AppModel {
     }
 
     /// Video settings for a PS5 stream, from the user's stream settings: the
-    /// console offers 720p or 1080p at 30 or 60 fps.
+    /// console offers 720p or 1080p at 30 or 60 fps. Bitrate: automatic keeps
+    /// the console's preset (15 Mbps at 1080p) and lets it adapt; a bitrate
+    /// set by hand is sent as is (2-100 Mbps, PXPlay's range) and held. HDR
+    /// when it is on and this display can show it.
     func playStationStreamOptions() -> PlayStationStreamOptions {
         var options = PlayStationStreamOptions()
         options.resolution = effectiveHeight > 720 ? .p1080 : .p720
         options.fps = effectiveFPS > 30 ? 60 : 30
+        let manual: Bool
+        if case .custom = qualityPreset { manual = true } else { manual = !bitrateAuto }
+        if manual {
+            options.bitrateKbps = PlayStationStreamOptions.clampBitrate(effectiveBitrateKbps)
+            options.holdBitrate = true
+        }
+        let displayCanShowHDR = (NSScreen.main?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1
+        if effectiveHDR && displayCanShowHDR { options.codec = .h265HDR }
         return options
     }
 

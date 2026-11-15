@@ -29,6 +29,12 @@ struct PlayStationStreamOptions: Sendable, Equatable {
     var codec: Codec = .h265
     /// nil = the preset's bitrate (1080p: 15 Mbps).
     var bitrateKbps: Int?
+    /// Keep the bitrate: report no packet loss, so the console never lowers
+    /// it (PXPlay's manual mode sends no loss reports at all).
+    var holdBitrate = false
+
+    /// The console takes 2-100 Mbps (PXPlay's range).
+    static func clampBitrate(_ kbps: Int) -> Int { min(100_000, max(2_000, kbps)) }
 
     var width: Int32 { resolution == .p1080 ? 1920 : 1280 }
     var height: Int32 { resolution == .p1080 ? 1080 : 720 }
@@ -212,14 +218,27 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         case .h265HDR: info.video_profile.codec = CHIAKI_CODEC_H265_HDR
         }
         if let kbps = options.bitrateKbps { info.video_profile.bitrate = UInt32(kbps) }
-        info.video_profile_auto_downgrade = true
+        info.video_profile_auto_downgrade = !options.holdBitrate
         info.enable_keyboard = false
         // Present the pad as a DualSense: the console then sends haptics (as
         // audio) and adaptive-trigger effects instead of plain rumble.
         info.enable_dualsense = true
-        info.enable_idr_on_fec_failure = true
-        info.packet_loss_max = 0.05
+        // A frame FEC can't rebuild: report it and keep decoding (chiaki sends
+        // the corrupt-frame report; the console repairs its references), as
+        // PXPlay does. Asking for an IDR instead dropped every frame until it
+        // came - a visible freeze. The decoder still asks when it must.
+        info.enable_idr_on_fec_failure = false
+        info.packet_loss_max = options.holdBitrate ? 0 : 0.05
+        Diag.notice("PS5: \(options.height)p\(options.fps) \(options.codec == .h265HDR ? "HDR" : "SDR"), "
+            + (options.bitrateKbps.map { "\($0 / 1000) Mbps\(options.holdBitrate ? " (held)" : "")" } ?? "preset bitrate"),
+            Self.logCategory)
 
+        // Newest frame straight to the screen (VideoDecoder.presentsDirect);
+        // `defaults write com.kevinbpatel.shimmer PS5PacedPresent -bool YES`
+        // puts the pacer back.
+        if let decoder = videoSink as? VideoDecoder {
+            decoder.presentsDirect = !UserDefaults.standard.bool(forKey: "PS5PacedPresent")
+        }
         // The decoder is set up before the first frame can arrive.
         let setup = videoSink.setup(videoFormat: options.videoFormat, width: options.width,
                                     height: options.height, redrawRate: Int32(options.fps))
@@ -228,6 +247,14 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             throw StreamError.sessionFailed(setup)
         }
         videoSink.start()
+        if options.codec == .h265HDR {
+            // The console sends HDR10 (PQ, BT.2020) from the first frame; there
+            // is no host HDR-mode message as on Sunshine, so engage it now.
+            events.setHdrMode(true)
+            if let decoder = videoSink as? VideoDecoder {
+                DispatchQueue.main.async { MainActor.assumeIsolated { decoder.setHDR(enabled: true) } }
+            }
+        }
 
         // The console keeps a session busy for a few seconds after the last one
         // ended ("Remote Play is already in use"); wait it out rather than fail

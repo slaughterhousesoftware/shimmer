@@ -391,7 +391,7 @@ extension VideoDecoder {
         // has a window+screen, or a defensive path) fall back to presenting
         // directly so we never black-screen waiting for the link.
         guard let sb = sampleBuffer else { return }
-        if let pacer = framePacer {
+        if let pacer = framePacer, !presentsDirect {
             pacer.submit(sb, hostPTS: hostPTS)
         } else {
             _ = presentFrame(sb)

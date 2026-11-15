@@ -30,6 +30,25 @@ done
 
 mkdir -p $OUT/obj $OUT/gen $OUT/include/chiaki
 
+# Shimmer's changes to libchiaki live in third_party/chiaki-ng-patches/*.patch
+# (unified diffs against the submodule, applied in name order). They are
+# applied to copies under $OUT/patched, so the submodule stays pristine; a
+# patched file compiles from there. Unchanged copies keep their mtime, so an
+# unrelated build doesn't recompile them.
+PATCHED=$OUT/patched
+rm -rf $PATCHED.new && mkdir -p $PATCHED.new
+for p in $ROOT/third_party/chiaki-ng-patches/*.patch(N); do
+  for rel in ${(f)"$(sed -n 's|^+++ b/\([^[:space:]]*\).*|\1|p' $p)"}; do
+    [[ -f $PATCHED.new/$rel ]] || { mkdir -p $PATCHED.new/${rel:h}; cp $CHIAKI/$rel $PATCHED.new/$rel; }
+  done
+  patch -s -d $PATCHED.new -p1 < $p || { echo "libchiaki patch failed: ${p:t}" >&2; exit 1; }
+done
+for f in $PATCHED.new/**/*(.N); do
+  rel=${f#$PATCHED.new/}
+  cmp -s $f $PATCHED/$rel 2>/dev/null && cp -p $PATCHED/$rel $f
+done
+rm -rf $PATCHED && mv $PATCHED.new $PATCHED
+
 # config.h (cmakedefine01 -> 0/1)
 sed -e 's/#cmakedefine01 CHIAKI_LIB_ENABLE_OPUS/#define CHIAKI_LIB_ENABLE_OPUS 1/' \
     -e 's/#cmakedefine01 CHIAKI_LIB_ENABLE_PI_DECODER/#define CHIAKI_LIB_ENABLE_PI_DECODER 0/' \
@@ -74,6 +93,11 @@ else
   CFLAGS+=(-isystem $(xcrun --show-sdk-path)/usr/include)
   FILES+=($ROOT/Glimmer/PlayStation/chiaki_holepunch_stub.c)
 fi
+
+for i in {1..${#FILES}}; do
+  rel=${FILES[$i]#$CHIAKI/}
+  [[ -f $PATCHED/$rel ]] && FILES[$i]=$PATCHED/$rel
+done
 
 OBJS=()
 pids=()

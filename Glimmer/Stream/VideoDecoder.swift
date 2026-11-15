@@ -486,6 +486,13 @@ public final class VideoDecoder {
     /// reference inside the pacer is itself lock-guarded.
     nonisolated(unsafe) var framePacer: FramePacer?
 
+    /// Present each decoded frame at once, skipping the pacer's jitter buffer
+    /// (PS5 streams). The console paces its own frames and Shimmer's frame
+    /// timestamps there are arrival times, so the pacer only smoothed network
+    /// arrival at the cost of up to a frame of latency; PXPlay's default
+    /// shows the newest frame the same way. Set before the first frame.
+    nonisolated(unsafe) var presentsDirect = false
+
     /// The view whose screen the pacer's CADisplayLink binds to, remembered from
     /// `startPacing` so the present-watchdog's give-up → re-enable path can
     /// rebuild a fresh pacer onto the same screen WITHOUT the watchdog reaching
