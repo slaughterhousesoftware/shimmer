@@ -81,6 +81,8 @@ struct DualSenseOutputState: Equatable, Sendable {
     /// True while haptics play through the pad's USB audio device. The report
     /// must then never set the "rumble instead of haptics" bit.
     var audioHaptics = false
+    /// The mic mute light (PS5 chat): true lit (muted), false off, nil untouched.
+    var micLED: Bool?
 }
 
 /// Reference-counted singleton owning one IOHIDManager for the DualSense raw

@@ -26,6 +26,7 @@ extension DualSenseHID {
     static let flagRightTrigger: UInt8 = 0x04
     static let flagLeftTrigger: UInt8 = 0x08
     /// valid_flag1 bits.
+    static let flagMicLED: UInt8 = 0x01
     static let flagAudioMute: UInt8 = 0x02
     static let flagLightbar: UInt8 = 0x04
     static let flagHapticsFilter: UInt8 = 0x20
@@ -61,6 +62,10 @@ extension DualSenseHID {
             d[9] = 0
             d[36] = s.intensity ?? 0
             d[39] = 0x01
+        }
+        if let lit = s.micLED {
+            d[1] |= flagMicLED
+            d[8] = lit ? 0x01 : 0x00
         }
         for i in 0..<11 { d[10 + i] = s.rightTrigger[i] }
         for i in 0..<11 { d[21 + i] = s.leftTrigger[i] }
@@ -203,6 +208,15 @@ extension DualSenseHID {
     func setLightbar(red: UInt8, green: UInt8, blue: UInt8) {
         setLightbarState(red: red, green: green, blue: blue)
         scheduleWrite()
+    }
+
+    /// The mic mute light: lit while PS5 chat is muted (nil: leave it alone).
+    func setMicLED(lit: Bool?) {
+        lock.lock()
+        let changed = outputState.micLED != lit
+        outputState.micLED = lit
+        lock.unlock()
+        if changed { scheduleWrite() }
     }
 
     /// The console's intensity settings as the pad's power-reduction byte:

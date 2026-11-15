@@ -21,6 +21,7 @@
 		31C39F412719B58B000410C4 /* AppModel+PlayStation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F18688097FEF7818841A5D /* AppModel+PlayStation.swift */; };
 		A6811FC893779865B97D71A0 /* StreamSession+PlayStation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880EBAD057B37832DD9F6482 /* StreamSession+PlayStation.swift */; };
 		419A2971FF186C3A4DA92F04 /* PlayStationBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C6658F5464A1E2524F46FA7 /* PlayStationBackend.swift */; };
+		F5E9D15DDE21F5A1330FACB4 /* PS5Microphone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57380489844ABF77EA4453AB /* PS5Microphone.swift */; };
 		19940302E36CBF17A0F62CF6 /* PlayStationConsole.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA77D762D610FFAE7FCD70C /* PlayStationConsole.swift */; };
 		CE1000000000000000000102 /* HostIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000101 /* HostIcon.swift */; };
 		CE1000000000000000000202 /* HostIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000201 /* HostIconTests.swift */; };
@@ -370,6 +371,7 @@
 		37F18688097FEF7818841A5D /* AppModel+PlayStation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayStation/AppModel+PlayStation.swift"; sourceTree = "<group>"; };
 		880EBAD057B37832DD9F6482 /* StreamSession+PlayStation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayStation/StreamSession+PlayStation.swift"; sourceTree = "<group>"; };
 		5C6658F5464A1E2524F46FA7 /* PlayStationBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationBackend.swift; sourceTree = "<group>"; };
+		57380489844ABF77EA4453AB /* PS5Microphone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PS5Microphone.swift; sourceTree = "<group>"; };
 		7CA77D762D610FFAE7FCD70C /* PlayStationConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationConsole.swift; sourceTree = "<group>"; };
 		CE1000000000000000000101 /* HostIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostIcon.swift; sourceTree = "<group>"; };
 		CE1000000000000000000201 /* HostIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostIconTests.swift; sourceTree = "<group>"; };
@@ -772,6 +774,7 @@
 				37F18688097FEF7818841A5D /* AppModel+PlayStation.swift */,
 				880EBAD057B37832DD9F6482 /* StreamSession+PlayStation.swift */,
 				5C6658F5464A1E2524F46FA7 /* PlayStationBackend.swift */,
+				57380489844ABF77EA4453AB /* PS5Microphone.swift */,
 				7CA77D762D610FFAE7FCD70C /* PlayStationConsole.swift */,
 				A10000011 /* GlimmerApp.swift */,
 				A1009002 /* UpdaterController.swift */,
@@ -1232,6 +1235,7 @@
 				31C39F412719B58B000410C4 /* AppModel+PlayStation.swift in Sources */,
 				A6811FC893779865B97D71A0 /* StreamSession+PlayStation.swift in Sources */,
 				419A2971FF186C3A4DA92F04 /* PlayStationBackend.swift in Sources */,
+				F5E9D15DDE21F5A1330FACB4 /* PS5Microphone.swift in Sources */,
 				19940302E36CBF17A0F62CF6 /* PlayStationConsole.swift in Sources */,
 				A10000001 /* GlimmerApp.swift in Sources */,
 				A1009001 /* UpdaterController.swift in Sources */,

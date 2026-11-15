@@ -42,6 +42,7 @@
 #import <chiaki/discovery.h>
 #import <chiaki/controller.h>
 #import <chiaki/orientation.h>
+#import <chiaki/opusencoder.h>
 #import <chiaki/audioreceiver.h>
 #import <chiaki/base64.h>
 

@@ -19,6 +19,19 @@ struct DualSenseOutputReportTests {
         #expect(d[1] == 0)        // light bar untouched until the host sets it
     }
 
+    @Test func micLightOnlyWhenSetAndLeavesHapticsAlone() {
+        var s = DualSenseOutputState()
+        s.audioHaptics = true
+        #expect(DualSenseHID.effectsState(s)[1] & 0x01 == 0)
+        s.micLED = true
+        var d = DualSenseHID.effectsState(s)
+        #expect(d[1] == 0x01 | 0x02 | 0x20 | 0x40)
+        #expect(d[8] == 1 && d[9] == 0)     // light on; nothing muted at the pad
+        s.micLED = false
+        d = DualSenseHID.effectsState(s)
+        #expect(d[1] & 0x01 == 0x01 && d[8] == 0)
+    }
+
     @Test func rumbleBitsOnlyWhileRumbling() {
         var s = DualSenseOutputState()
         s.rumbleLeft = 200; s.rumbleRight = 10

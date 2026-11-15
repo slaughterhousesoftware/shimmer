@@ -81,6 +81,9 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// gyro aiming see a pad that never moves. Under `lock`.
     private var motion: [UInt8: PadMotion] = [:]
     private var lastTriggerTypes: (UInt8, UInt8)?
+    /// Chat to the console; the Mute button toggles it (`lock`).
+    private var microphone: PS5Microphone?
+    private var muteHeld: Set<UInt8> = []
     private var loggedInputFrom: Set<String> = []
 
     // Video bookkeeping (libchiaki's video thread only).
@@ -313,6 +316,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
         chiaki_session_set_haptics_sink(session, &haptics)
 
+        let mic = PS5Microphone(session: session, log: chiakiLog)
+        mic.onMutedChange = { muted in DualSenseHID.shared.setMicLED(lit: muted) }
+        lock.withLock { microphone = mic }
+
         let startErr = chiaki_session_start(session)
         guard startErr == CHIAKI_ERR_SUCCESS else {
             tearDownChiakiSession()
@@ -330,12 +337,17 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     /// Stop, join and free the current libchiaki session (sinks untouched).
     private func tearDownChiakiSession() {
-        let (session, retained) = lock.withLock { () -> (UnsafeMutablePointer<ChiakiSession>?, Unmanaged<PlayStationBackend>?) in
-            let s = self.session, r = self.retainedSelf
+        let (session, retained, mic) = lock.withLock {
+            () -> (UnsafeMutablePointer<ChiakiSession>?, Unmanaged<PlayStationBackend>?, PS5Microphone?) in
+            let s = self.session, r = self.retainedSelf, m = self.microphone
             self.session = nil
             self.retainedSelf = nil
-            return (s, r)
+            self.microphone = nil
+            return (s, r, m)
         }
+        // Capture stops, and the encoder's sender goes, before the session.
+        if mic != nil { DualSenseHID.shared.setMicLED(lit: nil) }
+        mic?.close()
         if let session {
             chiaki_session_stop(session)
             chiaki_session_join(session)
@@ -851,6 +863,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         DualSenseHID.shared.retain()
         lock.withLock { retainedHID = true }
         startAudioHaptics()
+        // Chat starts muted, so the mute light is lit, as on the console.
+        DualSenseHID.shared.setMicLED(lit: true)
         let events = lock.withLock { self.events }
         events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_ACCEL), reportRateHz: 200)
         events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_GYRO), reportRateHz: 200)
@@ -921,7 +935,17 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     static func flipY(_ v: Int16) -> Int16 { v == Int16.min ? Int16.max : -v }
 
     func sendMultiController(num: Int16, mask: Int16, buttons: Int32, analog: GamepadAnalog) -> Int32 {
-        updatePad(UInt8(truncatingIfNeeded: num), kind: "button/stick") { pad in
+        // The DualSense Mute button (MISC on the wire) is the chat toggle, as on
+        // the console; the PS5's controller state has no button for it.
+        let pressed = buttons & StreamProtocol.MISC_FLAG != 0
+        let padNum = UInt8(truncatingIfNeeded: num)
+        let mic = lock.withLock { () -> PS5Microphone? in
+            let wasHeld = muteHeld.contains(padNum)
+            if pressed { muteHeld.insert(padNum) } else { muteHeld.remove(padNum) }
+            return pressed && !wasHeld && connected ? microphone : nil
+        }
+        mic?.toggle()
+        updatePad(padNum, kind: "button/stick") { pad in
             let analogTriggers = (analog.leftTrigger > 0 ? CHIAKI_CONTROLLER_ANALOG_BUTTON_L2.rawValue : 0)
                 | (analog.rightTrigger > 0 ? CHIAKI_CONTROLLER_ANALOG_BUTTON_R2.rawValue : 0)
             pad.buttons = Self.chiakiButtons(fromGameStream: buttons) | analogTriggers
