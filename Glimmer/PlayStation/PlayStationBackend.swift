@@ -625,7 +625,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     // MARK: Input uplink
 
-    private static var idlePad: ChiakiControllerState {
+    static var idlePad: ChiakiControllerState {
         var state = ChiakiControllerState()
         chiaki_controller_state_set_idle(&state)
         return state
@@ -745,8 +745,79 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         return pushPad()
     }
 
-    // The PS5 takes controller input only.
-    func sendKeyboard(keyCode: Int16, action: Int8, modifiers: Int8, flags: Int8) -> Int32 { 0 }
+    // MARK: Keyboard → controller
+    //
+    // The PS5 takes controller input only, so the keyboard drives a virtual
+    // pad (merged with real ones), laid out like chiaki-ios:
+    //   WASD left stick · IJKL right stick · arrows D-pad
+    //   Return/Space Cross · Backspace Circle · F Square · R Triangle
+    //   Q/E L1/R1 · Z/C L2/R2 · 1/2 L3/R3 · O Options · Y Create · Tab touchpad · H PS
+
+    /// The virtual pad's slot in `pads` (real pads use GameStream's 0-15).
+    static let keyboardPadNumber: UInt8 = 0xFE
+    private var heldKeys: Set<UInt8> = []
+
+    func sendKeyboard(keyCode: Int16, action: Int8, modifiers: Int8, flags: Int8) -> Int32 {
+        let vk = UInt8(truncatingIfNeeded: UInt16(bitPattern: keyCode) & 0xFF)
+        guard Self.keyboardKeys.contains(vk) else { return 0 }
+        lock.withLock {
+            if Int32(action) == StreamProtocol.KEY_ACTION_DOWN { heldKeys.insert(vk) } else { heldKeys.remove(vk) }
+            pads[Self.keyboardPadNumber] = Self.keyboardPad(held: heldKeys)
+            if loggedInputFrom.insert("keyboard").inserted {
+                Diag.notice("PS5: keyboard driving the controller", Self.logCategory)
+            }
+        }
+        return pushPad()
+    }
+
+    private enum VK {
+        static let w: UInt8 = 0x57, a: UInt8 = 0x41, s: UInt8 = 0x53, d: UInt8 = 0x44
+        static let i: UInt8 = 0x49, j: UInt8 = 0x4A, k: UInt8 = 0x4B, l: UInt8 = 0x4C
+        static let left: UInt8 = 0x25, up: UInt8 = 0x26, right: UInt8 = 0x27, down: UInt8 = 0x28
+        static let enter: UInt8 = 0x0D, space: UInt8 = 0x20, backspace: UInt8 = 0x08
+        static let f: UInt8 = 0x46, r: UInt8 = 0x52, q: UInt8 = 0x51, e: UInt8 = 0x45
+        static let z: UInt8 = 0x5A, c: UInt8 = 0x43, one: UInt8 = 0x31, two: UInt8 = 0x32
+        static let o: UInt8 = 0x4F, y: UInt8 = 0x59, tab: UInt8 = 0x09, h: UInt8 = 0x48
+    }
+
+    private static let keyButtons: [UInt8: UInt32] = [
+        VK.left: CHIAKI_CONTROLLER_BUTTON_DPAD_LEFT.rawValue, VK.right: CHIAKI_CONTROLLER_BUTTON_DPAD_RIGHT.rawValue,
+        VK.up: CHIAKI_CONTROLLER_BUTTON_DPAD_UP.rawValue, VK.down: CHIAKI_CONTROLLER_BUTTON_DPAD_DOWN.rawValue,
+        VK.enter: CHIAKI_CONTROLLER_BUTTON_CROSS.rawValue, VK.space: CHIAKI_CONTROLLER_BUTTON_CROSS.rawValue,
+        VK.backspace: CHIAKI_CONTROLLER_BUTTON_MOON.rawValue, VK.f: CHIAKI_CONTROLLER_BUTTON_BOX.rawValue,
+        VK.r: CHIAKI_CONTROLLER_BUTTON_PYRAMID.rawValue, VK.q: CHIAKI_CONTROLLER_BUTTON_L1.rawValue,
+        VK.e: CHIAKI_CONTROLLER_BUTTON_R1.rawValue, VK.one: CHIAKI_CONTROLLER_BUTTON_L3.rawValue,
+        VK.two: CHIAKI_CONTROLLER_BUTTON_R3.rawValue, VK.o: CHIAKI_CONTROLLER_BUTTON_OPTIONS.rawValue,
+        VK.y: CHIAKI_CONTROLLER_BUTTON_SHARE.rawValue, VK.tab: CHIAKI_CONTROLLER_BUTTON_TOUCHPAD.rawValue,
+        VK.h: CHIAKI_CONTROLLER_BUTTON_PS.rawValue,
+    ]
+    static let keyboardKeys: Set<UInt8> = Set(keyButtons.keys).union(
+        [VK.w, VK.a, VK.s, VK.d, VK.i, VK.j, VK.k, VK.l, VK.z, VK.c])
+
+    /// Held keys → one pad state. Sticks are full deflection, Y-down (the
+    /// console's convention); opposite keys cancel.
+    static func keyboardPad(held: Set<UInt8>) -> ChiakiControllerState {
+        var pad = idlePad
+        for key in held { pad.buttons |= keyButtons[key] ?? 0 }
+        func axis(_ neg: UInt8, _ pos: UInt8) -> Int16 {
+            (held.contains(pos) ? Int16.max : 0) - (held.contains(neg) ? Int16.max : 0)
+        }
+        pad.left_x = axis(VK.a, VK.d)
+        pad.left_y = axis(VK.w, VK.s)
+        pad.right_x = axis(VK.j, VK.l)
+        pad.right_y = axis(VK.i, VK.k)
+        if held.contains(VK.z) {
+            pad.l2_state = 255
+            pad.buttons |= CHIAKI_CONTROLLER_ANALOG_BUTTON_L2.rawValue
+        }
+        if held.contains(VK.c) {
+            pad.r2_state = 255
+            pad.buttons |= CHIAKI_CONTROLLER_ANALOG_BUTTON_R2.rawValue
+        }
+        return pad
+    }
+
+    // The mouse has no PS5 counterpart.
     func sendMouseMove(dx: Int16, dy: Int16) -> Int32 { 0 }
     func sendMousePosition(x: Int16, y: Int16, refW: Int16, refH: Int16) -> Int32 { 0 }
     func sendMouseButton(action: Int8, button: Int32) -> Int32 { 0 }

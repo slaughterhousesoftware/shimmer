@@ -143,4 +143,21 @@ struct PlayStationBackendTests {
         #expect(PlayStationBackend.rumbleStrength(sumLeft: 300_000, sumRight: 0, frames: 3).0 == UInt16.max)
         #expect(PlayStationBackend.rumbleStrength(sumLeft: 1, sumRight: 1, frames: 0) == (0, 0))
     }
+
+    @Test func keyboardDrivesAPad() {
+        // W + D: up-right on the left stick (Y-down), Return = Cross, Z = full L2.
+        let pad = PlayStationBackend.keyboardPad(held: [0x57, 0x44, 0x0D, 0x5A])
+        #expect(pad.left_x == Int16.max)
+        #expect(pad.left_y == -Int16.max)
+        #expect(pad.right_x == 0)
+        #expect(pad.l2_state == 255)
+        #expect(pad.buttons & CHIAKI_CONTROLLER_BUTTON_CROSS.rawValue != 0)
+        #expect(pad.buttons & CHIAKI_CONTROLLER_ANALOG_BUTTON_L2.rawValue != 0)
+        // Opposite keys cancel; nothing held is an idle pad.
+        #expect(PlayStationBackend.keyboardPad(held: [0x41, 0x44]).left_x == 0)
+        #expect(PlayStationBackend.keyboardPad(held: []).buttons == 0)
+        #expect(PlayStationBackend.keyboardPad(held: [0x48]).buttons == CHIAKI_CONTROLLER_BUTTON_PS.rawValue)
+        #expect(PlayStationBackend.keyboardKeys.contains(0x26))
+        #expect(!PlayStationBackend.keyboardKeys.contains(0x58))   // X isn't mapped
+    }
 }

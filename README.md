@@ -31,7 +31,9 @@ the console's feedback: light bar, adaptive triggers, and its haptics played as
 rumble.
 
 The PS5 sends 1080p or 720p at up to 60 fps. It takes controller input only,
-and Shimmer connects to it directly, so it has to be on the same network or
+so the keyboard drives a virtual controller (WASD and IJKL for the sticks,
+arrows for the D-pad, Return for Cross, Backspace for Circle, H for PS). Shimmer
+connects to it directly, so it has to be on the same network or
 reachable through a Tailscale subnet route.
 
 ### One window
