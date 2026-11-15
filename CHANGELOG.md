@@ -29,8 +29,17 @@ Everything below glimmer 2026.9.0 in this file is upstream glimmer's history.
   sign-in and the code from Pair Device. Stream wakes it from rest mode, waits
   out a console that is still releasing the previous session, and finds it
   again if its address changes.
-- The DualSense gets the console's light bar, adaptive triggers and haptics
-  (played as rumble); touchpad and motion go back to the console.
+- The DualSense gets the console's light bar, adaptive triggers and haptics;
+  touchpad and motion go back to the console. Over USB the haptics play on the
+  controller's actuators as the console sends them, through a buffer sized
+  from the stream's measured jitter (about 25 ms on a wired Mac); over
+  Bluetooth they play as rumble. The console's vibration and trigger-effect
+  intensity settings apply.
+
+### Controllers
+- Adaptive triggers now work. Shimmer's DualSense output report was missing
+  its report ID, so the controller ignored it - on PC streams as well as PS5
+  ones - and lacked the bits that let trigger effects apply.
 
 ### Wi-Fi
 - "Reduce lag spikes on Wi-Fi" is back, without the background helper: the
