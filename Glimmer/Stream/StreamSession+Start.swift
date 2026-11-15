@@ -65,7 +65,11 @@ extension StreamSession {
         // Capture the inputs a SILENT RECONNECT needs to rebuild the connection
         // in place (see StreamSession+Reconnect.swift): the original server (for
         // a fresh NetworkClient + handshake), the requested mode, and the app id.
-        self.reconnectServer = server
+        // A PS5 session (PlayStationBackend) has no GameStream host to pair
+        // with, launch on, or relaunch: it skips steps 1-3 and never reconnects
+        // in place (see runReconnectEpisode).
+        let playStation = backend as? PlayStationBackend
+        self.reconnectServer = playStation == nil ? server : nil
         self.reconnectAddresses = reconnectAddresses
         self.reconnectConfig = config
         self.launchBitrateKbps = config.bitrateKbps
@@ -100,50 +104,20 @@ extension StreamSession {
             }
         }
 
-        // --- 1) Pair or verify pairing ---------------------------------
-        let network = NetworkClient(server: server)
-        self.network = network
-        // Drop the orphaned NetworkClient on any exit where stop() can't own it
-        // (a pre-bridge throw from the serverinfo fetch, the pairing check, or
-        // launchWithBusyRecovery below). shutdown() is a no-op now - the control
-        // channel is per-request - so this is just lifecycle symmetry, and the
-        // belt-and-braces overlap with stop() on the success / backend-failure
-        // paths is harmless.
-        defer { if !startHandedOff { shutdownOrphanedNetwork() } }
-        let serverInfo = try await fetchAndVerifyServerInfo(network: network)
-
-        // Start sampling latency NOW, so the distribution accumulates across the
-        // /launch + RTSP wall-clock we are about to spend anyway (measured: 1383
-        // ms and ~960 ms respectively). Harvested in makeBackendConfig just
-        // before the SDP is built, which is the last moment the bitrate can be
-        // chosen - after ANNOUNCE it is fixed for the session. Costs no added
-        // connect latency; a LAN's samples simply never trip the gate.
-        let rttSampler = RttSampler(host: serverInfo.address, port: UInt16(serverInfo.httpsPort))
-
-        // --- 2) Decide launch vs. resume vs. quit-then-launch -----------
-        // GameStream hosts only run one session at a time. If a previous
-        // attempt left the host busy (orphan session) or someone else is
-        // streaming, /launch will fail. Route based on the host's currentgame:
-        //   0                  → free, /launch
-        //   == our appID       → still ours, /resume
-        //   != our appID       → someone else's session, /cancel + /launch
-        // Try the obvious path first (launch if idle, resume if our app is
-        // already going), then fall back through busy-recovery if the host
-        // disagrees. `<currentgame>` parsing is inconsistent across hosts so
-        // we treat it as a hint, not gospel.
-        // M6: bound the initial-connect launch with an overall deadline so the
-        // busy-recovery retries can't stack to ~55-65s of "Connecting...". The
-        // reconnect path keeps the un-deadlined call - its episode already bounds
-        // the total (attempt cap + window).
-        let launch: LaunchResponse = try await launchWithDeadline(
-            network: network, appID: appID, config: config,
-            hintCurrentGame: serverInfo.currentGameID,
-            allowResume: !serverInfo.isRealGFE
-        )
-
-        // --- 3) Build the backend stream config -------------------------
-        let backendConfig = makeBackendConfig(
-            config: config, launch: launch, server: serverInfo, rtt: rttSampler.harvest())
+        // --- 1-3) Sunshine: pair/verify, launch, negotiate. PS5: nothing to do.
+        let backendConfig: BackendStreamConfig
+        var sunshine: (serverInfo: ServerInfo, launch: LaunchResponse, network: NetworkClient)?
+        if let playStation {
+            backendConfig = makePlayStationBackendConfig(playStation.options)
+        } else {
+            let prepared = try await prepareSunshineSession(
+                server: server, config: config, appID: appID)
+            sunshine = prepared.host
+            backendConfig = prepared.backendConfig
+        }
+        // A pre-bridge throw below must not orphan the NetworkClient (see
+        // prepareSunshineSession); stop() owns it once the connect is handed off.
+        defer { if !startHandedOff, sunshine != nil { shutdownOrphanedNetwork() } }
 
         // Diagnostic so "are we actually streaming at the right refresh rate"
         // is a one-line question. requestedFps is what we tell Sunshine;
@@ -215,9 +189,13 @@ extension StreamSession {
 
         // --- 5) Start the connection through the backend ----------------
         do {
-            try await connectBackend(
-                serverInfo: serverInfo, launch: launch,
-                backendConfig: backendConfig, setup: setup, network: network)
+            if let sunshine {
+                try await connectBackend(
+                    serverInfo: sunshine.serverInfo, launch: sunshine.launch,
+                    backendConfig: backendConfig, setup: setup, network: sunshine.network)
+            } else if let playStation {
+                try await connectPlayStation(playStation, backendConfig: backendConfig, setup: setup)
+            }
         } catch {
             // connectBackend already cancelled the host session and ran stop()
             // on the startConnection-failure path; stop() released the bridge
@@ -243,6 +221,80 @@ extension StreamSession {
         // Stream is live; hand ownership of the keep-awake assertion to stop().
         startHandedOff = true
         return stream
+    }
+
+    // MARK: Session preparation
+
+    /// Steps 1-3 of a Sunshine start(): pair/verify, launch or resume, and the
+    /// backend config negotiated from the launch. Moved out of start() unchanged
+    /// so the PS5 path can skip it. Sets `self.network`; start()'s defer drops
+    /// it on a pre-bridge throw.
+    private func prepareSunshineSession(
+        server: ServerInfo, config: StreamConfig, appID: Int
+    ) async throws -> (host: (serverInfo: ServerInfo, launch: LaunchResponse, network: NetworkClient),
+                       backendConfig: BackendStreamConfig) {
+        // --- 1) Pair or verify pairing ---------------------------------
+        let network = NetworkClient(server: server)
+        self.network = network
+        // Drop the orphaned NetworkClient on any exit where stop() can't own it
+        // (a pre-bridge throw from the serverinfo fetch, the pairing check, or
+        // launchWithBusyRecovery below). shutdown() is a no-op now - the control
+        // channel is per-request - so this is just lifecycle symmetry, and the
+        // belt-and-braces overlap with stop() on the success / backend-failure
+        // paths is harmless.
+        var handedBack = false
+        defer { if !handedBack { shutdownOrphanedNetwork() } }
+        let serverInfo = try await fetchAndVerifyServerInfo(network: network)
+
+        // Start sampling latency NOW, so the distribution accumulates across the
+        // /launch + RTSP wall-clock we are about to spend anyway (measured: 1383
+        // ms and ~960 ms respectively). Harvested in makeBackendConfig just
+        // before the SDP is built, which is the last moment the bitrate can be
+        // chosen - after ANNOUNCE it is fixed for the session. Costs no added
+        // connect latency; a LAN's samples simply never trip the gate.
+        let rttSampler = RttSampler(host: serverInfo.address, port: UInt16(serverInfo.httpsPort))
+
+        // --- 2) Decide launch vs. resume vs. quit-then-launch -----------
+        // GameStream hosts only run one session at a time. If a previous
+        // attempt left the host busy (orphan session) or someone else is
+        // streaming, /launch will fail. Route based on the host's currentgame:
+        //   0                  → free, /launch
+        //   == our appID       → still ours, /resume
+        //   != our appID       → someone else's session, /cancel + /launch
+        // Try the obvious path first (launch if idle, resume if our app is
+        // already going), then fall back through busy-recovery if the host
+        // disagrees. `<currentgame>` parsing is inconsistent across hosts so
+        // we treat it as a hint, not gospel.
+        // M6: bound the initial-connect launch with an overall deadline so the
+        // busy-recovery retries can't stack to ~55-65s of "Connecting...". The
+        // reconnect path keeps the un-deadlined call - its episode already bounds
+        // the total (attempt cap + window).
+        let launch: LaunchResponse = try await launchWithDeadline(
+            network: network, appID: appID, config: config,
+            hintCurrentGame: serverInfo.currentGameID,
+            allowResume: !serverInfo.isRealGFE
+        )
+
+        // --- 3) Build the backend stream config -------------------------
+        let backendConfig = makeBackendConfig(
+            config: config, launch: launch, server: serverInfo, rtt: rttSampler.harvest())
+        handedBack = true
+        return ((serverInfo, launch, network), backendConfig)
+    }
+
+    /// The BackendStreamConfig a PS5 session reports to the shared plumbing
+    /// (decoder sizing, stats overlay, receipts). The console picks the bitrate
+    /// from the preset; the fields GameStream negotiates are unused.
+    func makePlayStationBackendConfig(_ options: PlayStationStreamOptions) -> BackendStreamConfig {
+        BackendStreamConfig(
+            width: options.width, height: options.height, fps: Int32(options.fps),
+            bitrate: Int32(options.bitrateKbps ?? (options.resolution == .p1080 ? 15_000 : 10_000)),
+            packetSize: 1_400, streamingRemotely: StreamProtocol.STREAM_CFG_LOCAL,
+            audioConfiguration: Int32(gl_make_audio_configuration(2, 0x3)),
+            supportedVideoFormats: options.videoFormat, clientRefreshRateX100: Int32(options.fps * 100),
+            colorSpace: 0, colorRange: 0, encryptionFlags: 0,
+            remoteInputAesKey: [UInt8](repeating: 0, count: 16),
+            remoteInputAesIv: [UInt8](repeating: 0, count: 16))
     }
 
     // MARK: Start helpers

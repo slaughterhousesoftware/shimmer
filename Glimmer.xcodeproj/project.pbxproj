@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		106BC6DC964BBD0ACFEBC345 /* PlayStationBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF776067011D566A9B013D2 /* PlayStationBackendTests.swift */; };
+		CCA22C40CE48AF21B0962415 /* PlayStationDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003C043D52EE86B121928754 /* PlayStationDiscovery.swift */; };
+		31C39F412719B58B000410C4 /* AppModel+PlayStation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F18688097FEF7818841A5D /* AppModel+PlayStation.swift */; };
+		A6811FC893779865B97D71A0 /* StreamSession+PlayStation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880EBAD057B37832DD9F6482 /* StreamSession+PlayStation.swift */; };
+		419A2971FF186C3A4DA92F04 /* PlayStationBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C6658F5464A1E2524F46FA7 /* PlayStationBackend.swift */; };
+		19940302E36CBF17A0F62CF6 /* PlayStationConsole.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA77D762D610FFAE7FCD70C /* PlayStationConsole.swift */; };
 		CE1000000000000000000102 /* HostIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000101 /* HostIcon.swift */; };
 		CE1000000000000000000202 /* HostIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000201 /* HostIconTests.swift */; };
 		CE1000000000000000000302 /* HostIconNotices in Resources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000301 /* HostIconNotices */; };
@@ -341,6 +347,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CDF776067011D566A9B013D2 /* PlayStationBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStationBackendTests.swift; sourceTree = "<group>"; };
+		003C043D52EE86B121928754 /* PlayStationDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationDiscovery.swift; sourceTree = "<group>"; };
+		37F18688097FEF7818841A5D /* AppModel+PlayStation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayStation/AppModel+PlayStation.swift"; sourceTree = "<group>"; };
+		880EBAD057B37832DD9F6482 /* StreamSession+PlayStation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayStation/StreamSession+PlayStation.swift"; sourceTree = "<group>"; };
+		5C6658F5464A1E2524F46FA7 /* PlayStationBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationBackend.swift; sourceTree = "<group>"; };
+		7CA77D762D610FFAE7FCD70C /* PlayStationConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationConsole.swift; sourceTree = "<group>"; };
 		CE1000000000000000000101 /* HostIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostIcon.swift; sourceTree = "<group>"; };
 		CE1000000000000000000201 /* HostIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostIconTests.swift; sourceTree = "<group>"; };
 		CE1000000000000000000301 /* HostIconNotices */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HostIconNotices; path = "docs/assets/host-icons"; sourceTree = SOURCE_ROOT; };
@@ -730,6 +742,11 @@
 		A10000031 /* Glimmer */ = {
 			isa = PBXGroup;
 			children = (
+				003C043D52EE86B121928754 /* PlayStationDiscovery.swift */,
+				37F18688097FEF7818841A5D /* AppModel+PlayStation.swift */,
+				880EBAD057B37832DD9F6482 /* StreamSession+PlayStation.swift */,
+				5C6658F5464A1E2524F46FA7 /* PlayStationBackend.swift */,
+				7CA77D762D610FFAE7FCD70C /* PlayStationConsole.swift */,
 				A10000011 /* GlimmerApp.swift */,
 				A1009002 /* UpdaterController.swift */,
 				A10000012 /* ContentView.swift */,
@@ -985,6 +1002,7 @@
 		D2000016 /* GlimmerTests */ = {
 			isa = PBXGroup;
 			children = (
+				CDF776067011D566A9B013D2 /* PlayStationBackendTests.swift */,
 				D2000020 /* EnetWireTests.swift */,
 				D2000022 /* ReedSolomonTests.swift */,
 				D2000024 /* InputEncoderTests.swift */,
@@ -1175,6 +1193,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CCA22C40CE48AF21B0962415 /* PlayStationDiscovery.swift in Sources */,
+				31C39F412719B58B000410C4 /* AppModel+PlayStation.swift in Sources */,
+				A6811FC893779865B97D71A0 /* StreamSession+PlayStation.swift in Sources */,
+				419A2971FF186C3A4DA92F04 /* PlayStationBackend.swift in Sources */,
+				19940302E36CBF17A0F62CF6 /* PlayStationConsole.swift in Sources */,
 				A10000001 /* GlimmerApp.swift in Sources */,
 				A1009001 /* UpdaterController.swift in Sources */,
 				A10000002 /* ContentView.swift in Sources */,
@@ -1420,6 +1443,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				106BC6DC964BBD0ACFEBC345 /* PlayStationBackendTests.swift in Sources */,
 				D2000021 /* EnetWireTests.swift in Sources */,
 				D2000023 /* ReedSolomonTests.swift in Sources */,
 				D2000025 /* InputEncoderTests.swift in Sources */,

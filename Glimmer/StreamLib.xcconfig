@@ -15,10 +15,12 @@ GLIMMER_REPO_ROOT = $(SRCROOT)
 
 // Repo root for our own headers (CHelpers.h, imported via the bridging header) +
 // Homebrew OpenSSL + Opus headers.
-HEADER_SEARCH_PATHS = $(inherited) $(GLIMMER_REPO_ROOT) $(OPENSSL_PREFIX)/include $(OPUS_PREFIX)/include
+HEADER_SEARCH_PATHS = $(inherited) $(GLIMMER_REPO_ROOT) $(OPENSSL_PREFIX)/include $(OPUS_PREFIX)/include $(GLIMMER_REPO_ROOT)/build.noindex/libchiaki/lan/include $(GLIMMER_REPO_ROOT)/third_party/chiaki-ng/lib/include
 
-// Homebrew OpenSSL + Opus libs.
-LIBRARY_SEARCH_PATHS = $(inherited) $(OPENSSL_PREFIX)/lib $(OPUS_PREFIX)/lib
+// Homebrew OpenSSL + Opus libs, plus libchiaki (PS5 Remote Play; built by
+// scripts/build-libchiaki.sh lan, which `make app`/`make test` run first) and
+// macOS's own libcurl, which libchiaki uses for plain HTTPS.
+LIBRARY_SEARCH_PATHS = $(inherited) $(OPENSSL_PREFIX)/lib $(OPUS_PREFIX)/lib $(GLIMMER_REPO_ROOT)/build.noindex/libchiaki/lan
 
 // Link the C libraries into the APP (and its test bundle) only. This file is
 // passed on the xcodebuild command line, so it applies to every target and
@@ -31,8 +33,8 @@ LIBRARY_SEARCH_PATHS = $(inherited) $(OPENSSL_PREFIX)/lib $(OPUS_PREFIX)/lib
 // so the helper crashed in dyld every login and "Be ready at login" silently
 // did nothing. embed-dylibs.sh only rewrites the main binary - by design; the
 // helper must simply not link them.
-STREAMLIB_LDFLAGS_Glimmer = -lssl -lcrypto -lz -lopus
-STREAMLIB_LDFLAGS_GlimmerTests = -lssl -lcrypto -lz -lopus
+STREAMLIB_LDFLAGS_Glimmer = -lssl -lcrypto -lz -lopus -lchiaki -lcurl
+STREAMLIB_LDFLAGS_GlimmerTests = -lssl -lcrypto -lz -lopus -lchiaki -lcurl
 OTHER_LDFLAGS = $(inherited) $(STREAMLIB_LDFLAGS_$(PRODUCT_MODULE_NAME))
 
 // Apple Silicon only. Homebrew's openssl@3 / opus are arm64-only, so a universal

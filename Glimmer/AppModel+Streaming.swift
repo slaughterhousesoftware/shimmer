@@ -38,6 +38,8 @@ extension AppModel {
     /// - and every Moonlight client resumes on a name match too.
     func requestStream(app: LibraryApp, on host: Host) {
         guard !isStreaming else { stream(app: app, on: host); return }  // stream() logs + ignores
+        // A PS5 has no GameStream session to take over; it may need waking.
+        if host.isPlayStation { requestPlayStationStream(on: host); return }
         if let live = hostLiveStatus, live.hostID == host.id,
            live.state.hasSessionInformation,
            Date().timeIntervalSince(live.capturedAt) <= HostLiveStatus.stale {
@@ -190,7 +192,7 @@ extension AppModel {
         Task { [weak self] in
             guard let self else { return }
             // The Swift-native engine is the only path.
-            let session = StreamSession(backend: NativeBackend())
+            let session = StreamSession(backend: self.makeStreamingBackend(for: host))
             await MainActor.run {
                 self.nativeSession = session
                 // The audio cushion ceiling, before the engine seeds the cushion.

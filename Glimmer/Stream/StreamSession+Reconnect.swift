@@ -215,6 +215,14 @@ extension StreamSession {
     /// attempt/time budget, then resume (`.reconnected`) or give up (real
     /// teardown). MainActor work happens inside `reconnectInPlace`.
     private func runReconnectEpisode(code: Int32, cause: String, bannerText: String = "Reconnecting…") async {
+        // Only a GameStream session can be rebuilt in place (it relaunches on
+        // `reconnectServer`). A PS5 session has none: end it honestly.
+        guard reconnectServer != nil else {
+            Diag.notice("Stream ended: \(cause). This session can't reconnect in place.", "Stream")
+            bridge?.eventContinuation?.yield(.connectionTerminated(errorCode: code))
+            await stop(cause: .hostError)
+            return
+        }
         isReconnecting = true
         reconnectAttempts = 0
         var budget = StreamReconnectBudget(now: Date(), wakeRevision: reconnectWakeRevision)

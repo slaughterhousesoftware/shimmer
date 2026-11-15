@@ -260,6 +260,13 @@ extension AppModel {
             uniqueId: host.id,
             serverName: host.displayName
         )
+        // A PS5 has no GameStream pin or versions; it answers TCP on its
+        // Remote Play port (reachability probes dial this).
+        if host.isPlayStation {
+            info.httpPort = 9295
+            info.pairStatus = .paired
+            return info
+        }
         // H1: the mode-0600 file store is the ONLY authoritative pin source.
         // `host.serverCertPEM` lives in same-UID-writable UserDefaults
         // (hosts.N.srvcert) - an attacker can swap it for a MITM cert via

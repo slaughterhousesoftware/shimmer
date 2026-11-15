@@ -146,6 +146,15 @@ extension AppModel {
     /// the network call was in flight; we don't want late results painting
     /// the wrong machine's status onto the chip).
     func pollHostStatusOnce(for expectedHostID: String) async {
+        // A PS5 answers PlayStation discovery, not /serverinfo.
+        let playStationHost: Host? = await MainActor.run { [weak self] in
+            guard let host = self?.selectedHost, host.id == expectedHostID, host.isPlayStation else { return nil }
+            return host
+        }
+        if let playStationHost {
+            await pollPlayStationStatusOnce(host: playStationHost)
+            return
+        }
         // Snapshot the host on MainActor so we can hand its address etc.
         // off to the background work without crossing the actor boundary
         // with a non-Sendable type.

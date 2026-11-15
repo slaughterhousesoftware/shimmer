@@ -87,8 +87,10 @@ extension AppModel {
         let defaults = UserDefaults.standard
         let count = defaults.integer(forKey: "hosts.size")
         guard count > 0 else {
-            hosts = []
-            selectedHost = nil
+            hosts = playStationHosts()
+            selectedHost = hosts.first(where: {
+                $0.id == UserDefaults.standard.string(forKey: "glimmer.selectedHostID")
+            }) ?? hosts.first
             return
         }
 
@@ -151,7 +153,8 @@ extension AppModel {
             ))
         }
 
-        hosts = loaded.sorted(by: { (a, b) in
+        // Registered PS5s ride along (PlayStationStore, not these defaults).
+        hosts = (loaded + playStationHosts()).sorted(by: { (a, b) in
             (a.lastConnected ?? .distantPast) > (b.lastConnected ?? .distantPast)
         })
 
@@ -247,6 +250,7 @@ extension AppModel {
     /// override (the tile falls back to the real hostname). Keyed by UUID like
     /// `unpair`, since hostname can differ from displayName for renamed hosts.
     func renameHost(_ host: Host, to newName: String) {
+        if host.isPlayStation { renamePlayStation(host, to: newName); return }
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         let defaults = UserDefaults.standard
         let count = defaults.integer(forKey: "hosts.size")
@@ -380,6 +384,7 @@ extension AppModel {
     /// Refresh only the saved app list, preserving pairing, names and routes.
     func refreshApps(for host: Host) async throws {
         guard !isStreaming else { throw CancellationError() }
+        guard !host.isPlayStation else { return }   // a PS5 has no app list
         let client = NetworkClient(server: nativeServerInfo(for: host))
         do {
             let fetched = try await client.appList()
@@ -417,6 +422,7 @@ extension AppModel {
     /// migration) still ends up gone. Safe to call repeatedly; a no-op once the
     /// host is already clean.
     func unpair(_ host: Host) {
+        if host.isPlayStation { forgetPlayStation(host); return }
         let defaults = UserDefaults.standard
 
         // --- Unconditional, id-keyed cleanup (runs even if no slot matches) ---

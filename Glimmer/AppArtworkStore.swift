@@ -85,7 +85,7 @@ final class AppArtworkStore {
     // MARK: - Fetch
 
     private func fetch(app: LibraryApp, host: Host, key: String) {
-        guard let serverInfoProvider else {
+        guard let serverInfoProvider, !host.isPlayStation else {
             states[key] = .missing
             return
         }

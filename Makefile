@@ -140,17 +140,22 @@ release:
 		$(MAKE) CONFIG=Release app embed; \
 	fi
 
+# chiaki-ng's libchiaki (PS5 Remote Play), LAN-only flavour, as a static
+# library the app links (see scripts/build-libchiaki.sh). Incremental.
+libchiaki:
+	@scripts/build-libchiaki.sh lan >/dev/null
+
 # Build + run the hostless GlimmerTests unit-test bundle (swift-testing).
 # Mirrors the app build invocation (same xcconfig + Homebrew prefixes +
 # CODE_SIGNING_ALLOWED=NO) then runs the scheme's Test action. The shared
 # Glimmer scheme's BuildAction builds ONLY the app, so `make app`/`make dist`
 # are unaffected; only `xcodebuild test` pulls in the GlimmerTests target.
-test:
+test: libchiaki
 	xcodebuild test -project Glimmer.xcodeproj -scheme Glimmer -configuration Debug \
 	  -xcconfig $(STREAM_XCCONFIG) OPENSSL_PREFIX=$(OPENSSL_PREFIX) OPUS_PREFIX=$(OPUS_PREFIX) \
 	  CODE_SIGNING_ALLOWED=NO -derivedDataPath $(DERIVED) -destination 'platform=macOS'
 
-app:
+app: libchiaki
 	@echo "▶ Building Shimmer.app ($(CONFIG))..."
 	@scripts/export-shimmer-icon.sh
 	@scripts/generate-build-info.sh

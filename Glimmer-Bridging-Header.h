@@ -32,4 +32,16 @@
 #import <openssl/err.h>
 #import <openssl/ssl.h>
 
+// chiaki-ng's libchiaki: the PS5 Remote Play engine behind PlayStationBackend
+// (Glimmer/PlayStation). holepunch.h uses INET6_ADDRSTRLEN without including it.
+#include <netinet/in.h>
+#import <chiaki/common.h>
+#import <chiaki/log.h>
+#import <chiaki/session.h>
+#import <chiaki/regist.h>
+#import <chiaki/discovery.h>
+#import <chiaki/controller.h>
+#import <chiaki/audioreceiver.h>
+#import <chiaki/base64.h>
+
 #endif

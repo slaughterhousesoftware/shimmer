@@ -81,14 +81,22 @@ static char *keychain_get(const char *service, const char *account)
 
 static bool keychain_set(const char *service, const char *account, const char *value)
 {
-	// value goes over a pipe to `security -w` (prompted form) so it never shows in argv.
-	char cmd[512];
-	snprintf(cmd, sizeof(cmd), "security add-generic-password -U -s '%s' -a '%s' -l '%s' -w >/dev/null", service, account, service);
-	FILE *p = popen(cmd, "w");
-	if(!p)
+	// -X takes the value hex-encoded. (The piped `-w` prompt silently truncates
+	// at 128 characters, which cut registrations short.)
+	size_t n = strlen(value);
+	char *hex = malloc(2 * n + 1);
+	if(!hex)
 		return false;
-	fprintf(p, "%s\n%s\n", value, value);
-	return pclose(p) == 0;
+	for(size_t i = 0; i < n; i++)
+		sprintf(hex + 2 * i, "%02x", (unsigned char)value[i]);
+	hex[2 * n] = 0;
+	char *cmd = malloc(2 * n + 512);
+	if(!cmd) { free(hex); return false; }
+	snprintf(cmd, 2 * n + 512, "security add-generic-password -U -s '%s' -a '%s' -l '%s' -X %s >/dev/null", service, account, service, hex);
+	int rc = system(cmd);
+	free(cmd);
+	free(hex);
+	return rc == 0;
 }
 
 // first registration in the keychain when no account is given
