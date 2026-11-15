@@ -130,4 +130,17 @@ struct PlayStationBackendTests {
         #expect(console.nickname == "PS5")
         #expect(console.id == "000000000000")
     }
+
+    @Test func hapticsWindowBecomesRumble() {
+        // Silence and hiss stay off.
+        #expect(PlayStationBackend.rumbleStrength(sumLeft: 0, sumRight: 0, frames: 3) == (0, 0))
+        #expect(PlayStationBackend.rumbleStrength(sumLeft: 300, sumRight: 0, frames: 3) == (0, 0))
+        // Mean |amplitude| per frame, doubled.
+        #expect(PlayStationBackend.rumbleStrength(sumLeft: 30_000, sumRight: 3_000, frames: 3) == (20_000, 2_000))
+        // Faint but real signal is lifted to the pads' minimum.
+        #expect(PlayStationBackend.rumbleStrength(sumLeft: 600, sumRight: 0, frames: 3).0 == 1 << 9)
+        // Loud signal saturates.
+        #expect(PlayStationBackend.rumbleStrength(sumLeft: 300_000, sumRight: 0, frames: 3).0 == UInt16.max)
+        #expect(PlayStationBackend.rumbleStrength(sumLeft: 1, sumRight: 1, frames: 0) == (0, 0))
+    }
 }

@@ -12,6 +12,7 @@
 //                           up down left right options share l1 r1 touchpad
 //        --codec h264|h265  (default h265)    --res 720|1080 (default 1080)    --fps 30|60
 //        --rest             put the console into rest mode at the end
+//        --dualsense        present a DualSense: count haptics frames, print trigger effects
 //
 // Secrets never touch stdout: the PSN token and the registration live in the login keychain.
 //   PSN access token                 service "PSN access token", account $PS5CTL_PSN_ACCOUNT
@@ -328,6 +329,8 @@ typedef struct
 	// audio arrival timing
 	atomic_long audio_frames, audio_gaps_over_30ms, audio_gaps_over_60ms, audio_max_gap_us;
 	double audio_last;
+	// DualSense feedback
+	atomic_long haptic_frames, haptic_active_frames, trigger_events, rumble_events;
 } SessionState;
 
 static void event_cb(ChiakiEvent *event, void *user)
@@ -349,8 +352,14 @@ static void event_cb(ChiakiEvent *event, void *user)
 			fprintf(stderr, "** console asks for its login PIN - not supported here\n");
 			break;
 		case CHIAKI_EVENT_RUMBLE:
+			atomic_fetch_add(&st->rumble_events, 1);
 			if(g_verbose)
 				fprintf(stderr, "** rumble %u/%u\n", event->rumble.left, event->rumble.right);
+			break;
+		case CHIAKI_EVENT_TRIGGER_EFFECTS:
+			atomic_fetch_add(&st->trigger_events, 1);
+			fprintf(stderr, "** trigger effects L type %u R type %u\n",
+				event->trigger_effects.type_left, event->trigger_effects.type_right);
 			break;
 		case CHIAKI_EVENT_QUIT:
 			snprintf(st->quit_reason, sizeof(st->quit_reason), "%s%s%s",
@@ -554,6 +563,17 @@ static void audio_frame_cb(uint8_t *buf, size_t buf_size, void *user)
 	atomic_fetch_add(&st->audio_frames, 1);
 }
 
+static void haptics_frame_cb(uint8_t *buf, size_t buf_size, void *user)
+{
+	SessionState *st = user;
+	atomic_fetch_add(&st->haptic_frames, 1);
+	for(size_t i = 0; i + 1 < buf_size; i += 2)
+	{
+		int16_t v = (int16_t)(buf[i] | (buf[i + 1] << 8));
+		if(v > 300 || v < -300) { atomic_fetch_add(&st->haptic_active_frames, 1); break; }
+	}
+}
+
 static int cmd_stream(int argc, char **argv)
 {
 	if(argc < 1) { fprintf(stderr, "stream <ip> [options]\n"); return 1; }
@@ -566,11 +586,13 @@ static int cmd_stream(int argc, char **argv)
 	Press presses[32];
 	int npress = 0;
 	bool rest_after = false;
+	bool dualsense = false;
 	for(int i = 1; i < argc; i++)
 	{
 		if(!strcmp(argv[i], "--seconds") && i + 1 < argc) seconds = atof(argv[++i]);
 		else if(!strcmp(argv[i], "--out") && i + 1 < argc) out_path = argv[++i];
 		else if(!strcmp(argv[i], "--rest")) rest_after = true;
+		else if(!strcmp(argv[i], "--dualsense")) dualsense = true;
 		else if(!strcmp(argv[i], "--codec") && i + 1 < argc) { i++; codec = !strcmp(argv[i], "h264") ? CHIAKI_CODEC_H264 : CHIAKI_CODEC_H265; }
 		else if(!strcmp(argv[i], "--res") && i + 1 < argc) { i++; res = atoi(argv[i]) == 720 ? CHIAKI_VIDEO_RESOLUTION_PRESET_720p : CHIAKI_VIDEO_RESOLUTION_PRESET_1080p; }
 		else if(!strcmp(argv[i], "--fps") && i + 1 < argc) { i++; fps = atoi(argv[i]) == 30 ? CHIAKI_VIDEO_FPS_PRESET_30 : CHIAKI_VIDEO_FPS_PRESET_60; }
@@ -610,11 +632,17 @@ static int cmd_stream(int argc, char **argv)
 	info.video_profile_auto_downgrade = true;
 	info.enable_idr_on_fec_failure = true;
 	info.packet_loss_max = 0.05;
+	info.enable_dualsense = dualsense;
 
 	ChiakiSession session;
 	ChiakiErrorCode err = chiaki_session_init(&session, &info, &g_log);
 	if(err != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "session init: %s\n", chiaki_error_string(err)); return 1; }
 	chiaki_session_set_event_cb(&session, event_cb, &st);
+	if(dualsense)
+	{
+		ChiakiAudioSink haptics_sink = { .user = &st, .frame_cb = haptics_frame_cb };
+		chiaki_session_set_haptics_sink(&session, &haptics_sink);
+	}
 	chiaki_session_set_video_sample_cb(&session, video_cb, &st);
 	ChiakiAudioSink audio_sink = { .user = &st, .header_cb = audio_header_cb, .frame_cb = audio_frame_cb };
 	chiaki_session_set_audio_sink(&session, &audio_sink);
@@ -688,6 +716,10 @@ static int cmd_stream(int argc, char **argv)
 	chiaki_session_fini(&session);
 	if(st.out)
 		fclose(st.out);
+	if(dualsense)
+		printf("haptic frames=%ld (with signal %ld) trigger events=%ld rumble events=%ld\n",
+			atomic_load(&st.haptic_frames), atomic_load(&st.haptic_active_frames),
+			atomic_load(&st.trigger_events), atomic_load(&st.rumble_events));
 	printf("%s frames=%ld lost=%ld bytes=%ld%s%s\n", connected ? "streamed" : "did not connect",
 		atomic_load(&st.frames), atomic_load(&st.lost), atomic_load(&st.bytes),
 		st.quit_reason[0] ? " quit=" : "", st.quit_reason);

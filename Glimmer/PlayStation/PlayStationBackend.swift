@@ -66,6 +66,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private var connected = false
     private var stopped = false
     private var quitMessage: String?
+    /// The last QUIT was "Remote Play is already in use".
+    private var quitInUse = false
     private let connectSignal = DispatchSemaphore(value: 0)
 
     // Controller state per GameStream controller number. Remote Play takes one
@@ -91,6 +93,18 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// serial queue, as the Sunshine engine has its own receive threads.
     private let videoQueue = DispatchQueue(label: "Shimmer.PlayStation.video", qos: .userInteractive)
     private let audioQueue = DispatchQueue(label: "Shimmer.PlayStation.audio", qos: .userInteractive)
+
+    /// DualSense haptics arrive as a 3 kHz stereo PCM stream (10 ms frames).
+    /// They become rumble here, the way chiaki-ng drives non-native pads: each
+    /// 30 ms the mean amplitude of each side sets that side's motor, through
+    /// the same actuator the Sunshine engine's rumble uses (works over USB and
+    /// Bluetooth). Haptics state is touched on libchiaki's audio thread and
+    /// on `hapticsQueue` only.
+    private let hapticsQueue = DispatchQueue(label: "Shimmer.PlayStation.haptics", qos: .userInteractive)
+    private var hapticsTimer: DispatchSourceTimer?
+    private var hapticsSum: (left: UInt64, right: UInt64, frames: Int) = (0, 0, 0)
+    private var hapticsActive = false
+    private var loggedHaptics = false
 
     init(console: PlayStationConsole, options: PlayStationStreamOptions) {
         self.console = console
@@ -176,10 +190,62 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         if let kbps = options.bitrateKbps { info.video_profile.bitrate = UInt32(kbps) }
         info.video_profile_auto_downgrade = true
         info.enable_keyboard = false
-        info.enable_dualsense = false
+        // Present the pad as a DualSense: the console then sends haptics (as
+        // audio) and adaptive-trigger effects instead of plain rumble.
+        info.enable_dualsense = true
         info.enable_idr_on_fec_failure = true
         info.packet_loss_max = 0.05
 
+        // The decoder is set up before the first frame can arrive.
+        let setup = videoSink.setup(videoFormat: options.videoFormat, width: options.width,
+                                    height: options.height, redrawRate: Int32(options.fps))
+        guard setup == 0 else {
+            events.stageFailed("PS5 session", code: setup)
+            throw StreamError.sessionFailed(setup)
+        }
+        videoSink.start()
+
+        // The console keeps a session busy for a few seconds after the last one
+        // ended ("Remote Play is already in use"); wait it out rather than fail
+        // a quick reconnect.
+        var attempt = 1
+        while true {
+            let outcome = try runChiakiSession(info: &info, events: events)
+            if outcome == .connected { break }
+            if outcome == .inUse, attempt < Self.inUseAttempts {
+                Diag.notice("PS5: the console still holds the previous session - retrying in 3 s "
+                    + "(attempt \(attempt + 1) of \(Self.inUseAttempts))", Self.logCategory)
+                attempt += 1
+                if connectSignal.wait(timeout: .now() + 3) == .success, lock.withLock({ stopped }) {
+                    throw StreamError.sessionFailed(-1)
+                }
+                continue
+            }
+            let reason = lock.withLock { quitMessage } ?? "the PS5 did not answer within 20 s"
+            Diag.error("PS5: connect failed - \(reason)", Self.logCategory)
+            events.stageFailed("PS5 session", code: -1)
+            stopConnection()
+            throw StreamError.hostUnreachable(reason)
+        }
+        events.stageComplete("PS5 session")
+        armControllerFeedback()
+        events.connectionStarted()
+    }
+
+    static let inUseAttempts = 4
+
+    enum SessionOutcome { case connected, inUse, failed }
+
+    /// One libchiaki session attempt: init, wire callbacks, start, and wait for
+    /// CONNECTED or QUIT (20 s). A failed attempt's session is torn down here;
+    /// the sinks stay up for the next attempt.
+    private func runChiakiSession(info: inout ChiakiConnectInfo,
+                                  events: NativeConnectionEvents) throws -> SessionOutcome {
+        lock.withLock {
+            connected = false
+            quitMessage = nil
+            quitInUse = false
+        }
         let session = UnsafeMutablePointer<ChiakiSession>.allocate(capacity: 1)
         session.initialize(to: ChiakiSession())
         let err = chiaki_session_init(session, &info, chiakiLog)
@@ -188,18 +254,6 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             events.stageFailed("PS5 session", code: Int32(err.rawValue))
             throw StreamError.sessionFailed(Int32(err.rawValue))
         }
-
-        // The decoder is set up before the first frame can arrive.
-        let setup = videoSink.setup(videoFormat: options.videoFormat, width: options.width,
-                                    height: options.height, redrawRate: Int32(options.fps))
-        guard setup == 0 else {
-            chiaki_session_fini(session)
-            session.deallocate()
-            events.stageFailed("PS5 session", code: setup)
-            throw StreamError.sessionFailed(setup)
-        }
-        videoSink.start()
-
         let retained = Unmanaged.passRetained(self)
         let ctx = retained.toOpaque()
         lock.withLock {
@@ -228,61 +282,75 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 .handleAudioFrame(UnsafeRawBufferPointer(start: buf, count: size))
         }
         chiaki_session_set_audio_sink(session, &audio)
+        var haptics = ChiakiAudioSink()
+        haptics.user = ctx
+        haptics.frame_cb = { buf, size, user in
+            guard let buf, let user else { return }
+            Unmanaged<PlayStationBackend>.fromOpaque(user).takeUnretainedValue()
+                .handleHapticsFrame(UnsafeRawBufferPointer(start: buf, count: size))
+        }
+        chiaki_session_set_haptics_sink(session, &haptics)
 
         let startErr = chiaki_session_start(session)
         guard startErr == CHIAKI_ERR_SUCCESS else {
+            tearDownChiakiSession()
             events.stageFailed("PS5 session", code: Int32(startErr.rawValue))
-            stopConnection()
             throw StreamError.sessionFailed(Int32(startErr.rawValue))
         }
-
-        // Block (we run on StreamSession's connect task) until the console
-        // says CONNECTED, quits, or 20 s pass.
-        let waited = connectSignal.wait(timeout: .now() + 20)
-        let (isConnected, message) = lock.withLock { (connected, quitMessage) }
-        guard waited == .success, isConnected else {
-            let reason = message ?? "the PS5 did not answer within 20 s"
-            Diag.error("PS5: connect failed - \(reason)", Self.logCategory)
-            events.stageFailed("PS5 session", code: -1)
-            stopConnection()
-            throw StreamError.hostUnreachable(reason)
-        }
-        events.stageComplete("PS5 session")
-        armControllerFeedback()
-        events.connectionStarted()
+        // Block (we run on StreamSession's connect task) until CONNECTED, QUIT,
+        // an interrupt, or 20 s.
+        _ = connectSignal.wait(timeout: .now() + 20)
+        let (isConnected, inUse) = lock.withLock { (connected, quitInUse) }
+        if isConnected { return .connected }
+        tearDownChiakiSession()
+        return inUse ? .inUse : .failed
     }
 
-    func stopConnection() {
-        let (session, retained, video, audio) = lock.withLock { () -> (UnsafeMutablePointer<ChiakiSession>?, Unmanaged<PlayStationBackend>?, VideoSink?, NativeAudioSink?) in
-            let s = self.session
-            let r = self.retainedSelf
+    /// Stop, join and free the current libchiaki session (sinks untouched).
+    private func tearDownChiakiSession() {
+        let (session, retained) = lock.withLock { () -> (UnsafeMutablePointer<ChiakiSession>?, Unmanaged<PlayStationBackend>?) in
+            let s = self.session, r = self.retainedSelf
             self.session = nil
             self.retainedSelf = nil
-            self.stopped = true
-            return (s, r, self.videoSink, self.audioSink)
+            return (s, r)
         }
-        connectSignal.signal()
         if let session {
-            Diag.info("PS5: stopping session", Self.logCategory)
             chiaki_session_stop(session)
             chiaki_session_join(session)
             chiaki_session_fini(session)
             session.deinitialize(count: 1)
             session.deallocate()
         }
+        retained?.release()
+    }
+
+    func stopConnection() {
+        let (video, audio) = lock.withLock { () -> (VideoSink?, NativeAudioSink?) in
+            self.stopped = true
+            return (self.videoSink, self.audioSink)
+        }
+        connectSignal.signal()
+        Diag.info("PS5: stopping session", Self.logCategory)
+        tearDownChiakiSession()
         // Let queued frames finish before the sinks are torn down.
         videoQueue.sync {}
         audioQueue.sync {}
+        hapticsQueue.sync {
+            hapticsTimer?.cancel()
+            hapticsTimer = nil
+        }
         ControllerHaptics.shared.stopAll(reason: "stream teardown")
         ControllerMotion.shared.stopAll(reason: "stream teardown")
         video?.stop()
         video?.cleanup()
         audio?.cleanup()
-        retained?.release()
     }
 
     func interruptConnection() {
-        let session = lock.withLock { self.session }
+        let session = lock.withLock { () -> UnsafeMutablePointer<ChiakiSession>? in
+            stopped = true
+            return self.session
+        }
         if let session { chiaki_session_stop(session) }
         connectSignal.signal()
     }
@@ -334,6 +402,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             let isError = chiaki_quit_reason_is_error(event.quit.reason)
             let (wasConnected, wasStopped, events) = lock.withLock { () -> (Bool, Bool, NativeConnectionEvents?) in
                 if quitMessage == nil { quitMessage = message }
+                quitInUse = event.quit.reason == CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE
                 return (connected, stopped, self.events)
             }
             Diag.notice("PS5: session ended - \(message)", Self.logCategory)
@@ -346,6 +415,16 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             let events = lock.withLock { self.events }
             events?.rumble(controller: 0, lowFreq: UInt16(event.rumble.left) * 257,
                            highFreq: UInt16(event.rumble.right) * 257)
+        case CHIAKI_EVENT_TRIGGER_EFFECTS:
+            let effect = event.trigger_effects
+            let left = withUnsafeBytes(of: effect.left) { Array($0) }
+            let right = withUnsafeBytes(of: effect.right) { Array($0) }
+            let events = lock.withLock { self.events }
+            // 0x04 | 0x08: both trigger blocks (DS_EFFECT_RIGHT/LEFT_TRIGGER).
+            events?.setAdaptiveTriggers(controller: 0, eventFlags: 0x0C,
+                                        typeLeft: effect.type_left, typeRight: effect.type_right,
+                                        left: left, right: right)
+            Diag.info("PS5: adaptive triggers L=\(effect.type_left) R=\(effect.type_right)", Self.logCategory)
         case CHIAKI_EVENT_LED_COLOR:
             let events = lock.withLock { self.events }
             let led = event.led_state
@@ -469,6 +548,67 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         return params + [DecodeBuffer(kind: .picData, data: picData)]
     }
 
+    // MARK: Haptics
+
+    /// One haptics frame: interleaved Int16 L/R samples. Sum |amplitude| per side.
+    private func handleHapticsFrame(_ pcm: UnsafeRawBufferPointer) {
+        let samples = pcm.count / 4
+        guard samples > 0 else { return }
+        var left: UInt64 = 0, right: UInt64 = 0
+        for i in 0..<samples {
+            left += UInt64(abs(Int32(pcm.loadUnaligned(fromByteOffset: i * 4, as: Int16.self))))
+            right += UInt64(abs(Int32(pcm.loadUnaligned(fromByteOffset: i * 4 + 2, as: Int16.self))))
+        }
+        let meanL = left / UInt64(samples), meanR = right / UInt64(samples)
+        hapticsQueue.async { [weak self] in
+            guard let self else { return }
+            self.hapticsSum.left += meanL
+            self.hapticsSum.right += meanR
+            self.hapticsSum.frames += 1
+            if !self.loggedHaptics, meanL + meanR > 0 {
+                self.loggedHaptics = true
+                Diag.notice("PS5: first haptics from the console", Self.logCategory)
+            }
+        }
+    }
+
+    /// Every 30 ms: the window's mean amplitude → motor strength (x2, as
+    /// chiaki-ng scales it; quiet frames below the floor are silence).
+    private func startHapticsTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: hapticsQueue)
+        timer.schedule(deadline: .now() + .milliseconds(30), repeating: .milliseconds(30))
+        timer.setEventHandler { [weak self] in self?.flushHaptics() }
+        timer.resume()
+        hapticsTimer = timer
+    }
+
+    private func flushHaptics() {
+        let sum = hapticsSum
+        hapticsSum = (0, 0, 0)
+        let (left, right) = Self.rumbleStrength(sumLeft: sum.left, sumRight: sum.right, frames: sum.frames)
+        let active = left > 0 || right > 0
+        guard active || hapticsActive else { return }
+        hapticsActive = active
+        let events = lock.withLock { self.events }
+        // Low-frequency (big) motor on the left, high-frequency on the right,
+        // matching the DualSense's left/right actuator sides.
+        events?.rumble(controller: 0, lowFreq: left, highFreq: right)
+    }
+
+    /// Mean |amplitude| per frame, averaged over a window → 16-bit motor
+    /// strength: x2 (chiaki-ng's scale), a floor that treats hiss as silence,
+    /// and a minimum that pads which ignore tiny values can still feel.
+    static func rumbleStrength(sumLeft: UInt64, sumRight: UInt64, frames: Int) -> (UInt16, UInt16) {
+        guard frames > 0 else { return (0, 0) }
+        func scale(_ sum: UInt64) -> UInt16 {
+            let v = sum * 2 / UInt64(frames)
+            guard v > hapticsFloor else { return 0 }
+            return UInt16(min(max(v, 1 << 9), UInt64(UInt16.max)))
+        }
+        return (scale(sumLeft), scale(sumRight))
+    }
+    static let hapticsFloor: UInt64 = 300
+
     // MARK: Controller feedback
 
     /// Same gates NativeBackend arms on connect: haptics actuator live, motion
@@ -477,6 +617,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private func armControllerFeedback() {
         ControllerHaptics.shared.streamActivated()
         ControllerMotion.shared.streamActivated(backend: self)
+        hapticsQueue.async { [weak self] in self?.startHapticsTimer() }
         let events = lock.withLock { self.events }
         events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_ACCEL), reportRateHz: 100)
         events?.setMotionEventState(controller: 0, motionType: UInt8(StreamProtocol.LI_MOTION_TYPE_GYRO), reportRateHz: 100)
