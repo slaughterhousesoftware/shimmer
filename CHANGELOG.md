@@ -22,6 +22,22 @@ Everything below glimmer 2026.9.0 in this file is upstream glimmer's history.
   which restarts it. The half-second pause during the animation itself is
   the system's - it holds every window on screen - and remains.
 
+### PlayStation 5
+- Streams a PS5 over Remote Play through chiaki-ng's libchiaki, into the same
+  window, Picture in Picture, audio and controller path as a PC. A PS5 on the
+  network appears under Nearby; pairing takes a one-time PlayStation Network
+  sign-in and the code from Pair Device. Stream wakes it from rest mode, waits
+  out a console that is still releasing the previous session, and finds it
+  again if its address changes.
+- The DualSense gets the console's light bar, adaptive triggers and haptics
+  (played as rumble); touchpad and motion go back to the console.
+
+### Wi-Fi
+- "Reduce lag spikes on Wi-Fi" is back, without the background helper: the
+  first time, macOS asks for your password once to allow Shimmer to pause
+  AirDrop's Wi-Fi link (awdl0), which it does only while a stream runs over
+  Wi-Fi, restoring it afterwards.
+
 ### One window
 - Servers, Stream, General and About tabs replace the launcher and the
   separate Settings window, laid out like a native Mac utility.

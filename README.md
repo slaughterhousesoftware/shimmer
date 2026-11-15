@@ -26,7 +26,9 @@ A PS5 on your network shows up in Servers under Nearby. Select it, sign in to
 PlayStation Network once, and enter the code from the PS5's Settings › System ›
 Remote Play › Pair Device. After that the PS5 is listed like a PC: Stream wakes
 it from rest mode, and the stream gets the same window, Picture in Picture,
-audio and controller support, including the DualSense touchpad and gyro.
+audio and controller support, including the DualSense touchpad and gyro, and
+the console's feedback: light bar, adaptive triggers, and its haptics played as
+rumble.
 
 The PS5 sends 1080p or 720p at up to 60 fps. It takes controller input only,
 and Shimmer connects to it directly, so it has to be on the same network or
@@ -62,7 +64,10 @@ Picture are in its menu.
 - PC discovery, PIN pairing, and import of moonlight-qt pairings.
 - A second address per PC, such as a Tailscale address, used when the home
   address isn't reachable.
-- PS5 Remote Play: registration, wake from rest mode, and 1080p60 HEVC streams.
+- PS5 Remote Play: registration, wake from rest mode, 1080p60 HEVC streams, and
+  DualSense light bar, adaptive triggers and haptics (as rumble).
+- "Reduce lag spikes on Wi-Fi" pauses AirDrop, AirPlay and Sidecar while you
+  stream over Wi-Fi; turning it on asks for your Mac password once.
 - `shimmerctl`, a command-line tool a coding agent can use to check and fix the
   app. See the [CLI guide](docs/CLI.md).
 
