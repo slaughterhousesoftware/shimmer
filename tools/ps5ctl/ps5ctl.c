@@ -113,8 +113,23 @@ static bool keychain_set(const char *service, const char *account, const char *v
 }
 
 // first registration in the keychain when no account is given
+// ($PS5CTL_REGIST_FILE, when set, names a file holding the registration string
+// instead - for a Mac without the keychain item)
 static char *keychain_find_any_regist(char *account_out, size_t account_size)
 {
+	const char *file = getenv("PS5CTL_REGIST_FILE");
+	if(file && *file)
+	{
+		FILE *f = fopen(file, "r");
+		if(!f) { perror(file); return NULL; }
+		static char buf[4096];
+		size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+		fclose(f);
+		buf[n] = 0;
+		buf[strcspn(buf, "\r\n")] = 0;
+		snprintf(account_out, account_size, "file");
+		return strdup(buf);
+	}
 	FILE *p = popen("security find-generic-password -s '" REGIST_SERVICE "' 2>/dev/null | sed -n 's/.*\"acct\"<blob>=\"\\(.*\\)\"/\\1/p'", "r");
 	if(!p)
 		return NULL;
