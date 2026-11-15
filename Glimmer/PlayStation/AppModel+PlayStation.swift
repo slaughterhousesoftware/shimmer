@@ -46,23 +46,23 @@ extension AppModel {
         PlayStationStore.shared.console(hostID: host.id)
     }
 
-    /// Video settings for a PS5 stream, from the user's stream settings: the
-    /// console offers 720p or 1080p at 30 or 60 fps. Bitrate: automatic keeps
-    /// the console's preset (15 Mbps at 1080p) and lets it adapt; a bitrate
-    /// set by hand is sent as is (2-100 Mbps, PXPlay's range) and held. HDR
-    /// when it is on and this display can show it.
+    /// A PS5 stream's settings: the PlayStation tab's own (PlayStationSettings),
+    /// not the Sunshine ones. The console offers 720p or 1080p at 30 or 60 fps.
+    /// Bitrate: automatic keeps the console's preset (15 Mbps at 1080p) and
+    /// lets it adapt; one set by hand is sent as is (2-100 Mbps) and held.
+    /// HDR only with HEVC, and only when this display can show it.
     func playStationStreamOptions() -> PlayStationStreamOptions {
+        let s = PlayStationSettings.shared.snapshot
         var options = PlayStationStreamOptions()
-        options.resolution = effectiveHeight > 720 ? .p1080 : .p720
-        options.fps = effectiveFPS > 30 ? 60 : 30
-        let manual: Bool
-        if case .custom = qualityPreset { manual = true } else { manual = !bitrateAuto }
-        if manual {
-            options.bitrateKbps = PlayStationStreamOptions.clampBitrate(effectiveBitrateKbps)
+        options.settings = s
+        options.resolution = s.height > 720 ? .p1080 : .p720
+        options.fps = s.fps > 30 ? 60 : 30
+        if let kbps = s.bitrateKbps {
+            options.bitrateKbps = PlayStationStreamOptions.clampBitrate(kbps)
             options.holdBitrate = true
         }
         let displayCanShowHDR = (NSScreen.main?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1
-        if effectiveHDR && displayCanShowHDR { options.codec = .h265HDR }
+        options.codec = !s.hevc ? .h264 : (s.hdr && displayCanShowHDR ? .h265HDR : .h265)
         return options
     }
 

@@ -33,7 +33,7 @@ struct SettingsHeaderBackground: View {
 /// The pages the settings view can show. Raw values are persisted as the
 /// remembered tab, so leave them alone when renaming a title.
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case computers, stream, general, about
+    case computers, stream, playStation, general, about
 
     var id: String { rawValue }
 
@@ -42,7 +42,10 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         // The enum case stays `computers` (the --debug-open-settings rawValue
         // and existing references); only the shown name changed to "Servers".
         case .computers: return "Servers"
-        case .stream: return "Stream"
+        // `stream` keeps its raw value (the remembered tab); it is the
+        // Sunshine/GameStream settings now that the PS5 has its own tab.
+        case .stream: return "Sunshine"
+        case .playStation: return "PlayStation"
         case .general: return "General"
         case .about: return "About"
         }
@@ -56,7 +59,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .computers: return "server.rack"
         // A screen with a play badge: the video you watch, not the Wi-Fi-looking
         // radio waves. The sliders stay with the app-level General page.
-        case .stream: return "play.tv"
+        case .stream: return "sun.max"
+        case .playStation: return "playstation.logo"
         case .general: return "slider.horizontal.3"
         case .about: return "info.circle"
         }
@@ -73,7 +77,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .computers: return 528 - 32
         // Allow room for the descriptions and CLI row. Unusual expanded
         // controls and diagnostics can still scroll within the page.
-        case .stream: return 750 - 32
+        case .stream: return 640 - 32
+        case .playStation: return 760 - 32
         case .general: return 744 - 32
         case .about: return 540 - 32
         }

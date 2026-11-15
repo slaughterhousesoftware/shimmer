@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4C3EA4677DA945B9101733E9 /* PlayStationSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8E5EC44462661C8CA935C5B /* PlayStationSettingsPane.swift */; };
+		4787E229082FA3FBBCE22DD4 /* PlayStationSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BBB64CDFF8C661021B989D7 /* PlayStationSettings.swift */; };
 		5254A6A12DDB56CCE73A2E3D /* DualSenseBluetoothHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6E429195D70138724BDC5E /* DualSenseBluetoothHaptics.swift */; };
 		4498DA722E215754B0CD570A /* GameModeBoost.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF94195794458E8AF3AA0062 /* GameModeBoost.swift */; };
 		C7B38447FF55B77D3057A417 /* DualSenseFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25C9B34B062B47C6A38BE6C /* DualSenseFeedbackTests.swift */; };
@@ -357,6 +359,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F8E5EC44462661C8CA935C5B /* PlayStationSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationSettingsPane.swift; sourceTree = "<group>"; };
+		6BBB64CDFF8C661021B989D7 /* PlayStationSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationSettings.swift; sourceTree = "<group>"; };
 		FF6E429195D70138724BDC5E /* DualSenseBluetoothHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/DualSenseBluetoothHaptics.swift; sourceTree = "<group>"; };
 		CF94195794458E8AF3AA0062 /* GameModeBoost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/GameModeBoost.swift; sourceTree = "<group>"; };
 		A25C9B34B062B47C6A38BE6C /* DualSenseFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualSenseFeedbackTests.swift; sourceTree = "<group>"; };
@@ -762,6 +766,8 @@
 		A10000031 /* Glimmer */ = {
 			isa = PBXGroup;
 			children = (
+				F8E5EC44462661C8CA935C5B /* PlayStationSettingsPane.swift */,
+				6BBB64CDFF8C661021B989D7 /* PlayStationSettings.swift */,
 				FF6E429195D70138724BDC5E /* DualSenseBluetoothHaptics.swift */,
 				CF94195794458E8AF3AA0062 /* GameModeBoost.swift */,
 				84735895916681381B632341 /* DualSenseAudioHaptics.swift */,
@@ -1223,6 +1229,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4C3EA4677DA945B9101733E9 /* PlayStationSettingsPane.swift in Sources */,
+				4787E229082FA3FBBCE22DD4 /* PlayStationSettings.swift in Sources */,
 				5254A6A12DDB56CCE73A2E3D /* DualSenseBluetoothHaptics.swift in Sources */,
 				4498DA722E215754B0CD570A /* GameModeBoost.swift in Sources */,
 				A1161C57B865A160A42693BA /* DualSenseAudioHaptics.swift in Sources */,

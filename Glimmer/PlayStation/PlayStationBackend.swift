@@ -32,6 +32,8 @@ struct PlayStationStreamOptions: Sendable, Equatable {
     /// Keep the bitrate: report no packet loss, so the console never lowers
     /// it (PXPlay's manual mode sends no loss reports at all).
     var holdBitrate = false
+    /// Everything else from the PlayStation settings tab.
+    var settings = PlayStationSettings.Snapshot()
 
     /// The console takes 2-100 Mbps (PXPlay's range).
     static func clampBitrate(_ kbps: Int) -> Int { min(100_000, max(2_000, kbps)) }
@@ -233,11 +235,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             + (options.bitrateKbps.map { "\($0 / 1000) Mbps\(options.holdBitrate ? " (held)" : "")" } ?? "preset bitrate"),
             Self.logCategory)
 
-        // Newest frame straight to the screen (VideoDecoder.presentsDirect);
-        // `defaults write com.kevinbpatel.shimmer PS5PacedPresent -bool YES`
-        // puts the pacer back.
+        // Newest frame straight to the screen (VideoDecoder.presentsDirect),
+        // unless the PlayStation tab asks for Smooth (the frame pacer).
         if let decoder = videoSink as? VideoDecoder {
-            decoder.presentsDirect = !UserDefaults.standard.bool(forKey: "PS5PacedPresent")
+            decoder.presentsDirect = options.settings.presentsDirect
         }
         // The decoder is set up before the first frame can arrive.
         let setup = videoSink.setup(videoFormat: options.videoFormat, width: options.width,
@@ -392,6 +393,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
         connectSignal.signal()
         Diag.info("PS5: stopping session", Self.logCategory)
+        if options.settings.restWhenStreamEnds, let session = lock.withLock({ connected ? self.session : nil }) {
+            // The PlayStation tab's "Put the PS5 to rest": ask before leaving.
+            _ = chiaki_session_goto_bed(session)
+            Diag.notice("PS5: asked the console to go to rest", Self.logCategory)
+            Thread.sleep(forTimeInterval: 0.3)
+        }
         tearDownChiakiSession()
         // Let queued frames finish before the sinks are torn down.
         videoQueue.sync {}
@@ -479,8 +486,9 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         case CHIAKI_EVENT_RUMBLE:
             handleRumble(left: event.rumble.left, right: event.rumble.right)
         case CHIAKI_EVENT_TRIGGER_EFFECTS:
-            // Trigger effects switched off in the console's settings.
-            guard lock.withLock({ triggerNibble }) != Self.intensityOff & 0xF0 else { break }
+            // Trigger effects switched off in the console's settings, or here.
+            guard options.settings.adaptiveTriggers,
+                  lock.withLock({ triggerNibble }) != Self.intensityOff & 0xF0 else { break }
             let effect = event.trigger_effects
             let left = withUnsafeBytes(of: effect.left) { Array($0) }
             let right = withUnsafeBytes(of: effect.right) { Array($0) }
@@ -510,6 +518,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             }
             _ = pushPad()
         case CHIAKI_EVENT_LED_COLOR:
+            guard options.settings.lightBar else { break }
             let (events, usbHaptics) = lock.withLock { (self.events, audioHaptics != nil) }
             let led = event.led_state
             // GameController's light setter would switch the pad's audio haptics off.
@@ -644,6 +653,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     /// One haptics frame: interleaved Int16 L/R samples. Sum |amplitude| per side.
     private func handleHapticsFrame(_ pcm: UnsafeRawBufferPointer) {
+        guard options.settings.haptics != .off else { return }
         if let player = lock.withLock({ audioHaptics }) {
             player.push(pcm)
             noteActuatorFrame(pcm, player: player)
@@ -711,6 +721,17 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// through its haptics report. Neither (another pad): rumble.
     private func startAudioHaptics(bluetoothWait: Int = 20) {
         guard !lock.withLock({ stopped }) else { return }
+        switch options.settings.haptics {
+        case .off:
+            Diag.info("PS5: haptics off (PlayStation settings)", Self.logCategory)
+            return
+        case .rumble:
+            Diag.info("PS5: haptics play as rumble (PlayStation settings)", Self.logCategory)
+            hapticsQueue.async { [weak self] in self?.startHapticsTimer() }
+            return
+        case .actuators:
+            break
+        }
         if let player = DualSenseAudioHaptics.start(onLost: { [weak self] in
             self?.restartAudioHaptics(reason: "the DualSense audio device changed")
         }) {
@@ -748,7 +769,9 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         if muted { player.setGain(0) }
         // Game Mode halves the Bluetooth controller's polling interval, in any
         // window mode (GameModeBoost).
-        if player is DualSenseBluetoothHaptics { GameModeBoost.shared.acquire(reason: "PS5 stream") }
+        if player is DualSenseBluetoothHaptics, options.settings.gameModeBoost {
+            GameModeBoost.shared.acquire(reason: "PS5 stream")
+        }
         // Over Bluetooth each 0x31 write takes a slot on the link the haptics need.
         DualSenseHID.shared.setAudioHapticsMode(true, keepAliveEvery: player is DualSenseBluetoothHaptics ? 2 : 1)
         Diag.notice("PS5: haptics play on the DualSense's actuators (\(player.deviceName))", Self.logCategory)
@@ -761,7 +784,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }) else { return }
         let stats = player.stats
         player.stop()
-        if player is DualSenseBluetoothHaptics { GameModeBoost.shared.release() }
+        if player is DualSenseBluetoothHaptics, options.settings.gameModeBoost { GameModeBoost.shared.release() }
         DualSenseHID.shared.setAudioHapticsMode(false)
         let frames = lock.withLock { hapticsFrames }
         Diag.info("PS5: DualSense haptics stopped (\(reason)); \(frames.active)/\(frames.total) frames with "

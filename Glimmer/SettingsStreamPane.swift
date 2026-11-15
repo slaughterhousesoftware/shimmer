@@ -154,6 +154,26 @@ struct StreamPane: View {
                 }
             }
 
+            // Off, ending a stream just disconnects: the game stays up on the
+            // PC and the next Stream click resumes it. "Quit <app>" in the
+            // menu bar ends it deliberately. On, every stop ends it.
+            SettingsField("When the stream ends") {
+                Toggle("Quit the game on the PC", isOn: $model.quitAppWhenStreamEnds)
+                SettingsHelp("When off, the game keeps running so you can resume later.")
+            }
+
+        }
+    }
+}
+
+/// How any stream - Sunshine or PlayStation - shows and behaves on this Mac.
+struct StreamWindowPane: View {
+    @Environment(AppModel.self) private var model
+    private var awdl = AWDLGuard.shared
+
+    var body: some View {
+        @Bindable var model = model
+        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
             SettingsField("Show the stream") {
                 Picker("", selection: $model.streamDisplayMode) {
                     ForEach(StreamDisplayMode.allCases) { mode in
@@ -168,14 +188,6 @@ struct StreamPane: View {
             SettingsField("Picture in Picture") {
                 Toggle("Pop out when you switch away", isOn: $model.autoPictureInPicture)
                 SettingsHelp("Moves the stream into a floating window when you switch apps.")
-            }
-
-            // Off, ending a stream just disconnects: the game stays up on the
-            // PC and the next Stream click resumes it. "Quit <app>" in the
-            // menu bar ends it deliberately. On, every stop ends it.
-            SettingsField("When the stream ends") {
-                Toggle("Quit the game on the PC", isOn: $model.quitAppWhenStreamEnds)
-                SettingsHelp("When off, the game keeps running so you can resume later.")
             }
 
             // The cushion that rides out Wi-Fi hiccups can sit at 100+ ms for
@@ -195,6 +207,17 @@ struct StreamPane: View {
                     set: { model.keepAwakePolicy = KeepAwakePolicy(isOn: $0) }))
             }
 
+            SettingsField("Wi-Fi") {
+                Toggle("Reduce lag spikes on Wi-Fi", isOn: Binding(
+                    get: { awdl.enabled }, set: { awdl.setEnabled($0) }))
+                    .disabled(awdl.installing)
+                SettingsHelp("AirDrop, AirPlay and Sidecar share your Wi-Fi radio and can interrupt the "
+                    + "stream. This pauses them while you play and turns them back on after. The first "
+                    + "time, macOS asks for your password. Not needed on Ethernet.")
+                if let error = awdl.lastError, !awdl.enabled {
+                    Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }

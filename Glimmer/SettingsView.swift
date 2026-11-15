@@ -36,7 +36,7 @@ struct AppShell: View {
         if showsWelcome { return 520 - 32 }
         let ceiling = model.settingsTab.windowHeight
         switch model.settingsTab {
-        case .stream, .general:
+        case .stream, .playStation, .general:
             guard let pageHeight, headerHeight > 0 else { return ceiling }
             // The header is measured in window space, but its top 32pt is the
             // title bar this frame's height already excludes.
@@ -93,6 +93,7 @@ struct AppShell: View {
             switch model.settingsTab {
             case .computers: ComputersTab(pairingTarget: $pairingTarget)
             case .stream: StreamTabPage()
+            case .playStation: PlayStationTabPage()
             case .general: GeneralTabPage()
             case .about: AboutPane()
             }
@@ -112,11 +113,10 @@ struct AppShell: View {
     }
 }
 
-/// Every setting, on one scrolling page. Tailscale keeps one Settings tab
-/// rather than a pane per topic, and the gutter labels ("Resolution:",
-/// "Bitrate:") do the grouping that a sidebar would otherwise do.
-/// Everything about the stream itself - what it looks and sounds like and
-/// how it is shown - the way a game's Video / Audio pages read.
+/// The Sunshine (GameStream) stream: what a PC is asked for. The gutter
+/// labels ("Resolution:", "Bitrate:") do the grouping a sidebar would.
+/// How any stream is shown on this Mac lives in General; the PS5's own
+/// settings have their own tab.
 private struct StreamTabPage: View {
     var body: some View {
         SettingsPageBody {
@@ -131,8 +131,18 @@ private struct StreamTabPage: View {
 private struct GeneralTabPage: View {
     var body: some View {
         SettingsPageBody {
+            StreamWindowPane()
             ShortcutsPane()
             AppPane()
+        }
+    }
+}
+
+/// The PS5's own settings (PlayStationSettings).
+private struct PlayStationTabPage: View {
+    var body: some View {
+        SettingsPageBody {
+            PlayStationSettingsPane()
         }
     }
 }
