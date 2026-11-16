@@ -180,6 +180,20 @@ public final class StreamPictureInPicture: NSObject {
         stopWatchdog = nil
     }
 
+    /// A stream let go of PiP (PictureInPictureStage): stop it if it is up and
+    /// drop the stream's handlers, keeping the controller for the next stream.
+    public func reset() {
+        onDidStart = nil; onDidStop = nil; onRestoreRequested = nil
+        onPauseChanged = nil; onFailedToStart = nil
+        if controller?.isPictureInPictureActive == true, !isStopping {
+            stoppingProgrammatically = true
+            isStopping = true
+            controller?.stopPictureInPicture()
+            armStopWatchdog(attempt: 1)
+        }
+        pausedState.withLock { $0 = false }
+    }
+
     /// Drop the controller without any callbacks - session teardown.
     public func invalidate() {
         onDidStart = nil; onDidStop = nil; onRestoreRequested = nil

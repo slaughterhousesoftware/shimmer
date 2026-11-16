@@ -223,11 +223,13 @@ public final class StreamWindow {
     /// by `rebuildDisplayLayer()`). The system PiP window shows the SAME layer
     /// the fullscreen window paints into, so the two are mutually exclusive:
     /// entering PiP hides this window, returning to this window stops PiP.
-    let pictureInPicture: StreamPictureInPicture
+    /// App-wide (PictureInPictureStage), so PiP can outlive a stream when
+    /// switching PCs; this window drives it only while it owns the stage.
+    var pictureInPicture: StreamPictureInPicture { PictureInPictureStage.shared.pictureInPicture }
     /// The layer (and invisible window) Apple's PiP shows - not this window's.
-    let pipSource: PiPSource
+    var pipSource: PiPSource { PictureInPictureStage.shared.source }
     /// Keeps the picture whole inside Apple's PiP window.
-    let pipFitter = PiPPanelFitter()
+    var pipFitter: PiPPanelFitter { PictureInPictureStage.shared.fitter }
     /// The PiP layer, for the decoder to feed alongside the stream's own.
     public var pipLayer: AVSampleBufferDisplayLayer { pipSource.layer }
     /// True from `hideStreamWindow()` (orderOut) until `reengageForeground()`.
@@ -251,6 +253,11 @@ public final class StreamWindow {
     /// stream window's own key/resign transitions are meaningless then, and
     /// returns come through the explicit PiP / menu paths.
     var pipSourceMode = false
+    /// AppModel's "Switch PC" is ending this stream for another: the closing
+    /// window leaves the app where it is (no launcher hand-off).
+    static var switchingHosts = false
+    /// Captured at close(): whether finishClose brings the launcher forward.
+    var handsOffToLauncher = true
     /// Open this stream straight into Picture in Picture (set before show()).
     public var launchesInPictureInPicture = false
     /// From show() until the first frames start PiP: the window has never been
@@ -520,10 +527,9 @@ public final class StreamWindow {
         self.captureHintBanner = captureHint
         self.displayView = view
         self.streamDelegate = delegate
-        let source = PiPSource()
-        self.pipSource = source
-        self.pictureInPicture = StreamPictureInPicture(layer: source.layer)
-        installPictureInPictureHandlers()
+        // PiP handlers go in when this window claims or adopts the stage
+        // (StreamWindow+PictureInPicture.swift), never before: a switch may
+        // still be holding the previous stream's PiP.
         // Window mode: the red button / Cmd-W route through the delegate to
         // the session's stop() (StreamWindow+Windowed.swift). Wired after
         // full initialization because it captures self.

@@ -100,6 +100,9 @@ extension StreamWindow {
     public func close() {
         guard !didClose else { return }
         didClose = true
+        // Switching PCs: the next stream follows, so don't hand off to the
+        // launcher (activate + front the main window) when this one is gone.
+        handsOffToLauncher = !Self.switchingHosts
 
         // Picture in Picture first: the system PiP window is fed by our layer
         // and would otherwise outlive the session showing a frozen frame.
@@ -223,6 +226,7 @@ extension StreamWindow {
         // Reset alphaValue so a future show() of this window isn't
         // invisible (defensive - close() is currently the last call).
         window.alphaValue = 1.0
+        guard handsOffToLauncher else { return }
         NSApp.activate()
         if let main = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "Shimmer" }) {
             main.makeKeyAndOrderFront(nil)

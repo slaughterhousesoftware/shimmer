@@ -72,6 +72,9 @@ extension StreamWindow {
             log.notice("Picture in Picture requested before the first frame - ignored")
             return
         }
+        // Switching PCs in PiP: the previous stream's PiP is still up, holding
+        // its last frame - take it over in place instead of starting another.
+        if adoptHeldPictureInPicture() { return }
         guard preparePiPSource() else {
             log.notice("Picture in Picture requested but not possible (another app may own it)")
             if pipStartIsLaunch { showWindowAfterFailedPiPLaunch("Picture in Picture isn't possible right now") }
@@ -140,10 +143,13 @@ extension StreamWindow {
     /// backstop clears it if AVKit never answers.
     func startPictureInPictureNow() {
         guard !isPictureInPictureActive, !pictureInPicturePending else { return }
+        if adoptHeldPictureInPicture() { return }
         guard preparePiPSource() else {
             log.notice("Picture in Picture not possible - staying hidden")
             return
         }
+        PictureInPictureStage.shared.claim(by: self)
+        installPictureInPictureHandlers()
         pictureInPicturePending = true
         // Pacer on a screen link and frames to the PiP layer only, before AVKit
         // brings its window up (~100-300 ms).
@@ -384,17 +390,56 @@ extension StreamWindow {
         }
     }
 
-    /// PiP teardown for `close()`: drop the controller silently and put the
+    /// PiP teardown for `close()`. Switching PCs in PiP: PiP stays up on the
+    /// stage, holding this stream's last frame for the next one, and keeps the
+    /// pad's background events on. Otherwise: stop it silently and put the
     /// controller-background flag back.
     func tearDownPictureInPicture() {
         pictureInPicturePending = false
-        pictureInPicture.invalidate()
+        let stage = PictureInPictureStage.shared
+        if stage.holdIfRequested(by: self, keepAlive: pipKeepAlive,
+                                 controllerBackgroundFlag: savedControllerBackgroundFlag) {
+            pipKeepAlive = nil
+            savedControllerBackgroundFlag = nil
+            setPictureInPictureActive(false)
+            pipSourceMode = false
+            return
+        }
+        if stage.isOwned(by: self) {
+            pictureInPicture.reset()
+            leavePiPSource()
+            stage.release(by: self)
+        }
         setPictureInPictureActive(false)
         restoreBackgroundControllerEvents()
-        leavePiPSource()
         pipKeepAlive?.stop()
         pipKeepAlive = nil
-        pipSource.close()
+    }
+
+    /// Take over a PiP the previous stream left up (PictureInPictureStage).
+    /// Its frames already reach the PiP layer; this makes the PiP this
+    /// stream's: its handlers, its pacing, its keyboard/mouse state. False
+    /// when nothing is held.
+    func adoptHeldPictureInPicture() -> Bool {
+        guard !didClose, let inherited = PictureInPictureStage.shared.adopt(by: self) else { return false }
+        installPictureInPictureHandlers()
+        pipStartIsLaunch = false
+        launchingIntoPiP = false
+        pictureInPicturePending = false
+        pipSourceMode = true
+        setPictureInPictureActive(true)
+        pipKeepAlive = inherited.keepAlive
+        savedControllerBackgroundFlag = inherited.controllerBackgroundFlag
+        enableBackgroundControllerEvents()
+        if pipFitter.panel == nil {
+            pipFitter.attach()
+        } else {
+            onPictureInPicturePanelChanged?(pipFitter.panel)
+        }
+        onPictureInPictureChanged?(true)
+        publishPresentSuppression()
+        log.notice("Picture in Picture taken over from the previous stream")
+        return true
     }
 
     // MARK: - Debug probe

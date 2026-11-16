@@ -99,6 +99,9 @@ extension StreamSession {
         dec.attach(to: win.displayLayer)
         // Apple's Picture in Picture shows a layer of its own; it gets the
         // same frames, so going in and out of PiP costs nothing.
+        // Switching PCs in PiP: the previous stream's last frame holds in the
+        // PiP; ready the layer for this stream's frames (they replace it in place).
+        PictureInPictureStage.shared.prepareForNextStream()
         dec.setMirrorLayer(win.pipLayer)
         // The window's backgrounded/foregrounded signal drives the launcher's
         // "Back to stream" CTA. The decoder's present-suppression state is a

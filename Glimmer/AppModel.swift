@@ -343,9 +343,11 @@ final class AppModel {
     var pictureInPictureLaunchRequestedAt: Date?
     /// "Switch PC" while streaming: started by the old stream's cleanup.
     var pendingHostSwitch: PendingHostSwitch?
+    /// Waking a PS5 before a switch to it (AppModel+Streaming.switchHost).
+    @ObservationIgnored var switchWakeTask: Task<Void, Never>?
     struct PendingHostSwitch {
         let hostID: String
-        let inPictureInPicture: Bool
+        var inPictureInPicture: Bool
         let requestedAt: Date
     }
     func consumePictureInPictureLaunch() -> Bool {

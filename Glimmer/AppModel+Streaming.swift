@@ -339,14 +339,32 @@ extension AppModel {
         // banner in place lets it survive; a clean quit set it to nil up above
         // (line 273 at stream start) so nothing stale leaks through.
         let wasStreaming = self.isStreaming
+        // Switching PCs: this stream ended so the next can start. In Picture
+        // in Picture its last frame holds in the same PiP window
+        // (PictureInPictureStage), and the app stays as it is - PiP-only,
+        // headless - instead of flickering through "stream over".
+        let switching = pendingHostSwitch != nil
+        let stage = PictureInPictureStage.shared
+        if switching {
+            if !stage.isHolding { stage.cancelHoldRequest() }
+        } else {
+            // A stream that ended before taking over a held PiP (its connect
+            // failed or was cancelled): the frozen frame goes too.
+            stage.cancelHoldRequest()
+            stage.endHold(restoreRequested: false, notify: false)
+            StreamWindow.switchingHosts = false
+        }
+        let holdingPiP = switching && stage.isHolding
         self.recordStreamActivity(for: host.id)
         self.activeStreamHostID = nil
         self.activeStreamHasVideo = false
         self.streamPhase = .idle
         self.isStreaming = false
         self.activeStreamApp = nil
-        self.nativeStreamBackgrounded = false
-        self.nativeStreamPictureInPicture = false
+        if !holdingPiP {
+            self.nativeStreamBackgrounded = false
+            self.nativeStreamPictureInPicture = false
+        }
         self.nativeSession = nil
         // Disconnect beat (#3) - surface the "Stream ended" toast on
         // the launcher only when we actually had a live session.
@@ -356,7 +374,7 @@ extension AppModel {
         // the acknowledgement; the toast is intentionally redundant
         // with the banner because the banner reads as "still trying"
         // and the toast reads as "we're done here".
-        if wasStreaming {
+        if wasStreaming, !switching {
             // Build + stash the session receipt BEFORE the toast flag
             // flips so the toast's first render already carries its
             // quiet line. nil for short (<5 min) sessions and dead
@@ -390,6 +408,8 @@ extension AppModel {
         // focus steal, no main window in between.
         if let next = pendingHostSwitch {
             pendingHostSwitch = nil
+            switchWakeTask?.cancel()
+            switchWakeTask = nil
             startPendingHostSwitch(next)
             return
         }
@@ -616,16 +636,90 @@ extension AppModel {
         let streamingElsewhere = isStreaming && activeStreamHostID != host.id
         let inPictureInPicture = nativeStreamPictureInPicture
         selectHost(host)
-        guard streamingElsewhere else { return }
-        Diag.notice("Switching the stream to \(host.displayName, privacy: .private)"
-            + (inPictureInPicture ? " (staying in Picture in Picture)" : ""), "Stream")
+        // Once the old stream is ending, the switch is committed.
+        guard streamingElsewhere, !StreamWindow.switchingHosts else { return }
+        switchWakeTask?.cancel()
+        switchWakeTask = nil
         pendingHostSwitch = PendingHostSwitch(hostID: host.id, inPictureInPicture: inPictureInPicture,
                                               requestedAt: Date())
+        guard host.isPlayStation else {
+            beginHostSwitch()
+            return
+        }
+        // A PS5 in rest mode takes ~15 s to wake: wake it while the current
+        // game keeps playing, and switch once it answers - the PiP then holds
+        // a frame only for the connect itself.
+        Diag.notice("Switching the stream to \(host.displayName, privacy: .private) - waking it first", "Stream")
+        switchWakeTask = Task { [weak self] in
+            await self?.wakePlayStationForSwitch(host)
+            guard let self, !Task.isCancelled, self.pendingHostSwitch?.hostID == host.id, self.isStreaming,
+                  !StreamWindow.switchingHosts else { return }
+            self.switchWakeTask = nil
+            self.beginHostSwitch()
+        }
+    }
+
+    /// Wake a PS5 that isn't ready, waiting until it answers (up to 40 s).
+    private func wakePlayStationForSwitch(_ host: Host) async {
+        guard let console = playStationConsole(for: host) else { return }
+        let status = await PlayStationDiscovery.probe(address: console.address)
+        guard status?.power != .ready, !Task.isCancelled else { return }
+        Diag.notice("PS5: waking \(console.nickname) before switching to it", "PlayStation")
+        PlayStationDiscovery.wake(console: console)
+        _ = await PlayStationDiscovery.waitUntilReady(address: console.address, timeout: 40)
+    }
+
+    /// End the current stream for the pending switch. In Picture in Picture
+    /// the PiP window stays: the old stream's last frame holds in it until the
+    /// new stream's first frame replaces it.
+    private func beginHostSwitch() {
+        guard var next = pendingHostSwitch, isStreaming else { return }
+        next.inPictureInPicture = nativeStreamPictureInPicture
+        pendingHostSwitch = next
+        Diag.notice("Switching the stream now"
+            + (next.inPictureInPicture ? " (staying in Picture in Picture)" : ""), "Stream")
+        StreamWindow.switchingHosts = true
+        if next.inPictureInPicture {
+            let stage = PictureInPictureStage.shared
+            stage.onHoldEnded = { [weak self] restore in self?.heldPictureInPictureEnded(restore: restore) }
+            stage.holdForSwitch()
+        }
         endStream()
     }
 
+    /// The PiP held through a switch closed before the new stream took it
+    /// over: its return button opens the new stream in its window; × (or a
+    /// hold that timed out) cancels the switch.
+    func heldPictureInPictureEnded(restore: Bool) {
+        nativeStreamPictureInPicture = false
+        if var next = pendingHostSwitch {
+            // The old stream is still closing.
+            if restore {
+                next.inPictureInPicture = false
+                pendingHostSwitch = next
+            } else {
+                Diag.notice("Switch cancelled - Picture in Picture closed while switching", "Stream")
+                pendingHostSwitch = nil
+                StreamWindow.switchingHosts = false
+            }
+            return
+        }
+        guard isStreaming else { return }
+        if restore {
+            StreamWindow.forceActivate()
+            resumeStreamWindow()
+        } else {
+            Diag.notice("Switch cancelled - Picture in Picture closed while the new stream connected", "Stream")
+            endStream()
+        }
+    }
+
     func startPendingHostSwitch(_ next: PendingHostSwitch) {
-        guard selectedHost?.id == next.hostID, Date().timeIntervalSince(next.requestedAt) < 30 else { return }
+        StreamWindow.switchingHosts = false
+        guard selectedHost?.id == next.hostID, Date().timeIntervalSince(next.requestedAt) < 30 else {
+            PictureInPictureStage.shared.endHold(restoreRequested: false, notify: false)
+            return
+        }
         if next.inPictureInPicture {
             pictureInPictureLaunchRequestedAt = Date()
         } else {
@@ -636,6 +730,13 @@ extension AppModel {
     }
 
     func endStream() {
+        // Ending the stream yourself while a switch is still waking its PS5
+        // ends it for good - the switch is dropped.
+        if !StreamWindow.switchingHosts, pendingHostSwitch != nil {
+            switchWakeTask?.cancel()
+            switchWakeTask = nil
+            pendingHostSwitch = nil
+        }
         guard isStreaming, let session = nativeSession else { return }
         Diag.notice("User ended the stream from the menu bar", "Stream")
         Task { await session.stop() }

@@ -82,6 +82,9 @@ extension StreamWindow {
     /// a launch still waiting for its first frame becomes a normal start -
     /// the window fades in on that frame.
     func prepareToComeForward() {
+        // Mid-switch with the previous stream's PiP still holding: the window
+        // wins, the held PiP goes.
+        PictureInPictureStage.shared.endHold(restoreRequested: true, notify: false)
         if launchingIntoPiP {
             launchingIntoPiP = false
             onPictureInPictureChanged?(false)
