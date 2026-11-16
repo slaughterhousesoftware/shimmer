@@ -279,7 +279,7 @@ index 41c6bbf..d4c4bde 100644
  	ChiakiLog *log)
  {
 diff --git a/lib/src/streamconnection.c b/lib/src/streamconnection.c
-index afa1a60..7bd5492 100644
+index afa1a60..90e6d1a 100644
 --- a/lib/src/streamconnection.c
 +++ b/lib/src/streamconnection.c
 @@ -31,6 +31,16 @@
@@ -295,7 +295,7 @@ index afa1a60..7bd5492 100644
 + * for {12, 20} before BIG and lets the console choose; 12 skips the request
 + * and streams on chiaki's fixed v12. Set before a session starts.
 + */
-+int chiaki_shimmer_takion_version = 20;
++int chiaki_shimmer_takion_version = 12;
  
  #define HEARTBEAT_INTERVAL_MS 1000
  
@@ -573,8 +573,17 @@ index afa1a60..7bd5492 100644
  			ecdh_pub_key, &ecdh_pub_key_buf.size,
  			session->handshake_key,
  			ecdh_sig, &ecdh_sig_buf.size);
+@@ -1071,7 +1195,7 @@ static ChiakiErrorCode stream_connection_send_big(ChiakiStreamConnection *stream
+ 	msg.big_payload.ecdh_sig.arg = &ecdh_sig_buf;
+ 	msg.big_payload.ecdh_sig.funcs.encode = chiaki_pb_encode_buf;
+ 
+-	uint8_t buf[2048];
++	uint8_t buf[4096]; // 133-byte secp521r1 key on Takion 20
+ 	size_t buf_size;
+ 
+ 	pb_ostream_t stream = pb_ostream_from_buffer(buf, sizeof(buf));
 diff --git a/lib/src/takion.c b/lib/src/takion.c
-index abc3ef2..41f9ff3 100644
+index abc3ef2..6da8d1d 100644
 --- a/lib/src/takion.c
 +++ b/lib/src/takion.c
 @@ -199,7 +199,9 @@ typedef struct chiaki_takion_postponed_packet_t
@@ -969,7 +978,27 @@ index abc3ef2..41f9ff3 100644
  	switch(base_type)
  	{
  		case TAKION_PACKET_TYPE_CONTROL:
-@@ -1818,11 +1985,12 @@ static void takion_handle_packet_av(ChiakiTakion *takion, uint8_t base_type, uin
+@@ -1736,6 +1903,19 @@ static void takion_handle_packet_av(ChiakiTakion *takion, uint8_t base_type, uin
+ 	{
+ 		if(err == CHIAKI_ERR_BUF_TOO_SMALL)
+ 			CHIAKI_LOGE(takion->log, "Takion received AV packet that was too small");
++		else
++		{
++			// Shimmer: a layout we don't read (say, a v20 audio mode) would otherwise vanish without a trace.
++			static uint64_t last_log_us;
++			uint64_t now_us = chiaki_time_now_monotonic_us();
++			if(now_us - last_log_us > 5000000)
++			{
++				last_log_us = now_us;
++				CHIAKI_LOGW(takion->log, "Takion dropped an AV packet it can't parse (version %u, %s, %#llx bytes)",
++						(unsigned int)takion->version, chiaki_error_string(err), (unsigned long long)buf_size);
++				chiaki_log_hexdump(takion->log, CHIAKI_LOG_WARNING, buf, buf_size < 32 ? buf_size : 32);
++			}
++		}
+ 		free(buf);
+ 		return;
+ 	}
+@@ -1818,11 +1998,12 @@ static void takion_handle_packet_av(ChiakiTakion *takion, uint8_t base_type, uin
  	takion_av_queue_flush_with_timeout(takion, queue, head_wait, head_wait_seq_num);
  }
  
@@ -984,7 +1013,7 @@ index abc3ef2..41f9ff3 100644
  		return CHIAKI_ERR_BUF_TOO_SMALL;
  
  	uint8_t base_type = buf[0] & TAKION_PACKET_BASE_TYPE_MASK;
-@@ -1834,8 +2002,8 @@ static ChiakiErrorCode av_packet_parse(bool v12, ChiakiTakionAVPacket *packet, C
+@@ -1834,8 +2015,8 @@ static ChiakiErrorCode av_packet_parse(bool v12, ChiakiTakionAVPacket *packet, C
  
  	packet->uses_nalu_info_structs = ((buf[0] >> 4) & 1) != 0;
  
@@ -995,7 +1024,7 @@ index abc3ef2..41f9ff3 100644
  	size_t av_header_size = v12
  		? (packet->is_video ? CHIAKI_TAKION_V12_AV_HEADER_SIZE_VIDEO : CHIAKI_TAKION_V12_AV_HEADER_SIZE_AUDIO)
  		: (packet->is_video ? CHIAKI_TAKION_V9_AV_HEADER_SIZE_VIDEO : CHIAKI_TAKION_V9_AV_HEADER_SIZE_AUDIO);
-@@ -1858,6 +2026,9 @@ static ChiakiErrorCode av_packet_parse(bool v12, ChiakiTakionAVPacket *packet, C
+@@ -1858,6 +2039,9 @@ static ChiakiErrorCode av_packet_parse(bool v12, ChiakiTakionAVPacket *packet, C
  		packet->units_in_frame_total = (uint16_t)(((dword_2 >> 0x10) & 0xff) + 1);
  		packet->units_in_frame_fec = (uint16_t)(dword_2 & 0xffff);
  	}
@@ -1005,7 +1034,7 @@ index abc3ef2..41f9ff3 100644
  
  	packet->codec = av[8];
  	uint32_t key_pos_low = ntohl(*((chiaki_unaligned_uint32_t *)(av + 0xd)));
-@@ -1899,7 +2070,8 @@ static ChiakiErrorCode av_packet_parse(bool v12, ChiakiTakionAVPacket *packet, C
+@@ -1899,7 +2083,8 @@ static ChiakiErrorCode av_packet_parse(bool v12, ChiakiTakionAVPacket *packet, C
  
  	if(v12 && !packet->is_video)
  	{
@@ -1015,7 +1044,7 @@ index abc3ef2..41f9ff3 100644
  		shimmer_audio_tag_counts[*av]++;
  		av += 1;
  		av_size -= 1;
-@@ -1908,17 +2080,37 @@ static ChiakiErrorCode av_packet_parse(bool v12, ChiakiTakionAVPacket *packet, C
+@@ -1908,17 +2093,37 @@ static ChiakiErrorCode av_packet_parse(bool v12, ChiakiTakionAVPacket *packet, C
  	packet->data = av;
  	packet->data_size = av_size;
  

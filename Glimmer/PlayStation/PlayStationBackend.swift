@@ -64,6 +64,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     private let lock = NSLock()
     private var session: UnsafeMutablePointer<ChiakiSession>?
+    /// The Takion version the last session attempt streamed on (lock).
+    private var lastAttemptTakionVersion: UInt8 = 0
     private var chiakiLog = UnsafeMutablePointer<ChiakiLog>.allocate(capacity: 1)
     private var hostCString: UnsafeMutablePointer<CChar>?
     /// +1 on self while libchiaki holds our pointer as callback context.
@@ -249,16 +251,16 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // PS5.debugIdrOnFec restores the IDR-and-wait, PS5.debugReorderUs the
         // reorder hold (chiaki's was 16000), PS5.debugDropPermille drops that
         // many per mille of video packets to exercise loss on a clean LAN.
-        // PS5.debugTakionVersion 12 streams on chiaki's old Takion v12 instead
-        // of negotiating v20 (Sony's app and PXPlay's), for A/B runs.
+        // PS5.debugTakionVersion 20 negotiates Takion v20 (Sony's app and
+        // PXPlay's) instead of chiaki's fixed v12; 12 until v20 is proven live.
         let defaults = UserDefaults.standard
         info.enable_idr_on_fec_failure = defaults.bool(forKey: "PS5.debugIdrOnFec")
         let reorderUs = defaults.integer(forKey: "PS5.debugReorderUs")
         let holdUs = reorderUs > 0 ? reorderUs : 4000
         let dropPermille = max(0, min(500, defaults.integer(forKey: "PS5.debugDropPermille")))
-        let takionVersion = defaults.integer(forKey: "PS5.debugTakionVersion") == 12 ? 12 : 20
+        var takionVersion = defaults.integer(forKey: "PS5.debugTakionVersion") == 20 ? 20 : Self.defaultTakionVersion
         shimmer_set_takion_knobs(Int32(holdUs), Int32(dropPermille), Int32(takionVersion))
-        if dropPermille > 0 || reorderUs > 0 || info.enable_idr_on_fec_failure || takionVersion != 20 {
+        if dropPermille > 0 || reorderUs > 0 || info.enable_idr_on_fec_failure || takionVersion != Self.defaultTakionVersion {
             Diag.notice("PS5 debug: drop \(dropPermille)‰ of video packets, reorder hold \(holdUs) us, "
                 + "IDR on FEC failure \(info.enable_idr_on_fec_failure), Takion \(takionVersion)", Self.logCategory)
         }
@@ -296,6 +298,20 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         while true {
             let outcome = try runChiakiSession(info: &info, events: events)
             if outcome == .connected { break }
+            // The console agreed to Takion 20 and the session still failed:
+            // the next attempt stays on 12, which chiaki has always spoken.
+            if takionVersion >= 20, lock.withLock({ lastAttemptTakionVersion }) >= 20, attempt < Self.inUseAttempts {
+                Diag.error("PS5: the session on Takion 20 failed (\(lock.withLock { quitMessage } ?? "no reason"))"
+                    + " - retrying on Takion 12", Self.logCategory)
+                takionVersion = 12
+                shimmer_set_takion_knobs(Int32(holdUs), Int32(dropPermille), Int32(takionVersion))
+                attempt += 1
+                lock.withLock { quitMessage = nil }
+                if connectSignal.wait(timeout: .now() + .seconds(2)) == .success, lock.withLock({ stopped }) {
+                    throw StreamError.sessionFailed(-1)
+                }
+                continue
+            }
             if outcome == .inUse || outcome == .transient, attempt < Self.inUseAttempts {
                 let delay = outcome == .inUse ? 3 : 2
                 Diag.notice("PS5: " + (outcome == .inUse ? "the console still holds the previous session"
@@ -323,6 +339,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// ~15 s: the console holds a quit session ~10 s (measured with ps5ctl).
     static let inUseAttempts = 6
 
+    /// The Takion version a session offers unless PS5.debugTakionVersion says
+    /// otherwise (libchiaki patch 0002): 12 until v20 passes a live A/B.
+    static let defaultTakionVersion = 12
+
     enum SessionOutcome { case connected, inUse, transient, failed }
 
     /// One libchiaki session attempt: init, wire callbacks, start, and wait for
@@ -335,6 +355,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             quitMessage = nil
             quitInUse = false
             quitTransient = false
+            lastAttemptTakionVersion = 0
         }
         // Shimmer allocates the session from the headers it compiled against;
         // libchiaki's patches change its layout, so a stale header would
@@ -404,7 +425,13 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // an interrupt, or 20 s.
         _ = connectSignal.wait(timeout: .now() + 20)
         let (isConnected, inUse, transient) = lock.withLock { (connected, quitInUse, quitTransient) }
-        if isConnected { return .connected }
+        // Set once, before BIG; 0 if the attempt never reached the stream connection.
+        let spoke = session.pointee.stream_connection.takion.version
+        lock.withLock { lastAttemptTakionVersion = spoke }
+        if isConnected {
+            Diag.notice("PS5: streaming on Takion \(spoke)", Self.logCategory)
+            return .connected
+        }
         tearDownChiakiSession()
         return inUse ? .inUse : transient ? .transient : .failed
     }
