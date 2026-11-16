@@ -94,45 +94,36 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
-        // No `item.menu`: the click comes here first (see `statusItemClicked`).
-        item.button?.target = self
-        item.button?.action = #selector(statusItemClicked)
-        item.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
+        item.menu = menu
         observeLabel()
+        observeFullScreenApps()
     }
 
     // MARK: - Opening over a full-screen app
 
-    /// True while Shimmer dropped out of the Dock just to show its menu.
-    private(set) static var headlessForMenu = false
-
     /// macOS 27.2 never shows a REGULAR app's status-item menu while another
     /// app is in full screen (measured 2026-11-16: the menu window is created
-    /// but never on screen); an accessory app's opens normally. So when that
-    /// is the situation, Shimmer is an accessory app for exactly as long as
-    /// its menu is open, and returns to the Dock when it closes - invisible,
-    /// since the Dock is hidden in another app's full screen anyway.
-    @objc private func statusItemClicked() {
-        if NSApp.activationPolicy() == .regular, Self.frontmostAppIsFullScreen() {
-            Self.headlessForMenu = true
-            NSApp.setActivationPolicy(.accessory)
-            Diag.info("menu bar: another app is full screen - out of the Dock while the menu is open", "MenuBar")
-        }
-        // Next turn, after the policy change lands.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.item.menu = self.menu
-            self.item.button?.performClick(nil)
-        }
-    }
+    /// but never on screen); an accessory app's opens normally. So the Dock
+    /// policy follows what is in front (`AppDelegate.activationPolicy`): out
+    /// of the Dock while another app's full screen is up - where the Dock is
+    /// hidden anyway - and back when it isn't. The click itself stays macOS's
+    /// own. (Intercepting it to switch per click made the menu close itself
+    /// 0.3-0.8 s after opening: the real mouse-up landed on the re-click.)
+    private var workspaceObservers: [NSObjectProtocol] = []
 
-    func menuDidClose(_ menu: NSMenu) {
-        // Detach again so the next click comes back through statusItemClicked.
-        DispatchQueue.main.async { [weak self] in
-            self?.item.menu = nil
-            guard Self.headlessForMenu else { return }
-            Self.headlessForMenu = false
-            AppDelegate.refreshActivationPolicy()
+    private func observeFullScreenApps() {
+        let nc = NSWorkspace.shared.notificationCenter
+        let recheck: @Sendable (Notification) -> Void = { _ in
+            MainActor.assumeIsolated {
+                AppDelegate.refreshActivationPolicy()
+                // Windows settle after the space animation; look again.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    MainActor.assumeIsolated { AppDelegate.refreshActivationPolicy() }
+                }
+            }
+        }
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+            workspaceObservers.append(nc.addObserver(forName: name, object: nil, queue: .main, using: recheck))
         }
     }
 

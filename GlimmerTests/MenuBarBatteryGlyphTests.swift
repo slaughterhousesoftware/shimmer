@@ -161,6 +161,16 @@ struct MenuBarVisibilityTests {
                                              streamOnlyInPiP: true) == .regular)
     }
 
+    @Test func anotherAppsFullScreenTakesShimmerOutOfTheDock() {
+        // Over another app's full screen a regular app's menu bar menu never
+        // shows (macOS 27.2), so even with windows open Shimmer leaves the Dock.
+        #expect(AppDelegate.activationPolicy(mainOpen: true, streaming: true, menuBarVisible: true,
+                                             otherAppFullScreen: true) == .accessory)
+        // ...unless there is no menu bar icon: then the Dock is the only way in.
+        #expect(AppDelegate.activationPolicy(mainOpen: true, streaming: true, menuBarVisible: false,
+                                             otherAppFullScreen: true) == .regular)
+    }
+
     @Test func hidingTheMenuBarSurvivesRelaunch() throws {
         let name = "shimmer-menu-bar-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))

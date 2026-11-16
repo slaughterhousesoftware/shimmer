@@ -185,10 +185,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// A stream that lives only in Picture in Picture doesn't keep the Dock
     /// entry: there is no window to come back to, and a regular app's menu
     /// bar menu doesn't open over another app's full screen (macOS 27.2).
+    /// Another app's full screen in front: out of the Dock (hidden there
+    /// anyway) so the menu bar menu can open - see MenuBarController.
     nonisolated static func activationPolicy(mainOpen: Bool, streaming: Bool,
                                              menuBarVisible: Bool,
-                                             streamOnlyInPiP: Bool = false) -> NSApplication.ActivationPolicy {
+                                             streamOnlyInPiP: Bool = false,
+                                             otherAppFullScreen: Bool = false) -> NSApplication.ActivationPolicy {
         guard menuBarVisible else { return .regular }
+        if otherAppFullScreen { return .accessory }
         if mainOpen { return .regular }
         if streaming && !streamOnlyInPiP { return .regular }
         return .accessory
@@ -212,14 +216,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor static func refreshActivationPolicy() {
         guard let app = NSApp else { return }   // hostless unit tests
-        // Out of the Dock just while the menu bar menu is open over another
-        // app's full screen; the menu's close re-runs this.
-        guard !MenuBarController.headlessForMenu else { return }
         let mainOpen = app.windows.contains { $0.identifier?.rawValue == "main" && $0.isVisible }
         let streaming = boundManager?.isStreaming == true
         let wanted = activationPolicy(mainOpen: mainOpen, streaming: streaming,
                                       menuBarVisible: boundManager?.hasVisibleMenuBarItem ?? false,
-                                      streamOnlyInPiP: boundManager?.streamOnlyInPictureInPicture ?? false)
+                                      streamOnlyInPiP: boundManager?.streamOnlyInPictureInPicture ?? false,
+                                      otherAppFullScreen: MenuBarController.frontmostAppIsFullScreen())
         guard app.activationPolicy() != wanted else { return }
         // A stream window coming back from Picture in Picture holds .regular
         // until the model catches up: a flip back to .accessory mid-return
@@ -228,7 +230,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.setActivationPolicy(wanted)
         Diag.info("activation policy → \(wanted == .regular ? "regular" : "accessory") "
             + "(mainOpen=\(mainOpen) streaming=\(streaming) "
-            + "pipOnly=\(boundManager?.streamOnlyInPictureInPicture ?? false))", "Launch")
+            + "pipOnly=\(boundManager?.streamOnlyInPictureInPicture ?? false) "
+            + "otherAppFullScreen=\(MenuBarController.frontmostAppIsFullScreen()))", "Launch")
     }
 
     /// NSWindow open/close observers wired in applicationWillFinishLaunching
