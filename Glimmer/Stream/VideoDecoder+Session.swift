@@ -315,6 +315,11 @@ extension VideoDecoder {
             probeAndLogPixelBufferAttachments(pixelBuffer, derivedKey: derivedKey)
         }
 
+        // Super-resolution to the on-screen size (PS5, when the setting is
+        // on); nil keeps the decoded frame.
+        var pixelBuffer = pixelBuffer
+        if let upscaler, let scaled = upscaler.process(pixelBuffer) { pixelBuffer = scaled }
+
         // Rebuild the CMVideoFormatDescription to match the (possibly newly-
         // attached) pixel buffer. CMVideoFormatDescriptionCreateForImageBuffer
         // reads the pixel buffer's attachments and propagates them onto the

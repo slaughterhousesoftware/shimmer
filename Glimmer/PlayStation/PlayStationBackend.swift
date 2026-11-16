@@ -252,6 +252,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // unless the PlayStation tab asks for Smooth (the frame pacer).
         if let decoder = videoSink as? VideoDecoder {
             decoder.presentsDirect = options.settings.presentsDirect
+            if let cap = options.settings.upscaling.cap, options.codec != .h265HDR {
+                decoder.upscaler = FrameUpscaler(maxWidth: cap.width, maxHeight: cap.height)
+                if decoder.upscaler == nil { Diag.notice("PS5: MetalFX unavailable - no upscaling", Self.logCategory) }
+            }
         }
         // The decoder is set up before the first frame can arrive.
         let setup = videoSink.setup(videoFormat: options.videoFormat, width: options.width,

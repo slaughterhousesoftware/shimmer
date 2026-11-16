@@ -68,6 +68,19 @@ struct PlayStationSettingsPane: View {
                 SettingsHelp("Only on a display that can show HDR, and with HEVC.")
             }
 
+            SettingsField("Upscaling") {
+                Picker("", selection: $settings.upscaling) {
+                    ForEach(PlayStationSettings.Upscaling.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .settingsControl()
+                SettingsHelp("Sharpens the 1080p stream to your screen's size with MetalFX. Adds about "
+                    + "5 ms. Not used with HDR, or when the stream already fills its window.")
+            }
+
             SettingsField("Presentation") {
                 Picker("", selection: $settings.presentation) {
                     ForEach(PlayStationSettings.Presentation.allCases) { mode in
