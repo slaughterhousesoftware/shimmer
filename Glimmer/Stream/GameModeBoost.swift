@@ -1,15 +1,18 @@
 //
 //  GameModeBoost.swift
 //
-//  macOS Game Mode while a stream drives a Bluetooth controller, in any
-//  window mode (picture in picture included).
+//  macOS Game Mode while any stream (Sunshine or PS5) is live with a Bluetooth
+//  controller connected, in any window mode (picture in picture included).
 //
 //  Game Mode halves a Bluetooth game controller's sniff interval: bluetoothd
 //  logs "applyHIDSniffIntervalGameControllers: ... shifting to 7.50 ms" the
-//  moment it turns on, and back to 15 ms when it ends. Every DualSense output
-//  report (haptics, triggers) waits for those slots, so it roughly doubles
-//  what the link carries and halves trigger latency (measured on Kevin's
-//  MacBook, 2026-11-15).
+//  moment it turns on, and back to 15 ms when it ends. Measured on Kevin's
+//  M5 MacBook with a Bluetooth DualSense (2026-11-15):
+//                         Game Mode off     on
+//    input reports        64/s (15 ms)      132/s (7.6 ms)
+//    output reports       34/s, 33 ms each  66/s, 18 ms each
+//  so it halves input latency over Bluetooth, and DualSense haptics (47
+//  reports/s) only fit on the link with it on.
 //
 //  On its own, macOS turns Game Mode on only for an app in the games category
 //  that is frontmost in native (Space) full screen. Shimmer's full screen is a
@@ -24,6 +27,7 @@
 //
 
 import Foundation
+import IOKit.hid
 
 final class GameModeBoost: @unchecked Sendable {
 
@@ -31,6 +35,7 @@ final class GameModeBoost: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "Shimmer.GameModeBoost")
     private var holders = 0             // `queue`
+    private var streamHeld = false      // `queue`
     private var forcedByUs = false      // `queue`
     private static let forcedKey = "GameModeForcedByShimmer"
     private static let logCategory = "GameMode"
@@ -58,7 +63,36 @@ final class GameModeBoost: @unchecked Sendable {
         return .unknown
     }
 
-    /// A stream wants Game Mode (a Bluetooth controller is feeding it).
+    /// A stream went live (`true`) or ended. Idempotent: both live edges may
+    /// call it. Acquires only when `enabled` and a Bluetooth game controller
+    /// is connected.
+    func streamLive(_ live: Bool, enabled: Bool) {
+        queue.async { [self] in
+            if live, !streamHeld, enabled, Self.bluetoothControllerConnected() {
+                streamHeld = true
+                queue.async { self.acquire(reason: "the stream (Bluetooth controller)") }
+            } else if !live, streamHeld {
+                streamHeld = false
+                queue.async { self.release() }
+            }
+        }
+    }
+
+    /// A gamepad or joystick on Bluetooth (any make).
+    static func bluetoothControllerConnected() -> Bool {
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatchingMultiple(manager, [
+            [kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop, kIOHIDDeviceUsageKey: kHIDUsage_GD_GamePad],
+            [kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop, kIOHIDDeviceUsageKey: kHIDUsage_GD_Joystick],
+        ] as CFArray)
+        let devices = (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? []
+        return devices.contains {
+            ((IOHIDDeviceGetProperty($0, kIOHIDTransportKey as CFString) as? String) ?? "")
+                .localizedCaseInsensitiveContains("bluetooth")
+        }
+    }
+
+    /// Take a hold on Game Mode.
     func acquire(reason: String) {
         queue.async { [self] in
             holders += 1

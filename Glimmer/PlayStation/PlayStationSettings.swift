@@ -70,7 +70,6 @@ final class PlayStationSettings {
     var haptics: HapticsMode = .actuators { didSet { save(haptics.rawValue, "haptics") } }
     var adaptiveTriggers: Bool = true { didSet { save(adaptiveTriggers, "adaptiveTriggers") } }
     var lightBar: Bool = true { didSet { save(lightBar, "lightBar") } }
-    var gameModeBoost: Bool = true { didSet { save(gameModeBoost, "gameModeBoost") } }
     var restWhenStreamEnds: Bool = false { didSet { save(restWhenStreamEnds, "restWhenStreamEnds") } }
 
     @ObservationIgnored private var loading = false
@@ -90,7 +89,6 @@ final class PlayStationSettings {
         if let v = defaults.string(forKey: Self.key("haptics")).flatMap(HapticsMode.init) { haptics = v }
         if let v = defaults.object(forKey: Self.key("adaptiveTriggers")) as? Bool { adaptiveTriggers = v }
         if let v = defaults.object(forKey: Self.key("lightBar")) as? Bool { lightBar = v }
-        if let v = defaults.object(forKey: Self.key("gameModeBoost")) as? Bool { gameModeBoost = v }
         if let v = defaults.object(forKey: Self.key("restWhenStreamEnds")) as? Bool { restWhenStreamEnds = v }
     }
 
@@ -106,7 +104,7 @@ final class PlayStationSettings {
     var snapshot: Snapshot {
         Snapshot(height: height, fps: fps, bitrateKbps: bitrateAuto ? nil : bitrateMbps * 1000, hdr: hdr,
                  hevc: hevc, presentsDirect: presentation == .lowestLatency, haptics: haptics,
-                 adaptiveTriggers: adaptiveTriggers, lightBar: lightBar, gameModeBoost: gameModeBoost,
+                 adaptiveTriggers: adaptiveTriggers, lightBar: lightBar,
                  restWhenStreamEnds: restWhenStreamEnds)
     }
 
@@ -121,7 +119,6 @@ final class PlayStationSettings {
         var haptics: HapticsMode = .actuators
         var adaptiveTriggers = true
         var lightBar = true
-        var gameModeBoost = true
         var restWhenStreamEnds = false
     }
 }

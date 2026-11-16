@@ -207,6 +207,13 @@ struct StreamWindowPane: View {
                     set: { model.keepAwakePolicy = KeepAwakePolicy(isOn: $0) }))
             }
 
+            SettingsField("Bluetooth controllers") {
+                Toggle("Turn on Game Mode while streaming", isOn: $model.gameModeDuringStreams)
+                SettingsHelp("macOS polls a Bluetooth controller twice as often in Game Mode (every 7.5 "
+                    + "instead of 15 ms), halving input lag and giving a DualSense's haptics room. Works "
+                    + "in a window and Picture in Picture. Needs Xcode installed.")
+            }
+
             SettingsField("Wi-Fi") {
                 Toggle("Reduce lag spikes on Wi-Fi", isOn: Binding(
                     get: { awdl.enabled }, set: { awdl.setEnabled($0) }))

@@ -290,6 +290,7 @@ extension AppModel {
     /// "cleanup" is how zombie state is made).
     private func cleanupAfterStream(host: Host, caughtError: Error?) {
         AWDLGuard.shared.streamEnded()
+        GameModeBoost.shared.streamLive(false, enabled: gameModeDuringStreams)
         if caughtError != nil, Self.connectCancelRequested {
             // The user cancelled this connect from the capsule -
             // start()'s throw is the teardown ARRIVING, not a failure
@@ -549,6 +550,7 @@ extension AppModel {
     func noteStreamLiveForAWDL() {
         guard let host = hosts.first(where: { $0.id == activeStreamHostID }) else { return }
         AWDLGuard.shared.streamStarted(hostAddress: dialAddress(for: host))
+        GameModeBoost.shared.streamLive(true, enabled: gameModeDuringStreams)
     }
 
     private func promoteToStreamingOnFirstFrame() {

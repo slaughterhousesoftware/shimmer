@@ -788,11 +788,6 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             return hapticsNibble == Self.intensityOff & 0x0F
         }
         if muted { player.setGain(0) }
-        // Game Mode halves the Bluetooth controller's polling interval, in any
-        // window mode (GameModeBoost).
-        if player is DualSenseBluetoothHaptics, options.settings.gameModeBoost {
-            GameModeBoost.shared.acquire(reason: "PS5 stream")
-        }
         // Over Bluetooth each 0x31 write takes a slot on the link the haptics need.
         DualSenseHID.shared.setAudioHapticsMode(true, keepAliveEvery: player is DualSenseBluetoothHaptics ? 2 : 1)
         Diag.notice("PS5: haptics play on the DualSense's actuators (\(player.deviceName))", Self.logCategory)
@@ -805,7 +800,6 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }) else { return }
         let stats = player.stats
         player.stop()
-        if player is DualSenseBluetoothHaptics, options.settings.gameModeBoost { GameModeBoost.shared.release() }
         DualSenseHID.shared.setAudioHapticsMode(false)
         let frames = lock.withLock { hapticsFrames }
         Diag.info("PS5: DualSense haptics stopped (\(reason)); \(frames.active)/\(frames.total) frames with "

@@ -333,6 +333,11 @@ final class AppModel {
     var autoPictureInPicture: Bool = true {
         didSet { UserDefaults.standard.set(autoPictureInPicture, forKey: "autoPictureInPicture") }
     }
+    /// Force macOS Game Mode while a stream is live with a Bluetooth controller
+    /// (GameModeBoost): it doubles the controller's Bluetooth polling.
+    var gameModeDuringStreams: Bool = UserDefaults.standard.object(forKey: "gameModeDuringStreams") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(gameModeDuringStreams, forKey: "gameModeDuringStreams") }
+    }
     /// True while the running stream is showing in the system Picture in
     /// Picture window (the fullscreen window is hidden). Drives the menu-bar
     /// items. Set from the session's PiP edge callback.

@@ -99,10 +99,6 @@ struct PlayStationSettingsPane: View {
                 Toggle("Adaptive triggers", isOn: $settings.adaptiveTriggers)
                 Toggle("Light bar colours from the console", isOn: $settings.lightBar)
                     .settingsStackedToggle()
-                Toggle("Game Mode for Bluetooth controllers", isOn: $settings.gameModeBoost)
-                    .settingsStackedToggle()
-                SettingsHelp("Turns on macOS Game Mode during the stream, in any window or Picture in "
-                    + "Picture, so a Bluetooth DualSense answers twice as fast. Needs Xcode installed.")
             }
 
             SettingsField("When the stream ends") {
