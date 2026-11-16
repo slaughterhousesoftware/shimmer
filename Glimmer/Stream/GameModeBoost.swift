@@ -79,6 +79,14 @@ final class GameModeBoost: @unchecked Sendable {
         }
     }
 
+    /// The setting changed: applies at once to a stream already live.
+    func setEnabled(_ enabled: Bool) {
+        queue.async { [self] in
+            boostEnabled = enabled
+            reevaluate()
+        }
+    }
+
     private var streamIsLive = false     // `queue`
     private var boostEnabled = false     // `queue`
     private var controllerObservers: [NSObjectProtocol] = []

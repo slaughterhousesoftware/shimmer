@@ -354,9 +354,13 @@ final class AppModel {
         return Date().timeIntervalSince(at) < 60
     }
     /// Force macOS Game Mode while a stream is live with a Bluetooth controller
-    /// (GameModeBoost): it doubles the controller's Bluetooth polling.
-    var gameModeDuringStreams: Bool = UserDefaults.standard.object(forKey: "gameModeDuringStreams") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(gameModeDuringStreams, forKey: "gameModeDuringStreams") }
+    /// (GameModeBoost): it doubles the controller's Bluetooth polling. Off by
+    /// default - it only works with Xcode installed, which most people won't have.
+    var gameModeDuringStreams: Bool = UserDefaults.standard.object(forKey: "gameModeDuringStreams") as? Bool ?? false {
+        didSet {
+            UserDefaults.standard.set(gameModeDuringStreams, forKey: "gameModeDuringStreams")
+            GameModeBoost.shared.setEnabled(gameModeDuringStreams)
+        }
     }
     /// True while the running stream is showing in the system Picture in
     /// Picture window (the fullscreen window is hidden). Drives the menu-bar

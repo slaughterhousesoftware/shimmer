@@ -207,11 +207,24 @@ struct StreamWindowPane: View {
                     set: { model.keepAwakePolicy = KeepAwakePolicy(isOn: $0) }))
             }
 
+            // Forcing Game Mode outside full screen takes Xcode's gamepolicyctl
+            // (GameModeBoost); without it the toggle can't do anything, so it
+            // is disabled and says why. Checked on every draw - a file lookup.
             SettingsField("Bluetooth controllers") {
-                Toggle("Turn on Game Mode while streaming", isOn: $model.gameModeDuringStreams)
-                SettingsHelp("macOS polls a Bluetooth controller twice as often in Game Mode (every 7.5 "
-                    + "instead of 15 ms), halving input lag and giving a DualSense's haptics room. Works "
-                    + "in a window and Picture in Picture. Needs Xcode installed.")
+                let hasXcode = GameModeBoost.tool() != nil
+                Toggle("Turn on Game Mode in a window and Picture in Picture",
+                       isOn: Binding(get: { hasXcode && model.gameModeDuringStreams },
+                                     set: { model.gameModeDuringStreams = $0 }))
+                    .disabled(!hasXcode)
+                SettingsHelp("In Game Mode macOS checks a Bluetooth controller every 7.5 ms instead of "
+                    + "15, cutting about 4 ms of input lag. In full screen macOS turns Game Mode on by "
+                    + "itself. Anywhere else, only Apple's Xcode can switch it on, so this needs Xcode "
+                    + "installed. A USB cable beats both.")
+                if !hasXcode {
+                    Link("Get Xcode from the App Store",
+                         destination: URL(string: "macappstore://apps.apple.com/app/id497799835")!)
+                        .font(.system(size: 12))
+                }
             }
 
             SettingsField("Wi-Fi") {
