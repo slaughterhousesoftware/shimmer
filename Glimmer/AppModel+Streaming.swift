@@ -298,7 +298,9 @@ extension AppModel {
                         standby ? false : (self?.consumePictureInPictureLaunch() ?? false)
                     },
                     keepAwakeProvider: { [weak self] in self?.keepAwakePolicy ?? .always },
-                    quitAppOnStopProvider: { [weak self] in self?.quitAppWhenStreamEnds ?? false },
+                    quitAppOnStopProvider: { [weak self] in
+                        self?.streamSettings(for: host.id).quitAppWhenStreamEnds ?? false
+                    },
                     onPictureInPictureChanged: { [weak self] active in
                         guard self?.currentStreamToken == token else { return }
                         self?.nativeStreamPictureInPicture = active

@@ -91,6 +91,7 @@ extension AppModel {
             selectedHost = hosts.first(where: {
                 $0.id == UserDefaults.standard.string(forKey: "glimmer.selectedHostID")
             }) ?? hosts.first
+            settleStreamSettingsAfterLoad()
             return
         }
 
@@ -164,6 +165,14 @@ extension AppModel {
         } else {
             selectedHost = hosts.first
         }
+        settleStreamSettingsAfterLoad()
+    }
+
+    /// After (re)loading the host list: the one-time per-PC migration, then
+    /// the selected PC's own settings go live.
+    private func settleStreamSettingsAfterLoad() {
+        migrateStreamSettingsToHosts(hosts)
+        if let host = selectedHost { applyStreamSettings(forSelected: host) }
     }
 
     /// Bonjour's UUID is a lookup hint only. A saved PC's existing certificate
@@ -370,6 +379,7 @@ extension AppModel {
 
     func selectHost(_ host: Host) {
         selectedHost = host
+        applyStreamSettings(forSelected: host)
         UserDefaults.standard.set(host.id, forKey: "glimmer.selectedHostID")
         // Wipe the cached chip status so the UI doesn't briefly show the
         // previous host's "Streaming X" tag during the first poll for the
@@ -432,6 +442,7 @@ extension AppModel {
         defaults.removeObject(forKey: Self.lastStreamedKey(for: host.id))
         HostCodecPreference.forget(hostID: host.id)
         HostIcon.forget(hostID: host.id)
+        HostStreamSettings.forget(hostID: host.id)
         if defaults.string(forKey: "glimmer.selectedHostID") == host.id {
             defaults.removeObject(forKey: "glimmer.selectedHostID")
         }

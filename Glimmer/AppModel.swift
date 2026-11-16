@@ -51,7 +51,7 @@ final class AppModel {
     /// resolution a few lines before `init` got round to loading it. The
     /// symptom was the reported one: pick a resolution, relaunch, and it is the
     /// display's native size again.
-    @ObservationIgnored private var isRestoringDefaults = false
+    @ObservationIgnored var isRestoringDefaults = false
 
     // Hosts
     var hosts: [Host] = []
@@ -135,6 +135,7 @@ final class AppModel {
             // UserDefaults now.
             UserDefaults.standard.set(qualityPreset.rawValue, forKey: "qualityPreset")
             persistQualitySettings()
+            saveSelectedHostStreamSettings()
         }
     }
 
@@ -143,12 +144,14 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(customWidth, forKey: "customWidth")
             if qualityPreset == .custom { persistQualitySettings() }
+            saveSelectedHostStreamSettings()
         }
     }
     var customHeight: Int = 1080 {
         didSet {
             UserDefaults.standard.set(customHeight, forKey: "customHeight")
             if qualityPreset == .custom { persistQualitySettings() }
+            saveSelectedHostStreamSettings()
         }
     }
     /// The refresh a stream asks for - the Frame rate picker's number, and the
@@ -158,6 +161,7 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(customFPS, forKey: "customFPS")
             persistQualitySettings()
+            saveSelectedHostStreamSettings()
         }
     }
     /// Bitrate: derived (the measured-anchor / Moonlight-table recommendation
@@ -178,6 +182,7 @@ final class AppModel {
                     BitrateScale.nearestIndex(toMbps: recommendedBitrateMbpsNow)]
             }
             persistQualitySettings()
+            saveSelectedHostStreamSettings()
         }
     }
     /// The bitrate sent when `bitrateAuto` is off, in Mbps. Verbatim on the
@@ -186,6 +191,7 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(manualBitrateMbps, forKey: "manualBitrateMbps")
             persistQualitySettings()
+            saveSelectedHostStreamSettings()
         }
     }
     /// HDR for every preset (the key keeps its Custom-era name so existing
@@ -194,6 +200,7 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(customHDR, forKey: "customHDR")
             persistQualitySettings()
+            saveSelectedHostStreamSettings()
         }
     }
 
@@ -436,7 +443,10 @@ final class AppModel {
     /// app running, so the next Stream click resumes it. On: every stop
     /// sends /cancel, which terminates the app Sunshine launched.
     var quitAppWhenStreamEnds: Bool = false {
-        didSet { UserDefaults.standard.set(quitAppWhenStreamEnds, forKey: "quitAppWhenStreamEnds") }
+        didSet {
+            UserDefaults.standard.set(quitAppWhenStreamEnds, forKey: "quitAppWhenStreamEnds")
+            saveSelectedHostStreamSettings()
+        }
     }
     /// Settings › "Prefer low audio latency": cap the adaptive audio cushion at
     /// 60 ms on every link. Off by default - the deeper caps are what keep
