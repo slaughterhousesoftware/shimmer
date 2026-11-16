@@ -27,11 +27,14 @@
 //
 
 import Foundation
+import GameController
 import IOKit.hid
 
 final class GameModeBoost: @unchecked Sendable {
 
     static let shared = GameModeBoost()
+
+    private init() { observeControllers() }
 
     private let queue = DispatchQueue(label: "Shimmer.GameModeBoost")
     private var holders = 0             // `queue`
@@ -64,17 +67,45 @@ final class GameModeBoost: @unchecked Sendable {
     }
 
     /// A stream went live (`true`) or ended. Idempotent: both live edges may
-    /// call it. Acquires only when `enabled` and a Bluetooth game controller
-    /// is connected.
+    /// call it. Game Mode is held while a stream is live, the setting is on
+    /// and a Bluetooth game controller is connected - re-evaluated whenever a
+    /// controller connects or disconnects (a DualSense that wakes after the
+    /// stream started gets it too; one that leaves gives it back).
     func streamLive(_ live: Bool, enabled: Bool) {
         queue.async { [self] in
-            if live, !streamHeld, enabled, Self.bluetoothControllerConnected() {
-                streamHeld = true
-                queue.async { self.acquire(reason: "the stream (Bluetooth controller)") }
-            } else if !live, streamHeld {
-                streamHeld = false
-                queue.async { self.release() }
-            }
+            streamIsLive = live
+            boostEnabled = enabled
+            reevaluate()
+        }
+    }
+
+    private var streamIsLive = false     // `queue`
+    private var boostEnabled = false     // `queue`
+    private var controllerObservers: [NSObjectProtocol] = []
+
+    /// GameController's own connect / disconnect notifications. The HID
+    /// device's transport can trail the notification a moment, so look again
+    /// shortly after as well.
+    private func observeControllers() {
+        let nc = NotificationCenter.default
+        for name in [Notification.Name.GCControllerDidConnect, .GCControllerDidDisconnect] {
+            controllerObservers.append(nc.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                guard let self else { return }
+                self.queue.async { self.reevaluate() }
+                self.queue.asyncAfter(deadline: .now() + 1) { self.reevaluate() }
+            })
+        }
+    }
+
+    /// `queue` only.
+    private func reevaluate() {
+        let want = streamIsLive && boostEnabled && Self.bluetoothControllerConnected()
+        if want, !streamHeld {
+            streamHeld = true
+            queue.async { self.acquire(reason: "the stream (Bluetooth controller)") }
+        } else if !want, streamHeld {
+            streamHeld = false
+            queue.async { self.release() }
         }
     }
 
