@@ -79,21 +79,11 @@ struct StreamPane: View {
             // Size and rate on one row, as the PS5's page has them.
             SettingsField("Resolution") {
                 HStack(spacing: 8) {
-                    Picker("", selection: resolutionSelection) {
-                        ForEach(ResolutionChoice.all, id: \.self) { choice in
-                            Text(resolutionLabel(choice)).tag(choice)
-                        }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
+                    CompactPopup(selection: resolutionSelection,
+                                 ResolutionChoice.all.map { (resolutionLabel($0), $0) })
                     .accessibilityLabel("Resolution")
-                    Picker("", selection: frameRateSelection) {
-                        ForEach(FrameRateChoice.all, id: \.self) { choice in
-                            Text(frameRateLabel(choice)).tag(choice)
-                        }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
+                    CompactPopup(selection: frameRateSelection,
+                                 FrameRateChoice.all.map { (frameRateLabel($0), $0) })
                     .accessibilityLabel("Frame rate")
                 }
                 if frameRateSelection.wrappedValue == .custom {

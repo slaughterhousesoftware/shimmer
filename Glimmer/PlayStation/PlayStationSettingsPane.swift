@@ -22,19 +22,9 @@ struct PlayStationSettingsPane: View {
         VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
             SettingsField("Resolution") {
                 HStack(spacing: 8) {
-                    Picker("", selection: $settings.height) {
-                        Text("1920 × 1080").tag(1080)
-                        Text("1280 × 720").tag(720)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
+                    CompactPopup(selection: $settings.height, [("1920 × 1080", 1080), ("1280 × 720", 720)])
                     .accessibilityLabel("Resolution")
-                    Picker("", selection: $settings.fps) {
-                        Text("60 Hz").tag(60)
-                        Text("30 Hz").tag(30)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
+                    CompactPopup(selection: $settings.fps, [("60 Hz", 60), ("30 Hz", 30)])
                     .accessibilityLabel("Frame rate")
                 }
             }
@@ -56,12 +46,7 @@ struct PlayStationSettingsPane: View {
             // Codec and HDR share a row: HDR needs HEVC.
             SettingsField("Codec") {
                 HStack(spacing: 12) {
-                    Picker("", selection: $settings.hevc) {
-                        Text("HEVC").tag(true)
-                        Text("H.264").tag(false)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
+                    CompactPopup(selection: $settings.hevc, [("HEVC", true), ("H.264", false)])
                     Toggle("HDR", isOn: $settings.hdr)
                         .fixedSize()
                         .disabled(!settings.hevc)
@@ -70,13 +55,8 @@ struct PlayStationSettingsPane: View {
             }
 
             SettingsField("Presentation") {
-                Picker("", selection: $settings.presentation) {
-                    ForEach(PlayStationSettings.Presentation.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .labelsHidden()
-                .settingsPopup()
+                CompactPopup(selection: $settings.presentation,
+                             PlayStationSettings.Presentation.allCases.map { ($0.displayName, $0) })
                 .help(settings.presentation == .lowestLatency
                     ? "Each frame shows the moment it is decoded."
                     : "Frames wait for the display: steadier, a little more lag.")
@@ -84,13 +64,8 @@ struct PlayStationSettingsPane: View {
 
             // Everything the pad does: haptics, then the triggers and light.
             SettingsField("Controller") {
-                Picker("", selection: $settings.haptics) {
-                    ForEach(PlayStationSettings.HapticsMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .labelsHidden()
-                .settingsPopup()
+                CompactPopup(selection: $settings.haptics,
+                             PlayStationSettings.HapticsMode.allCases.map { ($0.displayName, $0) })
                 .help("Haptic feedback needs a DualSense; Rumble suits other controllers.")
                 Toggle("Adaptive triggers", isOn: $settings.adaptiveTriggers)
                 Toggle("Light bar colours from the console", isOn: $settings.lightBar)

@@ -35,14 +35,9 @@ struct VideoPane: View {
             SettingsField("Codec") {
                 if model.selectedHost != nil {
                     HStack(spacing: 12) {
-                        Picker("", selection: codecSelection) {
-                            ForEach(HostCodecPreference.allCases) { pref in
-                                // Short, so HDR fits beside it.
-                                Text(pref == .auto ? "Automatic" : pref.displayName).tag(pref)
-                            }
-                        }
-                        .labelsHidden()
-                        .fixedSize()
+                        // Short, so HDR fits beside it.
+                        CompactPopup(selection: codecSelection,
+                                     HostCodecPreference.allCases.map { ($0 == .auto ? "Automatic" : $0.displayName, $0) })
                         .help("Automatic uses AV1 when the PC and this Mac both can, else HEVC.")
                         Toggle("HDR", isOn: $model.customHDR)
                             .fixedSize()

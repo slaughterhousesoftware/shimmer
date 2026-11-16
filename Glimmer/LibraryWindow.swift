@@ -400,14 +400,10 @@ struct ComputersTab: View {
             if apps.isEmpty {
                 noAppsNotice(for: host)
             } else if apps.count > 1 {
-                Picker("", selection: Binding(get: { chosen?.name ?? "" }, set: { chosenAppName = $0 })) {
-                    ForEach(apps) { app in
-                        Label { Text(app.name) } icon: { AppGlyphIcon(app: app) }.tag(app.name)
-                    }
-                }
-                .labelsHidden()
-                .settingsPopup()
-                .disabled(model.isStreaming)
+                CompactPopup(selection: Binding(get: { chosen?.name ?? "" }, set: { chosenAppName = $0 }),
+                             options: apps.map { .init(title: $0.name, value: $0.name, image: $0.menuImage) })
+                    .disabled(model.isStreaming)
+                    .accessibilityLabel("Game")
             }
             HStack(spacing: 8) {
                 if streamingHere, case .connecting(let stage) = model.streamPhase {
