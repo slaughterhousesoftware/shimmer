@@ -32,6 +32,11 @@ extension StreamWindow {
     public func fadeInOnFirstFrame() {
         guard awaitingFirstFrameFadeIn else { return }
         awaitingFirstFrameFadeIn = false
+        // Opening straight into Picture in Picture: the window never shows.
+        if launchingIntoPiP {
+            finishLaunchIntoPictureInPicture()
+            return
+        }
         // The window is at level `mainMenuWindow + 1` (notch path) or in a
         // fullscreen Space (safe-area path), so as alphaValue ramps 0 → 1
         // it visually covers the menu bar (level 24) and the Dock (level

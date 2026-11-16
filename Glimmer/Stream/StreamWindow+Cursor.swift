@@ -127,14 +127,12 @@ extension StreamWindow {
         guard !didClose else { return }
         PiPTrace.log("reengageForeground backgrounded=\(isBackgrounded)", window)
         isBackgrounded = false
-        // Leave PiP mirror-source mode first: restore the fullscreen frame,
-        // alpha, and event handling before we re-elevate and show. Idempotent
-        // and a no-op when PiP wasn't the reason we were hidden.
-        exitPiPSourceMode()
-        // Picture in Picture and the fullscreen window show the same layer, so
-        // coming back to the window means the PiP window has to go. Stop it
-        // AFTER the window is on screen (callers order front first) so the
-        // system's fly-back animation lands on the visible layer. Idempotent:
+        // The window is back: its own key/resign observers apply again, and it
+        // is visible even if it was never shown (a stream opened in PiP).
+        pipSourceMode = false
+        window.alphaValue = 1
+        // Coming back to the window means the PiP window goes. Stop it AFTER
+        // the window is on screen (callers order front first). Idempotent:
         // a user-initiated PiP stop that routed here is already stopping.
         if isPictureInPictureActive || pictureInPicturePending {
             pictureInPicture.stop()

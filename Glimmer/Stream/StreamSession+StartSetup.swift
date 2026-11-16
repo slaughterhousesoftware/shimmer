@@ -43,6 +43,7 @@ extension StreamSession {
         let onBackgroundedChanged: (@MainActor (Bool) -> Void)?
         let pipHotkeyProvider: @MainActor () -> HotkeyChord
         let autoPictureInPictureProvider: @MainActor () -> Bool
+        let startInPictureInPictureProvider: @MainActor () -> Bool
         let keepAwakeProvider: @MainActor () -> KeepAwakePolicy
         let onPictureInPictureChanged: (@MainActor (Bool) -> Void)?
         let pipPointerProvider: @MainActor () -> Bool
@@ -96,6 +97,9 @@ extension StreamSession {
         win.streamPixelSize = CGSize(width: config.width, height: config.height)
         let dec = VideoDecoder()
         dec.attach(to: win.displayLayer)
+        // Apple's Picture in Picture shows a layer of its own; it gets the
+        // same frames, so going in and out of PiP costs nothing.
+        dec.setMirrorLayer(win.pipLayer)
         // The window's backgrounded/foregrounded signal drives the launcher's
         // "Back to stream" CTA. The decoder's present-suppression state is a
         // SEPARATE signal now that Picture in Picture exists: a hidden window
@@ -130,6 +134,7 @@ extension StreamSession {
         // edge for its UI. Wired after `inp` exists so it can be captured.
         win.onPictureInPictureChanged = { [weak dec, weak inp] active in
             dec?.setPacingDetachedFromView(active)
+            dec?.setMirrorExclusive(active)
             inp?.setPiPSuspended(active)
             onPictureInPictureChanged?(active)
         }
@@ -256,6 +261,7 @@ extension StreamSession {
         win.onDidBecomeReadyForInput = { [weak inp] in
             inp?.installFirstResponder()
         }
+        win.launchesInPictureInPicture = options.startInPictureInPictureProvider()
         win.show()
         // Stand up the display-clock frame pacer now that the window
         // is on screen with a real NSScreen - bind its CADisplayLink to

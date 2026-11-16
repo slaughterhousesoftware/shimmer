@@ -64,6 +64,8 @@ public actor StreamSession {
                 win?.returnFromPictureInPicture()
                 return
             }
+            // Still opening in PiP, or headless: become a regular app first.
+            win?.prepareToComeForward()
             // First bring the app forward - makeKeyAndOrderFront only makes a
             // window key if its app is active, and the menubar/launcher click
             // that drives this path may have left a different app frontmost.

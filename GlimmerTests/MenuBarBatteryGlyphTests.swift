@@ -149,6 +149,18 @@ struct MenuBarVisibilityTests {
                                              menuBarVisible: true) == .regular)
     }
 
+    @Test func aStreamOnlyInPictureInPictureRunsHeadless() {
+        // No stream window to return to: out of the Dock, so the status-item
+        // menu opens over another app's full screen (macOS 27.2).
+        #expect(AppDelegate.activationPolicy(mainOpen: false, streaming: true, menuBarVisible: true,
+                                             streamOnlyInPiP: true) == .accessory)
+        // The main window open, or no menu bar icon: the Dock stays.
+        #expect(AppDelegate.activationPolicy(mainOpen: true, streaming: true, menuBarVisible: true,
+                                             streamOnlyInPiP: true) == .regular)
+        #expect(AppDelegate.activationPolicy(mainOpen: false, streaming: true, menuBarVisible: false,
+                                             streamOnlyInPiP: true) == .regular)
+    }
+
     @Test func hidingTheMenuBarSurvivesRelaunch() throws {
         let name = "shimmer-menu-bar-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))

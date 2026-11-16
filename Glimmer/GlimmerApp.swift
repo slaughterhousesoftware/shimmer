@@ -182,9 +182,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
 
     /// Hiding the menu-bar item must never also remove the Dock entry.
+    /// A stream that lives only in Picture in Picture doesn't keep the Dock
+    /// entry: there is no window to come back to, and a regular app's menu
+    /// bar menu doesn't open over another app's full screen (macOS 27.2).
     nonisolated static func activationPolicy(mainOpen: Bool, streaming: Bool,
-                                             menuBarVisible: Bool) -> NSApplication.ActivationPolicy {
-        (mainOpen || streaming || !menuBarVisible) ? .regular : .accessory
+                                             menuBarVisible: Bool,
+                                             streamOnlyInPiP: Bool = false) -> NSApplication.ActivationPolicy {
+        guard menuBarVisible else { return .regular }
+        if mainOpen { return .regular }
+        if streaming && !streamOnlyInPiP { return .regular }
+        return .accessory
     }
 
     /// `.regular` - Dock icon, a Cmd-Tab entry, and under Stage Manager a
@@ -200,16 +207,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// stream START (seconds before the window shows) also sidesteps AppKit's
     /// habit of ignoring an `activate()` issued in the same runloop turn as a
     /// policy change.
+    /// Set by `StreamWindow.becomeRegularApp()`; see refreshActivationPolicy.
+    @MainActor static var regularHoldUntil: Date?
+
     @MainActor static func refreshActivationPolicy() {
         guard let app = NSApp else { return }   // hostless unit tests
         let mainOpen = app.windows.contains { $0.identifier?.rawValue == "main" && $0.isVisible }
         let streaming = boundManager?.isStreaming == true
         let wanted = activationPolicy(mainOpen: mainOpen, streaming: streaming,
-                                      menuBarVisible: boundManager?.hasVisibleMenuBarItem ?? false)
+                                      menuBarVisible: boundManager?.hasVisibleMenuBarItem ?? false,
+                                      streamOnlyInPiP: boundManager?.streamOnlyInPictureInPicture ?? false)
         guard app.activationPolicy() != wanted else { return }
+        // A stream window coming back from Picture in Picture holds .regular
+        // until the model catches up: a flip back to .accessory mid-return
+        // can cost the activation the return asked for.
+        if wanted == .accessory, let hold = regularHoldUntil, hold > Date() { return }
         app.setActivationPolicy(wanted)
         Diag.info("activation policy → \(wanted == .regular ? "regular" : "accessory") "
-            + "(mainOpen=\(mainOpen) streaming=\(streaming))", "Launch")
+            + "(mainOpen=\(mainOpen) streaming=\(streaming) "
+            + "pipOnly=\(boundManager?.streamOnlyInPictureInPicture ?? false))", "Launch")
     }
 
     /// NSWindow open/close observers wired in applicationWillFinishLaunching

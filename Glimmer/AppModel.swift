@@ -210,7 +210,10 @@ final class AppModel {
     /// because the user Cmd-Tabbed away. The launcher UI shows a "Back to
     /// stream" affordance while this is true. Set by the StreamWindow's
     /// resign/become-key observers via callbacks on this manager.
-    var nativeStreamBackgrounded: Bool = false
+    var nativeStreamBackgrounded: Bool = false {
+        // Headless while the stream lives only in Picture in Picture.
+        didSet { if oldValue != nativeStreamBackgrounded { AppDelegate.refreshActivationPolicy() } }
+    }
 
     /// Bring the stream window back from the background. Called by the
     /// launcher's "Back to stream" CTA when nativeStreamBackgrounded is true.
@@ -333,6 +336,16 @@ final class AppModel {
     var autoPictureInPicture: Bool = true {
         didSet { UserDefaults.standard.set(autoPictureInPicture, forKey: "autoPictureInPicture") }
     }
+    /// The menu bar's "... in Picture in Picture": the next stream opens
+    /// straight into PiP - no stream window, no app switch. One-shot, and
+    /// stale after a minute so a launch that never got as far as its window
+    /// can't turn a later, ordinary one into PiP.
+    var pictureInPictureLaunchRequestedAt: Date?
+    func consumePictureInPictureLaunch() -> Bool {
+        defer { pictureInPictureLaunchRequestedAt = nil }
+        guard let at = pictureInPictureLaunchRequestedAt else { return false }
+        return Date().timeIntervalSince(at) < 60
+    }
     /// Force macOS Game Mode while a stream is live with a Bluetooth controller
     /// (GameModeBoost): it doubles the controller's Bluetooth polling.
     var gameModeDuringStreams: Bool = UserDefaults.standard.object(forKey: "gameModeDuringStreams") as? Bool ?? true {
@@ -341,7 +354,16 @@ final class AppModel {
     /// True while the running stream is showing in the system Picture in
     /// Picture window (the fullscreen window is hidden). Drives the menu-bar
     /// items. Set from the session's PiP edge callback.
-    var nativeStreamPictureInPicture: Bool = false
+    var nativeStreamPictureInPicture: Bool = false {
+        didSet { if oldValue != nativeStreamPictureInPicture { AppDelegate.refreshActivationPolicy() } }
+    }
+    /// The stream is showing only in Picture in Picture: no stream window,
+    /// nothing to Cmd-Tab back to. Shimmer runs headless (no Dock icon) then,
+    /// so its menu bar menu opens over another app's full screen - a regular
+    /// app's status-item menu doesn't (measured on macOS 27.2, 2026-11-16).
+    var streamOnlyInPictureInPicture: Bool {
+        isStreaming && nativeStreamBackgrounded && nativeStreamPictureInPicture
+    }
 
     /// Pop the running stream out into Picture in Picture (menu bar entry
     /// point). No-op when nothing is streaming.

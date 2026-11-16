@@ -35,6 +35,25 @@ struct PictureInPictureTests {
         #expect(suppressed(backgrounded: true) == true)
     }
 
+    @Test func openingStraightIntoPiPDecodesTheFirstFrames() {
+        // Hidden from the start, PiP not up yet: the first frames must decode
+        // (they are what starts PiP). Pausing still wins.
+        #expect(StreamWindow.presentSuppressedState(backgrounded: true, pipActive: false, pipPending: false,
+                                                    pipPaused: false, launchingIntoPiP: true) == false)
+        #expect(StreamWindow.presentSuppressedState(backgrounded: true, pipActive: false, pipPending: false,
+                                                    pipPaused: true, launchingIntoPiP: true) == true)
+    }
+
+    @Test func launchUsesTheLastPiPFrameOnlyWhenItIsStillOnScreen() {
+        let screen = NSRect(x: 0, y: 0, width: 2560, height: 1440)
+        let corner = NSRect(x: 2000, y: 1100, width: 480, height: 270)
+        #expect(StreamWindow.validPiPFrame(corner, screens: [screen]) == corner)
+        // A display that's gone, a frame half off screen, a degenerate size.
+        #expect(StreamWindow.validPiPFrame(NSRect(x: 3000, y: 100, width: 480, height: 270), screens: [screen]) == nil)
+        #expect(StreamWindow.validPiPFrame(NSRect(x: 2300, y: 1300, width: 480, height: 270), screens: [screen]) == nil)
+        #expect(StreamWindow.validPiPFrame(NSRect(x: 10, y: 10, width: 20, height: 10), screens: [screen]) == nil)
+    }
+
     @Test func hiddenWindowShowingInPiPIsNotSuppressed() {
         #expect(suppressed(backgrounded: true, pipActive: true) == false)
     }
@@ -50,51 +69,57 @@ struct PictureInPictureTests {
         #expect(suppressed(backgrounded: false, pipActive: true, pipPaused: true) == true)
     }
 
-    // MARK: - Mirror-source sizing
+    // MARK: - Fitting the picture into Apple's PiP window
 
-    private let sixteenNine = CGSize(width: 1920, height: 1080)
-
-    @Test func sourceOnTheAspectLineIsThePanelSize() {
-        #expect(StreamWindowGeometry.pipSourceSize(covering: CGSize(width: 480, height: 270), aspect: sixteenNine)
-            == CGSize(width: 480, height: 270))
+    @Test func panelScaleFitsTheSourceSizedVideoViewToThePanel() throws {
+        // Measured on macOS 27.2.1: a 1600x900 source in a 529x297 panel.
+        let t = try #require(PiPPanelFitter.panelScale(video: CGSize(width: 1600, height: 900),
+                                                       panel: CGSize(width: 529, height: 297)))
+        #expect(abs(t.m11 * 1600 - 529) < 0.001)
+        #expect(abs(t.m22 * 900 - 297) < 0.001)
+        // Already fitted (Apple fixed it): identity, so nothing changes.
+        let same = try #require(PiPPanelFitter.panelScale(video: CGSize(width: 529, height: 297),
+                                                          panel: CGSize(width: 529, height: 297)))
+        #expect(PiPPanelFitter.approximatelyEqual(same, CATransform3DIdentity))
+        #expect(PiPPanelFitter.panelScale(video: .zero, panel: CGSize(width: 10, height: 10)) == nil)
     }
 
-    @Test func panelWiderThanTheStreamKeepsWidthAndGrowsHeight() {
-        // 577x324 is 0.56pt wider than 16:9 - the case that painted a white
-        // column: the source keeps the panel's width and takes the exact 16:9
-        // height, so the video fills the layer edge to edge.
-        #expect(StreamWindowGeometry.pipSourceSize(covering: CGSize(width: 577, height: 324), aspect: sixteenNine)
-            == CGSize(width: 577, height: 324.5625))
-    }
-
-    @Test func panelTallerThanTheStreamKeepsHeightAndGrowsWidth() {
-        let size = StreamWindowGeometry.pipSourceSize(covering: CGSize(width: 504, height: 284), aspect: sixteenNine)
-        #expect(size.height == 284)
-        #expect(abs(size.width - 284 * 16 / 9) < 1e-9)
-    }
-
-    @Test func sourceAlwaysCoversThePanelAndSitsExactlyOnTheAspect() {
-        // Every integer panel size AVKit produced in the sweep, plus a 16:10
-        // stream in AVKit's 16:9 default box.
-        let panels = [(540, 303), (577, 324), (497, 279), (466, 262), (600, 338), (445, 250), (1, 1)]
-        for aspect in [sixteenNine, CGSize(width: 2560, height: 1600), CGSize(width: 3440, height: 1440)] {
-            for (w, h) in panels {
-                let panel = CGSize(width: w, height: h)
-                let size = StreamWindowGeometry.pipSourceSize(covering: panel, aspect: aspect)
-                let covers = size.width >= panel.width && size.height >= panel.height
-                let underAPointOver = size.width < panel.width + 1 || size.height < panel.height + 1
-                let ratioError = abs(size.width / size.height - aspect.width / aspect.height)
-                #expect(covers)
-                #expect(underAPointOver)
-                #expect(ratioError < 1e-9)
-            }
+    @Test func containerMappingLandsThePictureExactlyOnItsHost() throws {
+        // A picture offset inside a layer that is itself offset in its host
+        // (a letterboxed source): every corner must land on the host's.
+        let picture = CGRect(x: 0, y: 60, width: 1600, height: 780)
+        let layerFrame = CGRect(x: 0, y: -40, width: 1600, height: 900)
+        let anchor = CGPoint(x: 0.5, y: 0.5)
+        let host = CGSize(width: 1600, height: 900)
+        let t = try #require(PiPPanelFitter.containerMapping(picture: picture, layerFrame: layerFrame,
+                                                             anchorPoint: anchor, host: host))
+        // A sublayer transform pivots on the anchor: p' = (p - pivot) * s + pivot, then the layer's offset.
+        func land(_ p: CGPoint) -> CGPoint {
+            let pivot = CGPoint(x: anchor.x * layerFrame.width, y: anchor.y * layerFrame.height)
+            let x = (p.x - pivot.x) * t.m11 + pivot.x + t.m41 + layerFrame.minX
+            let y = (p.y - pivot.y) * t.m22 + pivot.y + t.m42 + layerFrame.minY
+            return CGPoint(x: x, y: y)
         }
+        let lo = land(CGPoint(x: picture.minX, y: picture.minY))
+        let hi = land(CGPoint(x: picture.maxX, y: picture.maxY))
+        #expect(abs(lo.x) < 0.001 && abs(lo.y) < 0.001)
+        #expect(abs(hi.x - host.width) < 0.001 && abs(hi.y - host.height) < 0.001)
     }
 
-    @Test func degenerateAspectLeavesThePanelSizeAlone() {
-        let panel = CGSize(width: 577, height: 324)
-        #expect(StreamWindowGeometry.pipSourceSize(covering: panel, aspect: CGSize.zero) == panel)
-        #expect(StreamWindowGeometry.pipSourceSize(covering: CGSize.zero, aspect: sixteenNine) == CGSize.zero)
+    @Test func sourceSitsAtTheStreamsResolutionAndStaysOnScreen() {
+        let screen = CGRect(x: 0, y: 0, width: 2560, height: 1440)
+        // 1080p on a 2x screen: 960x540 points, centred where asked.
+        let f = PiPSource.nativeFrame(pixelSize: CGSize(width: 1920, height: 1080), backingScale: 2,
+                                      center: CGPoint(x: 1280, y: 720), screen: screen)
+        #expect(f == CGRect(x: 800, y: 450, width: 960, height: 540))
+        // Centred on a PiP window in the top-right corner: pulled back on screen.
+        let corner = PiPSource.nativeFrame(pixelSize: CGSize(width: 1920, height: 1080), backingScale: 2,
+                                           center: CGPoint(x: 2400, y: 1300), screen: screen)
+        #expect(screen.contains(corner))
+        // 4K on a 1x screen is bigger than the screen: shrunk to fit.
+        let big = PiPSource.nativeFrame(pixelSize: CGSize(width: 3840, height: 2160), backingScale: 1,
+                                        center: CGPoint(x: 1280, y: 720), screen: screen)
+        #expect(screen.contains(big) && big.width <= 2560)
     }
 
     // MARK: - Default chord

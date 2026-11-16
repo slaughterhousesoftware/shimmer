@@ -224,6 +224,12 @@ public final class StreamWindow {
     /// the fullscreen window paints into, so the two are mutually exclusive:
     /// entering PiP hides this window, returning to this window stops PiP.
     let pictureInPicture: StreamPictureInPicture
+    /// The layer (and invisible window) Apple's PiP shows - not this window's.
+    let pipSource: PiPSource
+    /// Keeps the picture whole inside Apple's PiP window.
+    let pipFitter = PiPPanelFitter()
+    /// The PiP layer, for the decoder to feed alongside the stream's own.
+    public var pipLayer: AVSampleBufferDisplayLayer { pipSource.layer }
     /// True from `hideStreamWindow()` (orderOut) until `reengageForeground()`.
     var isBackgrounded = false
     /// True while the system PiP window is up (AVKit didStart → didStop).
@@ -241,29 +247,22 @@ public final class StreamWindow {
     /// `GCController.shouldMonitorBackgroundEvents` before we flipped it on
     /// for PiP; restored on PiP stop / close. nil = we never touched it.
     var savedControllerBackgroundFlag: Bool?
-    /// True while the stream window is acting as the alpha-0, PiP-window-sized
-    /// MIRROR SOURCE for the system Picture in Picture window. macOS's
-    /// sample-buffer PiP copies the source layer's pixels 1:1 with no scaling
-    /// (a documented AVKit bug - see StreamWindow+PictureInPicture.swift), so
-    /// the source window must stay ON SCREEN and be sized to the PiP window, or
-    /// PiP shows only the bottom-left crop. While this is true the window's
-    /// own key/resign observers are gated off (it's intentionally invisible;
-    /// returns come through the explicit PiP/Dock/menu paths).
+    /// The stream is hidden for Picture in Picture (PiP up or starting): the
+    /// stream window's own key/resign transitions are meaningless then, and
+    /// returns come through the explicit PiP / menu paths.
     var pipSourceMode = false
-    /// The fullscreen frame to restore when PiP ends (saved on entering source
-    /// mode). nil when not in source mode.
-    var savedFrameBeforePiP: NSRect?
-    /// Window-mode chrome suspended while acting as the mirror source: the
-    /// aspect lock and minimum size (both would refuse the PiP-panel-sized
-    /// content) and the frame autosave name (so the tiny source frame is never
-    /// persisted as "the user's window"). Restored by exitPiPSourceMode().
-    var savedChromeBeforePiP: (aspect: NSSize, minSize: NSSize, autosaveName: String)?
-    /// The window's level + collection behaviour before PiP mirror-source
-    /// mode reshaped it as a floating, unmanaged panel (see `enterPiPSourceMode`).
+    /// Open this stream straight into Picture in Picture (set before show()).
+    public var launchesInPictureInPicture = false
+    /// From show() until the first frames start PiP: the window has never been
+    /// shown and must not be - no activation, no cursor hide, no presentation
+    /// options - so the app the user is in stays in front.
+    var launchingIntoPiP = false
+    /// The PiP start in flight began as a launch: it grows from where the PiP
+    /// window last was, and if it fails the window is shown instead.
+    var pipStartIsLaunch = false
+    /// The window's level + collection behaviour from before a window-mode
+    /// return's temporary floating shape (see `returnFromPictureInPicture`).
     var savedShapeBeforePiP: (level: NSWindow.Level, behavior: NSWindow.CollectionBehavior)?
-    /// Observer on the PiP panel's content view frame, so the mirror source
-    /// window tracks PiP window resizes and keeps filling it 1:1.
-    var pipPanelFrameObserver: NSObjectProtocol?
     /// Keeps the PiP picture from staying frozen after a Stage Manager or
     /// Mission Control animation during a screen recording (`PiPKeepAlive`).
     var pipKeepAlive: PiPKeepAlive?
@@ -521,7 +520,9 @@ public final class StreamWindow {
         self.captureHintBanner = captureHint
         self.displayView = view
         self.streamDelegate = delegate
-        self.pictureInPicture = StreamPictureInPicture(layer: layer)
+        let source = PiPSource()
+        self.pipSource = source
+        self.pictureInPicture = StreamPictureInPicture(layer: source.layer)
         installPictureInPictureHandlers()
         // Window mode: the red button / Cmd-W route through the delegate to
         // the session's stop() (StreamWindow+Windowed.swift). Wired after
@@ -577,13 +578,7 @@ public final class StreamWindow {
         view.layer = fresh
         view.wantsLayer = true
         self.displayLayer = fresh
-        // PiP is fed by the layer, not the view: re-target it onto the fresh
-        // layer. If PiP was up when the renderer hard-failed, don't try to
-        // relaunch it into the slot the dismissing old window still holds -
-        // exit PiP cleanly and surface the recovering stream fullscreen.
-        if pictureInPicture.retarget(layer: fresh) || pictureInPicturePending {
-            handleLayerRebuildDuringPiP()
-        }
+        // PiP shows its own layer (PiPSource), so it carries on untouched.
         log.notice("Rebuilt AVSampleBufferDisplayLayer (present-path self-heal)")
         return fresh
     }

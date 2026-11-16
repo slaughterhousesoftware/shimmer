@@ -305,6 +305,7 @@ extension VideoDecoder {
         // Drop the layer reference so a stray late-arriving frame can't
         // enqueue onto a layer the window has already torn down.
         displayLayer = nil
+        setMirrorLayer(nil)
 
         // No bridging-pointer cleanup needed here - the backend callbacks
         // resolve us through StreamBridgeContext.current (weak). When this

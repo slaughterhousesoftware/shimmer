@@ -51,6 +51,7 @@ extension StreamSession {
         onBackgroundedChanged: (@MainActor (Bool) -> Void)? = nil,
         pipHotkeyProvider: @escaping @MainActor () -> HotkeyChord = { .defaultPiP },
         autoPictureInPictureProvider: @escaping @MainActor () -> Bool = { false },
+        startInPictureInPictureProvider: @escaping @MainActor () -> Bool = { false },
         keepAwakeProvider: @escaping @MainActor () -> KeepAwakePolicy = { .always },
         quitAppOnStopProvider: @escaping @MainActor () -> Bool = { false },
         onPictureInPictureChanged: (@MainActor (Bool) -> Void)? = nil,
@@ -147,6 +148,7 @@ extension StreamSession {
             onBackgroundedChanged: onBackgroundedChanged,
             pipHotkeyProvider: pipHotkeyProvider,
             autoPictureInPictureProvider: autoPictureInPictureProvider,
+            startInPictureInPictureProvider: startInPictureInPictureProvider,
             keepAwakeProvider: keepAwakeProvider,
             onPictureInPictureChanged: onPictureInPictureChanged,
             pipPointerProvider: pipPointerProvider))

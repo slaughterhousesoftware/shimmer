@@ -224,7 +224,13 @@ extension AppModel {
             }
             self.log.notice("DEBUG automation: selecting \(host.name, privacy: .private) (\(host.apps.count) apps) and streaming default")
             self.selectHost(host)
+            // `--debug-open-in-pip=1`: as the menu bar's "... in Picture in Picture".
+            if Self.debugKnob("open-in-pip") != nil { self.pictureInPictureLaunchRequestedAt = Date() }
             self.streamDefaultApp()
+            // `--debug-close-main=1`: as after a login-item launch - no main window.
+            if Self.debugKnob("close-main") != nil {
+                for window in NSApp.windows where window.identifier?.rawValue == "main" { window.close() }
+            }
             self.armDebugPiPAndQuit(pipAfter: pipAfter, returnAfter: returnAfter, closeAfter: closeAfter,
                                     againAfter: againAfter, quitAfter: quitAfter)
         }

@@ -252,6 +252,12 @@ public final class VideoDecoder {
     // Read pattern at hot sites: snapshot once into a local, operate on the
     // local; the local extends the layer's lifetime past any teardown that
     // races. Writes only happen on MainActor (attach/teardown).
+    /// The Picture in Picture layer and whether it is the only target
+    /// (`setMirrorLayer` / `setMirrorExclusive`). Same locking as displayLayer.
+    let mirrorLock = NSLock()
+    nonisolated(unsafe) var _mirrorLayer: AVSampleBufferDisplayLayer?
+    nonisolated(unsafe) var _mirrorExclusive = false
+
     let displayLayerLock = NSLock()
     nonisolated(unsafe) var _displayLayer: AVSampleBufferDisplayLayer?
     nonisolated var displayLayer: AVSampleBufferDisplayLayer? {

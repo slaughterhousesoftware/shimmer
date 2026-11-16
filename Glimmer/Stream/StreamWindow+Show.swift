@@ -20,6 +20,14 @@ extension StreamWindow {
         // titled window, no presentation-options change, no cover, no cursor
         // hide. Everything below is the fullscreen path, unchanged.
         if displayMode == .window { showWindowed(); return }
+        if launchesInPictureInPicture {
+            if coversNotch {
+                showHiddenForPictureInPictureLaunch()
+                return
+            }
+            // The Space-based full screen can't be set up without showing it.
+            log.notice("Opening in Picture in Picture needs 'Fill the notch' full screen or window mode - showing the window")
+        }
 
         // 1. Save the host app's current presentation options so we can put
         //    them back verbatim on close(). Pulling this from NSApp at
@@ -290,6 +298,28 @@ extension StreamWindow {
     /// live display. Split out of `show()` so each unit stays focused; the
     /// behaviour is unchanged (same notifications, same MainActor-isolated
     /// handlers, same observer-array bookkeeping for `close()` teardown).
+    /// The borderless full-screen cover, configured exactly as show() leaves
+    /// it but never ordered in, for a stream that opens in Picture in Picture.
+    /// Returning from PiP brings it up through the normal foreground path.
+    private func showHiddenForPictureInPictureLaunch() {
+        previousPresentationOptions = NSApp.presentationOptions
+        streamDelegate.coversNotch = coversNotch
+        window.alphaValue = 0.0
+        awaitingFirstFrameFadeIn = true
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 1)
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        if let screen = window.screen ?? NSScreen.main ?? NSScreen.screens.first {
+            window.setFrame(screen.frame, display: false)
+        }
+        if let cv = window.contentView {
+            cv.frame = NSRect(origin: .zero, size: window.frame.size)
+            cv.autoresizingMask = [.width, .height]
+            displayLayer.frame = cv.bounds
+        }
+        installLifecycleObservers()
+        beginLaunchIntoPictureInPicture()
+    }
+
     private func installLifecycleObservers() {
         // Track key status so the cursor follows it. The CGDisplay hide is a
         // process-wide reference-counted latch; without these observers,
@@ -570,16 +600,9 @@ extension StreamWindow {
         // Cmd-Tabbed to. Idempotent + latch-balanced via the single owner -
         // shows iff currently hidden, bringing the count to 0.
         setCursorHidden(false)
-        if forPictureInPicture {
-            // Hide the fullscreen content instantly but keep the window on
-            // screen as the PiP mirror source. It's resized to the PiP window
-            // on didStart (matchSourceWindowToPiPPanel).
-            enterPiPSourceMode()
-            if let saved = previousPresentationOptions { NSApp.presentationOptions = saved }
-            onBackgroundedChanged?(true)
-            log.info("Stream window hidden for Picture in Picture (kept on screen at alpha 0 as mirror source)")
-            return
-        }
+        // Picture in Picture shows its own layer (PiPSource), so the window
+        // hides exactly as for a plain switch-away.
+        if forPictureInPicture { log.info("Stream window hidden for Picture in Picture") }
         // Window level: in the borderless-covering path we parked the window
         // above the menu-bar level so it covers the notch. That also keeps it
         // painted ON TOP of any other app the user Cmd-Tabs to, which makes

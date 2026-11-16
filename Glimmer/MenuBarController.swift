@@ -209,6 +209,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 // has it up from an earlier disconnect, this resumes it.
                 menu.addItem(action(model.heroActionLabel, #selector(streamHero),
                                     image: glyph(model.heroTargetApp) ?? Self.symbol("play.fill")))
+                menu.addItem(action("\(model.heroActionLabel) in Picture in Picture", #selector(streamHeroInPiP),
+                                    image: Self.symbol("pip.enter")))
                 menu.addItem(mouseInputRow())
             }
             if model.hosts.count > 1 {
@@ -275,6 +277,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Actions
 
+    /// Straight into Picture in Picture: no activation - the app you're in
+    /// stays in front, and Shimmer stays headless while the stream is in PiP.
+    @objc private func streamHeroInPiP() {
+        model.pictureInPictureLaunchRequestedAt = Date()
+        model.streamDefaultApp()
+    }
+
     @objc private func streamHero() {
         model.streamDefaultApp()
         // Claim activation NOW, while the app is still .accessory: this click
@@ -288,7 +297,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         NSApp.activate()
     }
 
-    @objc private func resumeStream() { model.resumeStreamWindow() }
+    @objc private func resumeStream() {
+        // Claim activation inside this click: cooperative activation honours
+        // a request made while handling the user's event, and Shimmer may be
+        // headless (stream only in PiP) - by the time the session's async hop
+        // asks, the grant has lapsed (measured 2026-11-16: never activated).
+        // A bare app doing exactly this activates within ~80 ms.
+        StreamWindow.becomeRegularApp()
+        NSApp.activate()
+        model.resumeStreamWindow()
+    }
     @objc private func enterPictureInPicture() { model.enterPictureInPicture() }
     @objc private func endStream() { model.endStream() }
     @objc private func dismissWarning() { model.nativeStreamError = nil }

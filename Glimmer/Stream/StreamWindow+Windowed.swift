@@ -42,6 +42,16 @@ extension StreamWindow {
         // framing; "Fill the notch" is a full-screen-only choice.
         streamDelegate.coversNotch = false
         streamDelegate.displayMode = .window
+        if launchesInPictureInPicture {
+            // Configured but never ordered in: the stream opens in Picture in
+            // Picture and the app the user is in stays in front.
+            configureWindowedChrome()
+            window.alphaValue = 0.0
+            awaitingFirstFrameFadeIn = true
+            installWindowedLifecycleObservers()
+            beginLaunchIntoPictureInPicture()
+            return
+        }
         AppDelegate.refreshActivationPolicy()   // a stage of our own, not behind the focused one
         NSApp.activate()
         configureWindowedChrome()

@@ -87,6 +87,22 @@ extension VideoDecoder {
     /// system PiP window shows the layer, so the pacer must ride a screen-bound
     /// link (a view-bound one stops firing off screen). Remembered on the
     /// decoder so a pacer re-enable after a give-up rebinds the same way.
+    /// The Picture in Picture layer: fed every presented frame from now on.
+    public func setMirrorLayer(_ layer: AVSampleBufferDisplayLayer?) {
+        mirrorLock.lock(); _mirrorLayer = layer; mirrorLock.unlock()
+    }
+
+    /// PiP up (or starting): frames go to the PiP layer only.
+    public func setMirrorExclusive(_ exclusive: Bool) {
+        mirrorLock.lock(); _mirrorExclusive = exclusive; mirrorLock.unlock()
+    }
+
+    nonisolated var mirrorTarget: (AVSampleBufferDisplayLayer?, Bool) {
+        mirrorLock.lock(); defer { mirrorLock.unlock() }
+        // Exclusive without a layer would present nowhere: fall back to main.
+        return (_mirrorLayer, _mirrorExclusive && _mirrorLayer != nil)
+    }
+
     public func setPacingDetachedFromView(_ detached: Bool) {
         pacingDetachedFromView = detached
         framePacer?.setDetachedFromView(detached)
@@ -263,12 +279,42 @@ extension VideoDecoder {
     ///   * renderer not ready for more media → drop + count (no IDR here; a
     ///     presentation-timing drop of an already-decoded frame never requests a
     ///     keyframe - the reference chain is intact).
+    ///
+    /// The Picture in Picture layer (`setMirrorLayer`) gets every frame too;
+    /// while PiP is up (`setMirrorExclusive`) it is the only one that does -
+    /// the stream window is hidden then.
     @discardableResult
     nonisolated func presentFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
+        guard isStreaming else { return false }
+        let (mirror, exclusive) = mirrorTarget
+        var presented = false
+        if let mirror { presented = presentToMirror(mirror, sampleBuffer) }
+        if !exclusive { presented = presentToMain(sampleBuffer) }
+        guard presented else { return false }
+        recordPresented(sampleBuffer)
+        return true
+    }
+
+    /// The PiP layer: enqueue when its renderer can take it. A failed renderer
+    /// is flushed; the stream's own self-heal belongs to the main layer.
+    nonisolated func presentToMirror(_ layer: AVSampleBufferDisplayLayer, _ sampleBuffer: CMSampleBuffer) -> Bool {
+        let renderer = layer.sampleBufferRenderer
+        if renderer.status == .failed {
+            log.warning("Picture in Picture layer renderer failed - flushing (error=\(String(describing: renderer.error)))")
+            renderer.flush()
+            return false
+        }
+        guard renderer.isReadyForMoreMediaData else { return false }
+        renderer.enqueue(sampleBuffer)
+        return true
+    }
+
+    /// The stream window's layer, with its failure self-heal and backpressure.
+    nonisolated func presentToMain(_ sampleBuffer: CMSampleBuffer) -> Bool {
         // Re-check the teardown gate: the pacer's serial queue can race a
         // MainActor teardown that nil'd the layer. Snapshot the layer into a
         // local so it can't be released mid-enqueue.
-        guard isStreaming, let layer = displayLayer else { return false }
+        guard let layer = displayLayer else { return false }
 
         // ---- Renderer via the macOS 15+ AVSampleBufferVideoRenderer path.
         //
@@ -327,6 +373,11 @@ extension VideoDecoder {
         // Healthy frame - reset the backpressure streak and present.
         consecutiveBackpressureDrops.store(0, ordering: .relaxed)
         renderer.enqueue(sampleBuffer)
+        return true
+    }
+
+    /// Once per presented frame, whichever layer(s) took it.
+    nonisolated func recordPresented(_ sampleBuffer: CMSampleBuffer) {
 
         // Latency telemetry stage t_present (opt-in; nil = zero cost): the frame
         // just reached the renderer. Recover the rtpTimestamp key from the sample
@@ -349,7 +400,6 @@ extension VideoDecoder {
         // it falls behind, but that's outside our visibility - moonlight-qt's
         // "rendering FPS" row is defined the same way.
         statsCollector.recordRendererEnqueue()
-        return true
     }
 
     // A presentation-late / drop-to-newest / sustained-lag drop in the
