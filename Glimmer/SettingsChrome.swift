@@ -74,7 +74,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         // Match Tailscale's Accounts window. The apps scroll independently
         // while the latency panel stays anchored above the bottom bar.
-        case .computers: return 528 - 32
+        case .computers: return 700 - 32
         // Allow room for the descriptions and CLI row. Unusual expanded
         // controls and diagnostics can still scroll within the page.
         case .stream: return 640 - 32
@@ -100,7 +100,7 @@ struct SettingsTabBar: View {
     var body: some View {
         HStack(spacing: 2) {
             Spacer(minLength: 0)
-            ForEach(SettingsTab.allCases) { tab in
+            ForEach(SettingsTab.allCases.filter { $0 != .stream && $0 != .playStation }) { tab in
                 Button {
                     selection = tab
                 } label: {
@@ -188,7 +188,7 @@ enum SettingsMetrics {
     /// The reference window's exact width, and its per-tab heights. It is not
     /// resizable - the zoom and minimise buttons are disabled - and the height
     /// changes with the tab rather than the user dragging it.
-    static let windowWidth: CGFloat = 600
+    static let windowWidth: CGFloat = 780
     /// The box every popup / slider / segmented control is laid out in. ONE
     /// width for the whole app: the panes used to mix 200 and 260, so the Video
     /// pane's own rows didn't line up with each other, never mind with Stream's.
@@ -354,5 +354,25 @@ struct SettingsPageBody<Content: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// The bitrate slider both kinds of PC share: a dozen snap points with a
+/// tick on each, up to `maxMbps`. (Bazzite's had 26 ticks; across a 260pt
+/// control they land on fractional pixels and look unevenly spaced.)
+struct BitrateSlider: View {
+    static let stopsMbps = [5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300]
+    let mbps: Int
+    let maxMbps: Int
+    let set: (Int) -> Void
+
+    var body: some View {
+        let stops = Self.stopsMbps.filter { $0 <= maxMbps }
+        Slider(value: Binding(
+            get: {
+                Double(stops.enumerated().min(by: { abs($0.element - mbps) < abs($1.element - mbps) })?.offset ?? 0)
+            },
+            set: { set(stops[min(stops.count - 1, max(0, Int($0.rounded())))]) }),
+               in: 0...Double(max(stops.count - 1, 1)), step: 1)
     }
 }

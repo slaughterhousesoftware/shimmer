@@ -63,6 +63,7 @@ extension AppModel {
         startLiveRefresh()
         restartHostStatusPolling()
         runDebugAutomationIfRequested()
+        DebugMockups.showIfRequested(model: self)
     }
 
     func startLiveRefresh() {

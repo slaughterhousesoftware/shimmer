@@ -30,6 +30,7 @@ struct ComputersTab: View {
     @State private var appRefreshFailed = false
     @State private var copiedAgentPrompt = false
     @State private var sidebarProbes: [String: SidebarProbe] = [:]
+    @State private var spikeAppName: String?
 
     private struct SidebarProbe {
         let reachable: Bool
@@ -191,8 +192,12 @@ struct ComputersTab: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    if !model.hosts.isEmpty {
-                        ForEach(model.hosts) { host in
+                    ForEach([false, true], id: \.self) { consoles in
+                        let group = model.hosts.filter { $0.isPlayStation == consoles }
+                        if !group.isEmpty {
+                        sidebarHeading(consoles ? "Consoles" : "PCs")
+                            .padding(.top, consoles ? 8 : 0)
+                        ForEach(group) { host in
                             Button {
                                 guard !model.pairingInFlight else { return }
                                 pairingTarget = nil
@@ -205,6 +210,7 @@ struct ComputersTab: View {
                             .disabled(model.pairingInFlight)
                             .accessibilityLabel("\(host.displayName), \(connectionStatusText(for: host)), \(model.dialAddress(for: host))")
                             .hostContextMenu(host)
+                        }
                         }
                     }
                     if !nearby.isEmpty || !unregisteredPlayStations.isEmpty {
@@ -242,23 +248,27 @@ struct ComputersTab: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Divider()
-            addByAddressButton(expanded: true)
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.roundedRectangle(radius: 6))
-            .controlSize(.regular)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 8)
+            HStack(spacing: 0) {
+                addByAddressButton(plus: true)
+                    .buttonStyle(.borderless)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
         }
     }
 
-    private func addByAddressButton(expanded: Bool = false) -> some View {
+    private func addByAddressButton(expanded: Bool = false, plus: Bool = false) -> some View {
         Button {
             showManualAddress = true
         } label: {
-            Text("Add by Address…")
-                .frame(maxWidth: expanded ? .infinity : nil)
-                .frame(height: 16)
+            if plus {
+                Image(systemName: "plus").font(.system(size: 13, weight: .medium)).frame(width: 20, height: 18)
+            } else {
+                Text("Add by Address…")
+                    .frame(maxWidth: expanded ? .infinity : nil)
+                    .frame(height: 16)
+            }
         }
         .disabled(model.pairingInFlight)
         .help("Add a PC using an IP address or hostname")
@@ -325,18 +335,23 @@ struct ComputersTab: View {
             .id(target.id)
         } else if let host = model.selectedHost {
             VStack(spacing: 0) {
-                VStack(spacing: apps.isEmpty ? 12 : 22) {
-                    hostIdentity(for: host)
-                    appList(for: host)
+                ScrollView {
+                    VStack(spacing: 22) {
+                        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
+                            streamRow(for: host)
+                            if host.isPlayStation {
+                                PlayStationSettingsPane()
+                            } else {
+                                StreamPane()
+                                VideoPane()
+                            }
+                        }
+                        .padding(.trailing, 20)
+                    }
+                    .padding(.top, 24)
+                    .padding(.bottom, 16)
                 }
-                .padding(.top, 20)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-                latencySection(for: host)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 20)
             }
             .overlay(alignment: .topTrailing) {
                 Image(systemName: "ellipsis")
@@ -345,7 +360,6 @@ struct ComputersTab: View {
                     .frame(width: 26, height: 26)
                     .hostOptionsMenu(host, onRename: { beginHostRename(host) })
                     .help("PC options")
-                    .accessibilityLabel("PC options for \(host.displayName)")
                     .padding(.trailing, 11)
                     .padding(.top, 12)
             }
@@ -356,10 +370,96 @@ struct ComputersTab: View {
         }
     }
 
+    /// Spike: the stream bar - pick what to stream, then Stream or PiP.
+    private func streamBar(for host: Host) -> some View {
+        let chosen = apps.first { $0.name == (spikeAppName ?? model.heroTargetAppName) } ?? apps.first
+        let resumes = chosen.map { model.runningAppName == $0.name } ?? false
+        return HStack(spacing: 10) {
+            if host.isPlayStation || apps.count <= 1 {
+                if let chosen {
+                    HStack(spacing: 7) {
+                        AppGlyphIcon(app: chosen).frame(width: 16)
+                        Text(chosen.name)
+                    }
+                }
+            } else {
+                Picker("", selection: Binding(get: { chosen?.name ?? "" }, set: { spikeAppName = $0 })) {
+                    ForEach(apps) { app in
+                        Label { Text(app.name) } icon: { AppGlyphIcon(app: app) }.tag(app.name)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            Spacer(minLength: 8)
+            Button {
+                guard let chosen else { return }
+                model.pictureInPictureLaunchRequestedAt = Date()
+                model.requestStream(app: chosen, on: host)
+            } label: {
+                Label("Picture in Picture", systemImage: "pip.enter")
+            }
+            .controlSize(.large)
+            Button {
+                guard let chosen else { return }
+                model.requestStream(app: chosen, on: host)
+            } label: {
+                Label(resumes ? "Resume" : "Stream", systemImage: "play.fill")
+                    .padding(.horizontal, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            Image(systemName: "ellipsis")
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .hostOptionsMenu(host, onRename: { beginHostRename(host) })
+                .help("PC options")
+        }
+        .disabled(model.isStreaming)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    /// Spike: streaming as the first settings row.
+    private func streamRow(for host: Host) -> some View {
+        let chosen = apps.first { $0.name == (spikeAppName ?? model.heroTargetAppName) } ?? apps.first
+        let resumes = chosen.map { model.runningAppName == $0.name } ?? false
+        return SettingsField("Stream") {
+            if !(host.isPlayStation || apps.count <= 1) {
+                Picker("", selection: Binding(get: { chosen?.name ?? "" }, set: { spikeAppName = $0 })) {
+                    ForEach(apps) { app in
+                        Label { Text(app.name) } icon: { AppGlyphIcon(app: app) }.tag(app.name)
+                    }
+                }
+                .labelsHidden()
+                .settingsControl()
+            }
+            HStack(spacing: 8) {
+                Button {
+                    guard let chosen else { return }
+                    model.requestStream(app: chosen, on: host)
+                } label: {
+                    Label(resumes ? "Resume" : "Stream", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                Button {
+                    guard let chosen else { return }
+                    model.pictureInPictureLaunchRequestedAt = Date()
+                    model.requestStream(app: chosen, on: host)
+                } label: {
+                    Label("Picture in Picture", systemImage: "pip.enter")
+                }
+            }
+            .disabled(model.isStreaming)
+        }
+    }
+
     private func hostIdentity(for host: Host) -> some View {
         let address = model.selectedHostRouteAddress ?? model.dialAddress(for: host)
         return VStack(spacing: 6) {
-            HostIdentityIcon(host: host, size: 48, status: connectionIndicator(for: host), statusText: connectionStatusText(for: host))
+            SpikeSystemLogo(host: host, size: 56)
+                .padding(.bottom, 4)
             VStack(spacing: 2) {
                 Group {
                     if renamingHostID == host.id {
@@ -381,13 +481,16 @@ struct ComputersTab: View {
                 }
                 .font(.system(size: 18, weight: .semibold))
                 .frame(height: 22)
-                Text(address)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .frame(height: 16)
+                HStack(spacing: 5) {
+                    SpikeStatusDot(status: connectionIndicator(for: host))
+                    Text("\(connectionStatusText(for: host)) · \(address)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+                .frame(height: 16)
             }
         }
         .frame(maxWidth: .infinity)
@@ -945,23 +1048,23 @@ private struct HostRow: View {
     let statusText: String
 
     var body: some View {
-        HStack(spacing: 8) {
-            HostIdentityIcon(host: host, status: status, statusText: statusText)
+        HStack(spacing: 9) {
+            SpikeSystemLogo(host: host, size: 22)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(host.displayName)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13))
                     .lineLimit(1)
                 Text(address)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
+            SpikeStatusDot(status: status)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .frame(minHeight: SettingsMetrics.sidebarRowHeight)
+        .padding(.horizontal, 8)
+        .frame(height: 40)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(selected ? Color.primary.opacity(0.13) : Color.clear))

@@ -36,17 +36,14 @@ struct PlayStationSettingsPane: View {
                     Text("30 Hz").tag(30)
                 }
                 .labelsHidden()
-                .pickerStyle(.segmented)
                 .settingsControl()
             }
 
             SettingsField("Bitrate") {
                 Toggle("Set automatically", isOn: $settings.bitrateAuto)
                 HStack(spacing: 10) {
-                    Slider(value: bitrate,
-                           in: Double(PlayStationSettings.bitrateRangeMbps.lowerBound)...Double(
-                               PlayStationSettings.bitrateRangeMbps.upperBound),
-                           step: 1)
+                    BitrateSlider(mbps: settings.bitrateAuto ? PlayStationSettings.presetBitrateMbps : settings.bitrateMbps,
+                                  maxMbps: PlayStationSettings.bitrateRangeMbps.upperBound) { settings.bitrateMbps = $0 }
                         .settingsControl()
                         .disabled(settings.bitrateAuto)
                     Text(settings.bitrateAuto ? "\(PlayStationSettings.presetBitrateMbps) Mbps"
@@ -59,13 +56,21 @@ struct PlayStationSettingsPane: View {
                     : "Sent as is and held: a sharper picture, but no backing off on a weak connection.")
             }
 
-            SettingsField("Video") {
-                Toggle("HEVC", isOn: $settings.hevc)
-                SettingsHelp("Sharper for the same bitrate. Turn off only if the picture breaks up.")
-                Toggle("HDR", isOn: $settings.hdr)
+            SettingsField("Codec") {
+                Picker("", selection: $settings.hevc) {
+                    Text("HEVC").tag(true)
+                    Text("H.264").tag(false)
+                }
+                .labelsHidden()
+                .settingsControl()
+                SettingsHelp(settings.hevc ? "Sharper for the same bitrate."
+                                           : "Only if HEVC's picture breaks up.")
+            }
+
+            SettingsField("HDR") {
+                Toggle("Brighter highlights, deeper colour", isOn: $settings.hdr)
                     .disabled(!settings.hevc)
-                    .settingsStackedToggle()
-                SettingsHelp("Only on a display that can show HDR, and with HEVC.")
+                if !settings.hevc { SettingsHelp("Needs HEVC.") }
             }
 
             SettingsField("Presentation") {
@@ -75,7 +80,6 @@ struct PlayStationSettingsPane: View {
                     }
                 }
                 .labelsHidden()
-                .pickerStyle(.segmented)
                 .settingsControl()
                 SettingsHelp(settings.presentation == .lowestLatency
                     ? "Each frame appears the moment it is decoded."
@@ -89,7 +93,6 @@ struct PlayStationSettingsPane: View {
                     }
                 }
                 .labelsHidden()
-                .pickerStyle(.segmented)
                 .settingsControl()
                 SettingsHelp("Haptic feedback plays the console's haptics on a DualSense, over USB or "
                     + "Bluetooth. Rumble suits other controllers.")

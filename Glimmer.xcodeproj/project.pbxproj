@@ -171,6 +171,7 @@
 		D100005C /* Identity+Crypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100005B /* Identity+Crypto.swift */; };
 		D100005E /* AppModel+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100005D /* AppModel+Lifecycle.swift */; };
 		A1C0DE000910000000000000 /* DebugAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000920000000000000 /* DebugAutomation.swift */; };
+		DC68856779C5782623CC3F45 /* DebugMockups.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A113AC692C4FF94D6C320EB /* DebugMockups.swift */; };
 		D2000097 /* AppModel+Defaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000096 /* AppModel+Defaults.swift */; };
 		D1000060 /* AppModel+Streaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100005F /* AppModel+Streaming.swift */; };
 		2274BC14A91D86A74D6B569E /* AppModel+StreamHandover.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8B2E559CFDDB6E3827997C7 /* AppModel+StreamHandover.swift */; };
@@ -541,6 +542,7 @@
 		D100005B /* Identity+Crypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/Identity+Crypto.swift"; sourceTree = "<group>"; };
 		D100005D /* AppModel+Lifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Lifecycle.swift"; sourceTree = "<group>"; };
 		A1C0DE000920000000000000 /* DebugAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DebugAutomation.swift"; sourceTree = "<group>"; };
+		9A113AC692C4FF94D6C320EB /* DebugMockups.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DebugMockups.swift"; sourceTree = "<group>"; };
 		D2000096 /* AppModel+Defaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Defaults.swift"; sourceTree = "<group>"; };
 		D100005F /* AppModel+Streaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Streaming.swift"; sourceTree = "<group>"; };
 		F8B2E559CFDDB6E3827997C7 /* AppModel+StreamHandover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+StreamHandover.swift"; sourceTree = "<group>"; };
@@ -923,6 +925,7 @@
 				D1A00003 /* AppModel+SessionReceipt.swift */,
 				D100005D /* AppModel+Lifecycle.swift */,
 				A1C0DE000920000000000000 /* DebugAutomation.swift */,
+				9A113AC692C4FF94D6C320EB /* DebugMockups.swift */,
 				D2000096 /* AppModel+Defaults.swift */,
 				D100005B /* Identity+Crypto.swift */,
 				D1000059 /* Identity+Loading.swift */,
@@ -1402,6 +1405,7 @@
 				D1A00004 /* AppModel+SessionReceipt.swift in Sources */,
 				D100005E /* AppModel+Lifecycle.swift in Sources */,
 				A1C0DE000910000000000000 /* DebugAutomation.swift in Sources */,
+				DC68856779C5782623CC3F45 /* DebugMockups.swift in Sources */,
 				D2000097 /* AppModel+Defaults.swift in Sources */,
 				D100005C /* Identity+Crypto.swift in Sources */,
 				D100005A /* Identity+Loading.swift in Sources */,

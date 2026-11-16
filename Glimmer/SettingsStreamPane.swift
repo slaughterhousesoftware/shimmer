@@ -144,8 +144,8 @@ struct StreamPane: View {
             SettingsField("Bitrate") {
                 Toggle("Set automatically", isOn: $model.bitrateAuto)
                 HStack(spacing: 10) {
-                    Slider(value: bitrateSliderIndex,
-                           in: 0...Double(BitrateScale.stepsMbps.count - 1), step: 1)
+                    BitrateSlider(mbps: model.effectiveBitrateKbps / 1000,
+                                  maxMbps: BitrateScale.stepsMbps.last ?? 300) { model.manualBitrateMbps = $0 }
                         .settingsControl()
                         .disabled(model.bitrateAuto)
                     Text("\(model.effectiveBitrateKbps / 1000) Mbps")
