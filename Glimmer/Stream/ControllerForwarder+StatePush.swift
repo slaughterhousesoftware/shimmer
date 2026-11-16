@@ -63,6 +63,9 @@ extension InputForwarder {
     @discardableResult
     private func pushControllerState(pad: GCExtendedGamepad, slot: UInt8) -> Bool {
         guard isReady else { return false }
+        // The debug latency probe drives slot 0 itself; a real pad's frames
+        // would release its presses early.
+        guard !LatencyProbe.armed else { return false }
 
         // Controller-side quit chord - fires the same `onQuitHotkey` the
         // keyboard chord uses, but only after the chord stays held through

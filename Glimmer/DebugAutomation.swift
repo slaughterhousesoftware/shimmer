@@ -190,6 +190,7 @@ extension AppModel {
             return
         }
         guard let hostMatch = Self.debugKnob("stream") else { return }
+        armLatencyProbeIfRequested()
         // `--debug-pip-probe=1`: once a second, log the whole PiP state
         // machine (controller flags, adapter latches, window/panel state).
         if Self.debugKnob("pip-probe") != nil {
@@ -287,6 +288,76 @@ extension AppModel {
             }
             Diag.notice("CYCLE done: \(rounds) rounds", "Debug")
         }
+    }
+
+    /// `--debug-latency=<x,y,w,h>` (normalized region, origin top-left) with
+    /// `--debug-stream`: once live, press Square `--debug-latency-count` times
+    /// (default 40) and log press -> first changed decoded frame in the region
+    /// (`--debug-latency-threshold`, mean |dLuma|, default 6). `--debug-combo=
+    /// <name>=<step>,<step>...` (step = buttons joined by +, then :ms, e.g.
+    /// `down:50,down+right:50,right+square:80`) sends it `--debug-combo-repeats`
+    /// times (default 5). `--debug-latency-dump=<dir>` saves PNGs of the frames.
+    /// `--debug-quit-after` still applies.
+    private func armLatencyProbeIfRequested() {
+        let regionSpec = Self.debugKnob("latency")
+        let comboSpec = Self.debugKnob("combo")
+        guard regionSpec != nil || comboSpec != nil else { return }
+        let probe = LatencyProbe.shared
+        if let regionSpec {
+            let v = regionSpec.split(separator: ",").compactMap { Double($0) }
+            if v.count == 4 { probe.region = CGRect(x: v[0], y: v[1], width: v[2], height: v[3]) }
+        }
+        if let t = Self.debugKnob("latency-threshold").flatMap(Double.init) { probe.threshold = t }
+        LatencyProbe.armed = true
+        let count = Self.debugKnob("latency-count").flatMap(Int.init) ?? 40
+        let repeats = Self.debugKnob("combo-repeats").flatMap(Int.init) ?? 5
+        let dumpDir = Self.debugKnob("latency-dump")
+        if let dumpDir { try? FileManager.default.createDirectory(atPath: dumpDir, withIntermediateDirectories: true) }
+        Diag.notice("LATENCY probe armed: region \(regionSpec ?? "-") combo \(comboSpec ?? "-")", "Debug")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let live = await self.debugWait(seconds: 90) { phase in
+                if case .streaming = phase { return true }
+                return false
+            }
+            guard live, let session = self.nativeSession else {
+                Diag.error("LATENCY: the stream never went live", "Debug")
+                return
+            }
+            let backend = await session.backend
+            if regionSpec != nil {
+                await probe.runLatency(backend: backend, presses: count, button: StreamProtocol.X_FLAG, dumpDir: dumpDir)
+            }
+            if let comboSpec, let parsed = Self.parseCombo(comboSpec) {
+                await probe.runCombo(backend: backend, name: parsed.name, steps: parsed.steps, repeats: repeats,
+                                     dumpDir: dumpDir ?? NSTemporaryDirectory())
+            }
+            Diag.notice("LATENCY probe done", "Debug")
+        }
+    }
+
+    /// `name=down:50,down+right:50,right+square:80`
+    static func parseCombo(_ spec: String) -> (name: String, steps: [LatencyProbe.Step])? {
+        let parts = spec.split(separator: "=", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
+        let names: [String: Int32] = [
+            "up": StreamProtocol.UP_FLAG, "down": StreamProtocol.DOWN_FLAG, "left": StreamProtocol.LEFT_FLAG,
+            "right": StreamProtocol.RIGHT_FLAG, "cross": StreamProtocol.A_FLAG, "circle": StreamProtocol.B_FLAG,
+            "square": StreamProtocol.X_FLAG, "triangle": StreamProtocol.Y_FLAG, "l1": StreamProtocol.LB_FLAG,
+            "r1": StreamProtocol.RB_FLAG, "none": 0,
+        ]
+        var steps: [LatencyProbe.Step] = []
+        for item in parts[1].split(separator: ",") {
+            let kv = item.split(separator: ":")
+            guard kv.count == 2, let ms = Int(kv[1]) else { return nil }
+            var buttons: Int32 = 0
+            for b in kv[0].split(separator: "+") {
+                guard let flag = names[String(b)] else { return nil }
+                buttons |= flag
+            }
+            steps.append(LatencyProbe.Step(buttons: buttons, ms: ms))
+        }
+        return (String(parts[0]), steps)
     }
 
     /// Poll the stream phase every 100 ms until `done` says so; false on timeout.

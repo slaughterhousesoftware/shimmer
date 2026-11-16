@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F39D4AA9997B390B7432A6E1 /* LatencyProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = C32F02F8536431B3CFFF2385 /* LatencyProbe.swift */; };
 		2944CF1FAAD8CAE494E680FF /* UnfairLockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81C7FCF9C52ECB7AF3E2C1D4 /* UnfairLockTests.swift */; };
 		06AF72F321589645CAAC359D /* UnfairLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = D484F2405E1B7524D9C92D23 /* UnfairLock.swift */; };
 		FE0BB9C295D1D62E89857967 /* TakionV20Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E410E6F836476FBAD72F8B /* TakionV20Tests.swift */; };
@@ -362,6 +363,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C32F02F8536431B3CFFF2385 /* LatencyProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/LatencyProbe.swift; sourceTree = "<group>"; };
 		81C7FCF9C52ECB7AF3E2C1D4 /* UnfairLockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnfairLockTests.swift; sourceTree = "<group>"; };
 		D484F2405E1B7524D9C92D23 /* UnfairLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnfairLock.swift; sourceTree = "<group>"; };
 		B7E410E6F836476FBAD72F8B /* TakionV20Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakionV20Tests.swift; sourceTree = "<group>"; };
@@ -772,6 +774,7 @@
 		A10000031 /* Glimmer */ = {
 			isa = PBXGroup;
 			children = (
+				C32F02F8536431B3CFFF2385 /* LatencyProbe.swift */,
 				D484F2405E1B7524D9C92D23 /* UnfairLock.swift */,
 				F8E5EC44462661C8CA935C5B /* PlayStationSettingsPane.swift */,
 				6BBB64CDFF8C661021B989D7 /* PlayStationSettings.swift */,
@@ -1238,6 +1241,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F39D4AA9997B390B7432A6E1 /* LatencyProbe.swift in Sources */,
 				06AF72F321589645CAAC359D /* UnfairLock.swift in Sources */,
 				4C3EA4677DA945B9101733E9 /* PlayStationSettingsPane.swift in Sources */,
 				4787E229082FA3FBBCE22DD4 /* PlayStationSettings.swift in Sources */,

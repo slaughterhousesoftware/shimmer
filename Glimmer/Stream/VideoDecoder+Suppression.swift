@@ -232,6 +232,9 @@ extension VideoDecoder {
     @MainActor
     private func armDecodeGateTimer() {
         decodeGateTimer?.cancel()
+        // The latency probe needs decoded frames even with the window hidden
+        // (a locked test machine counts as hidden).
+        guard !LatencyProbe.armed else { return }
         decodeGateTimer = Task { [weak self] in
             try? await Task.sleep(
                 nanoseconds: UInt64(VideoDecoder.decodeGateDelaySeconds * 1_000_000_000))

@@ -164,6 +164,8 @@ extension VideoDecoder {
             // FrameDropped info bit). Pop the pending submit timestamp first
             // so the FIFO stays aligned with submits.
             let dropped = infoFlags.contains(.frameDropped) || status != noErr || imageBuffer == nil
+            // Debug latency probe (inert unless armed): stamp the frame as it leaves the decoder.
+            if LatencyProbe.armed, !dropped, let imageBuffer { LatencyProbe.shared.observe(imageBuffer) }
             let intervalState = decoder.statsCollector.recordDecodeComplete(dropped: dropped)
 
             // Close the `DecodeFrame` interval against the same state the
