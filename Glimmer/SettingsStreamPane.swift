@@ -77,7 +77,7 @@ struct StreamPane: View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
             // Size and rate on one row, as the PS5's page has them.
-            SettingsField("Resolution") {
+            SettingsField("Video") {
                 HStack(spacing: 8) {
                     CompactPopup(selection: resolutionSelection,
                                  ResolutionChoice.all.map { (resolutionLabel($0), $0) })
