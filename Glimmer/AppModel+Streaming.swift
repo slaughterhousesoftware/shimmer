@@ -386,6 +386,13 @@ extension AppModel {
         // streamed can never be declared asleep on a single transient
         // miss.
         self.restartHostStatusPolling(afterStream: true)
+        // Switching PCs: the next stream starts now, in the same mode - no
+        // focus steal, no main window in between.
+        if let next = pendingHostSwitch {
+            pendingHostSwitch = nil
+            startPendingHostSwitch(next)
+            return
+        }
         NSApp.activate()
         if let main = NSApp.windows.first(where: {
             $0.identifier?.rawValue == "main" || $0.title == "Shimmer"
@@ -601,6 +608,33 @@ extension AppModel {
     /// the quit hotkey does, so there is still one cleanup site; whether the
     /// game is also quit on the PC follows Settings › "Quit the game on the
     /// PC", the same as any other way of ending a stream.
+    /// The menu bar's "Switch PC": select it, and if a stream is running on
+    /// another PC, end that one and start this one's default app in the same
+    /// presentation - straight into Picture in Picture if that is where the
+    /// stream was. (Selecting alone left the old stream running.)
+    func switchHost(to host: Host) {
+        let streamingElsewhere = isStreaming && activeStreamHostID != host.id
+        let inPictureInPicture = nativeStreamPictureInPicture
+        selectHost(host)
+        guard streamingElsewhere else { return }
+        Diag.notice("Switching the stream to \(host.displayName, privacy: .private)"
+            + (inPictureInPicture ? " (staying in Picture in Picture)" : ""), "Stream")
+        pendingHostSwitch = PendingHostSwitch(hostID: host.id, inPictureInPicture: inPictureInPicture,
+                                              requestedAt: Date())
+        endStream()
+    }
+
+    func startPendingHostSwitch(_ next: PendingHostSwitch) {
+        guard selectedHost?.id == next.hostID, Date().timeIntervalSince(next.requestedAt) < 30 else { return }
+        if next.inPictureInPicture {
+            pictureInPictureLaunchRequestedAt = Date()
+        } else {
+            // The click that asked is long gone: come forward without it.
+            StreamWindow.forceActivate()
+        }
+        streamDefaultApp()
+    }
+
     func endStream() {
         guard isStreaming, let session = nativeSession else { return }
         Diag.notice("User ended the stream from the menu bar", "Stream")

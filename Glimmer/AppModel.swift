@@ -341,6 +341,13 @@ final class AppModel {
     /// stale after a minute so a launch that never got as far as its window
     /// can't turn a later, ordinary one into PiP.
     var pictureInPictureLaunchRequestedAt: Date?
+    /// "Switch PC" while streaming: started by the old stream's cleanup.
+    var pendingHostSwitch: PendingHostSwitch?
+    struct PendingHostSwitch {
+        let hostID: String
+        let inPictureInPicture: Bool
+        let requestedAt: Date
+    }
     func consumePictureInPictureLaunch() -> Bool {
         defer { pictureInPictureLaunchRequestedAt = nil }
         guard let at = pictureInPictureLaunchRequestedAt else { return false }

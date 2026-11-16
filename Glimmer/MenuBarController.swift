@@ -365,7 +365,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func switchHost(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String,
               let host = model.hosts.first(where: { $0.id == id }) else { return }
-        model.selectHost(host)
+        model.switchHost(to: host)
     }
 
     @objc private func toggleMute() { model.toggleStreamMute() }
