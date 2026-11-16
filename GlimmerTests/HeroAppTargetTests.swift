@@ -56,6 +56,14 @@ struct HeroAppTargetTests {
         #expect(model.heroTargetApp == steam)
         #expect(model.liveStreamRowTitle == "Back to Steam Big Picture")
 
+        // The way back follows where the stream is.
+        model.nativeStreamPictureInPicture = true
+        #expect(model.liveStreamRowTitle == "Exit Picture in Picture")
+        model.nativeStreamPictureInPicture = false
+        model.nativeStreamBackgrounded = false
+        #expect(model.liveStreamRowTitle == nil)
+        model.nativeStreamBackgrounded = true
+
         // Once the session ends, the launcher follows the host again.
         model.isStreaming = false
         model.activeStreamApp = nil

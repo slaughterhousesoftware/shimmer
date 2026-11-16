@@ -231,23 +231,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         if model.selectedHost != nil {
             if model.isStreaming {
-                // ONE row for the live session, named and iconed off the app:
-                // "Streaming X" (status, disabled) while the window is up,
-                // "Back to X" (the way back) whenever it is hidden - a plain
-                // Cmd-Tab-away OR showing in PiP.
-                let live = action(model.liveStreamRowTitle, #selector(resumeStream),
-                                  image: glyph(model.heroTargetApp)
-                                      ?? Self.symbol("arrow.up.left.and.arrow.down.right"))
-                live.isEnabled = model.nativeStreamBackgrounded
-                menu.addItem(live)
-                // Always listed while streaming; greyed out once the stream is
-                // already in Picture in Picture, so the row reads as state
-                // rather than vanishing.
-                let pip = action("Picture in Picture", #selector(enterPictureInPicture),
-                                 image: Self.symbol("pip.enter"))
-                pip.isEnabled = !model.nativeStreamPictureInPicture
-                menu.addItem(pip)
-                menu.addItem(mouseInputRow())
+                // The rows follow where the stream is: in PiP the way back is
+                // "Exit Picture in Picture"; with the window hidden it is "Back
+                // to X" plus Picture in Picture; with the window in front only
+                // Picture in Picture. A PS5 has no mouse, so no mouse row.
+                if let title = model.liveStreamRowTitle {
+                    let inPiP = model.nativeStreamPictureInPicture
+                    menu.addItem(action(title, #selector(resumeStream),
+                                        image: inPiP ? Self.symbol("pip.exit")
+                                            : glyph(model.heroTargetApp)
+                                                ?? Self.symbol("arrow.up.left.and.arrow.down.right")))
+                }
+                if !model.nativeStreamPictureInPicture {
+                    menu.addItem(action("Picture in Picture", #selector(enterPictureInPicture),
+                                        image: Self.symbol("pip.enter")))
+                }
+                if !model.activeStreamIsPlayStation { menu.addItem(mouseInputRow()) }
                 // End the stream, not Shimmer. A disconnect: the game stays up
                 // on the PC unless Settings › "Quit the game on the PC" is on,
                 // and "Back to X" is not offered again because the session is
@@ -262,7 +261,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                                     image: glyph(model.heroTargetApp) ?? Self.symbol("play.fill")))
                 menu.addItem(action("\(model.heroActionLabel) in Picture in Picture", #selector(streamHeroInPiP),
                                     image: Self.symbol("pip.enter")))
-                menu.addItem(mouseInputRow())
+                if !model.activeStreamIsPlayStation { menu.addItem(mouseInputRow()) }
             }
             if model.hosts.count > 1 {
                 let switcher = NSMenu()

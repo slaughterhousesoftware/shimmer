@@ -48,9 +48,22 @@ extension AppModel {
     /// the window is hidden or in Picture in Picture - the way back to it.
     /// One row instead of a greyed-out "Stream X" plus a separate "Back to
     /// stream", so the verb and the app name sit together.
-    var liveStreamRowTitle: String {
-        let name = heroTargetApp?.name ?? defaultAppName
-        return nativeStreamBackgrounded ? "Back to \(name)" : "Streaming \(name)"
+    /// The menu bar's way back to the stream, named for where the stream is:
+    /// "Exit Picture in Picture" while it plays in PiP, "Back to <game>" when
+    /// the window is hidden behind other apps (a PS5 names no game - "Show
+    /// Stream"), nil while the window is in front and there's nowhere to go.
+    var liveStreamRowTitle: String? {
+        if nativeStreamPictureInPicture { return "Exit Picture in Picture" }
+        guard nativeStreamBackgrounded else { return nil }
+        if activeStreamIsPlayStation { return "Show Stream" }
+        return "Back to \(heroTargetApp?.name ?? defaultAppName)"
+    }
+
+    /// The live stream (or, idle, the selected host) is a PlayStation: no app
+    /// library and no mouse.
+    var activeStreamIsPlayStation: Bool {
+        let id = isStreaming ? activeStreamHostID : selectedHost?.id
+        return hosts.first { $0.id == id }?.isPlayStation ?? selectedHost?.isPlayStation ?? false
     }
 
     /// Compact "1080p60"-style shorthand for the header's streaming line, with
