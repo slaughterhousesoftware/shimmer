@@ -268,6 +268,15 @@ final class DualSenseHID: @unchecked Sendable {
         // write path below - for an already-matched device (degrades to a clean
         // no-op if the write is refused; see writeOutputReport).
         let rc = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        // The manager is reused across streams, and IOKit fires the matching
+        // callback only for a pad it hasn't seen: after stop() closed it, a pad
+        // that stayed connected never matched again, so every stream after the
+        // first one in an app run had no raw HID - no trigger effects, haptics
+        // as plain rumble over Bluetooth (measured 2026-11-16). Register what
+        // is already there; registerDevice skips a pad it already has.
+        if let known = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> {
+            for device in known { registerDevice(device) }
+        }
         // NOTICE (was INFO): the open-rc + Input-Monitoring state is the one fact
         // that tells "are the DualSense centre buttons / battery actually
         // readable" - and it being INFO-only made the broken-quit-chord regression
@@ -306,6 +315,10 @@ final class DualSenseHID: @unchecked Sendable {
         batteryLocked = nil
         reportCountLocked = 0
         outputState = DualSenseOutputState()
+        // A request the pad never confirmed would time the next session's
+        // first write from this one.
+        triggerRequestedAt = 0
+        dirtyTriggers = 0
         lock.unlock()
         log.info("DualSense HID closed")
     }
@@ -331,8 +344,9 @@ final class DualSenseHID: @unchecked Sendable {
         let transport = (IOHIDDeviceGetProperty(device, kIOHIDTransportKey as CFString) as? String) ?? ""
         let isBluetooth = !transport.localizedCaseInsensitiveContains("usb")
         lock.lock()
-        // Already registered this run (the manager re-reports a pad it knows).
-        guard writeDevices[key] == nil else { lock.unlock(); return }
+        // Already registered this run (the manager re-reports a pad it knows),
+        // or a match that arrived after stop().
+        guard running, writeDevices[key] == nil else { lock.unlock(); return }
         let buf: UnsafeMutablePointer<UInt8>
         if let known = reportBuffers[key] {
             buf = known.buffer
