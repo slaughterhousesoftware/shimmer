@@ -1,9 +1,9 @@
 //
 //  PlayStationSettingsPane.swift
 //
-//  The PlayStation tab: a PS5 stream's own settings (PlayStationSettings),
-//  in the same gutter rows as the Sunshine tab. They apply from the next
-//  stream.
+//  A PS5's page on Servers: its own settings (PlayStationSettings), in the
+//  same gutter rows as a PC's page. They apply from the next stream. Rest
+//  mode is on the page's Stream row.
 //
 
 import SwiftUI
@@ -27,7 +27,6 @@ struct PlayStationSettingsPane: View {
                 }
                 .labelsHidden()
                 .settingsPopup()
-                SettingsHelp("The PS5 streams at 1080p at most.")
             }
 
             SettingsField("Frame rate") {
@@ -51,9 +50,6 @@ struct PlayStationSettingsPane: View {
                         .monospacedDigit()
                         .foregroundStyle(settings.bitrateAuto ? .secondary : .primary)
                 }
-                SettingsHelp(settings.bitrateAuto
-                    ? "The console's own setting, lowered when the network drops packets."
-                    : "Sent as is and held: a sharper picture, but no backing off on a weak connection.")
             }
 
             SettingsField("Codec") {
@@ -63,8 +59,6 @@ struct PlayStationSettingsPane: View {
                 }
                 .labelsHidden()
                 .settingsPopup()
-                SettingsHelp(settings.hevc ? "Sharper for the same bitrate."
-                                           : "Only if HEVC's picture breaks up.")
             }
 
             SettingsField("HDR") {
@@ -82,8 +76,8 @@ struct PlayStationSettingsPane: View {
                 .labelsHidden()
                 .settingsPopup()
                 SettingsHelp(settings.presentation == .lowestLatency
-                    ? "Each frame appears the moment it is decoded."
-                    : "Frames wait for the display's refresh, evening out network hiccups at a little latency.")
+                    ? "Each frame shows the moment it is decoded."
+                    : "Frames wait for the display: steadier, a little more lag.", checkbox: false)
             }
 
             SettingsField("Haptics") {
@@ -94,18 +88,13 @@ struct PlayStationSettingsPane: View {
                 }
                 .labelsHidden()
                 .settingsPopup()
-                SettingsHelp("Haptic feedback plays the console's haptics on a DualSense, over USB or "
-                    + "Bluetooth. Rumble suits other controllers.")
+                SettingsHelp("Haptic feedback needs a DualSense; Rumble suits other controllers.", checkbox: false)
             }
 
             SettingsField("Controller") {
                 Toggle("Adaptive triggers", isOn: $settings.adaptiveTriggers)
                 Toggle("Light bar colours from the console", isOn: $settings.lightBar)
                     .settingsStackedToggle()
-            }
-
-            SettingsField("When the stream ends") {
-                Toggle("Put the PS5 in rest mode", isOn: $settings.restWhenStreamEnds)
             }
         }
     }

@@ -8,7 +8,6 @@
 
 import AppKit
 import SwiftUI
-import Charts
 import Network
 
 struct ComputersTab: View {
@@ -83,7 +82,7 @@ struct ComputersTab: View {
                 }
             } else {
                 HStack(spacing: 0) {
-                    sidebar.frame(width: 190)
+                    sidebar.frame(width: SettingsMetrics.serversSidebarWidth)
                     Divider()
                     detail.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -228,27 +227,50 @@ struct ComputersTab: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            HStack(spacing: 0) {
-                addByAddressButton(plus: true)
-                    .buttonStyle(.borderless)
-                Spacer()
+            // Tailscale's Accounts bar: add, and a pull-down for the
+            // selected machine (Rename, Remove).
+            Divider()
+            HStack(spacing: 6) {
+                addByAddressButton()
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.roundedRectangle(radius: 6))
+                selectedHostMenu
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .controlSize(.regular)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 8)
         }
     }
 
-    private func addByAddressButton(expanded: Bool = false, plus: Bool = false) -> some View {
+    /// The selected machine's Rename / Remove, beside "Add by Address…".
+    @ViewBuilder
+    private var selectedHostMenu: some View {
+        let chevron = Image(systemName: "chevron.down")
+            .font(.system(size: 11, weight: .semibold))
+            .frame(width: 14, height: 16)
+        if let host = model.selectedHost, pairingTarget == nil {
+            chevron
+                .hostOptionsMenu(host)
+                .disabled(model.pairingInFlight)
+                .help("\(host.displayName) options")
+                .id(host.id)
+        } else {
+            Menu { } label: { chevron }
+                .menuStyle(.button)
+                .buttonStyle(.bordered)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(true)
+        }
+    }
+
+    private func addByAddressButton() -> some View {
         Button {
             showManualAddress = true
         } label: {
-            if plus {
-                Image(systemName: "plus").font(.system(size: 13, weight: .medium)).frame(width: 20, height: 18)
-            } else {
-                Text("Add by Address…")
-                    .frame(maxWidth: expanded ? .infinity : nil)
-                    .frame(height: 16)
-            }
+            Text("Add by Address…")
+                .frame(maxWidth: .infinity)
+                .frame(height: 16)
         }
         .disabled(model.pairingInFlight)
         .help("Add a PC using an IP address or hostname")
@@ -313,38 +335,29 @@ struct ComputersTab: View {
             }
             .id(target.id)
         } else if let host = model.selectedHost {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(spacing: 22) {
-                        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-                            streamRow(for: host)
-                            if host.isPlayStation {
-                                PlayStationSettingsPane(settings: .forConsole(host.id))
-                            } else {
-                                StreamPane()
-                                VideoPane()
-                            }
-                        }
-                        .padding(.trailing, 20)
-                        // Each machine's page has its own view state: a value
-                        // half-typed on one PC must not commit into the next.
-                        .id(host.id)
+            ScrollView {
+                VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
+                    streamRow(for: host)
+                    if host.isPlayStation {
+                        PlayStationSettingsPane(settings: .forConsole(host.id))
+                    } else {
+                        StreamPane()
+                        VideoPane()
                     }
-                    .padding(.top, 24)
-                    .padding(.bottom, 16)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.leading, SettingsMetrics.serversPageLeading)
+                .padding(.trailing, SettingsMetrics.serversPageTrailing)
+                .padding(.top, 20)
+                .padding(.bottom, 20)
+                // Each machine's page has its own view state: a value
+                // half-typed on one PC must not commit into the next.
+                .id(host.id)
             }
-            .overlay(alignment: .topTrailing) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 26, height: 26)
-                    .hostOptionsMenu(host)
-                    .help("PC options")
-                    .padding(.trailing, 11)
-                    .padding(.top, 12)
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // The page is narrower than a settings tab: its own gutter and
+            // control width (SettingsMetrics.servers*).
+            .environment(\.settingsLabelGutter, SettingsMetrics.serversLabelGutter)
+            .environment(\.settingsControlWidth, SettingsMetrics.serversControlWidth)
         } else {
             ContentUnavailableView("No PC selected",
                                    systemImage: "display",
@@ -402,6 +415,21 @@ struct ComputersTab: View {
                 }
             }
             .disabled(chosen == nil || (model.isStreaming && !streamingHere))
+            endOfStreamToggle(for: host)
+        }
+    }
+
+    /// What ending a stream does to the machine. Off, a PC's game keeps
+    /// running for the next Resume ("Quit <app>" in the menu bar ends it).
+    @ViewBuilder
+    private func endOfStreamToggle(for host: Host) -> some View {
+        if host.isPlayStation {
+            let settings = PlayStationSettings.forConsole(host.id)
+            Toggle("Rest the PS5 when the stream ends", isOn: Binding(
+                get: { settings.restWhenStreamEnds }, set: { settings.restWhenStreamEnds = $0 }))
+        } else {
+            Toggle("Quit the game when the stream ends", isOn: Binding(
+                get: { model.quitAppWhenStreamEnds }, set: { model.quitAppWhenStreamEnds = $0 }))
         }
     }
 

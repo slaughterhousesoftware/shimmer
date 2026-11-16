@@ -154,14 +154,6 @@ struct StreamPane: View {
                 }
             }
 
-            // Off, ending a stream just disconnects: the game stays up on the
-            // PC and the next Stream click resumes it. "Quit <app>" in the
-            // menu bar ends it deliberately. On, every stop ends it.
-            SettingsField("When the stream ends") {
-                Toggle("Quit the game on the PC", isOn: $model.quitAppWhenStreamEnds)
-                SettingsHelp("When off, the game keeps running so you can resume later.")
-            }
-
         }
     }
 }

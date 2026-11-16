@@ -1,8 +1,8 @@
 //
 //  ContentView+Menus.swift
 //
-//  The shared per-host right-click menu (Rename / Codec / Unpair) that both
-//  the hero card and Settings' PCTile mount via `.hostContextMenu(host)`. The
+//  The shared per-host menu (Rename / Remove): a sidebar row's right-click
+//  and the pull-down beside "Add by Address…" on Servers. The
 //  menu bar dropdown itself is AppKit - see MenuBarController.swift.
 //
 
@@ -11,7 +11,8 @@ import SwiftUI
 
 // MARK: - Shared per-host right-click menu
 
-/// Shared PC actions for secondary click and the Servers pane's ellipsis.
+/// Shared PC actions for secondary click and the Servers bottom bar's pull-down.
+/// A machine's codec is on its page.
 /// Each presentation owns its rename and removal dialogs. Settings are keyed
 /// by host ID so every menu reflects the same saved preferences.
 private struct HostContextMenu: ViewModifier {
@@ -22,13 +23,11 @@ private struct HostContextMenu: ViewModifier {
     @State private var showUnpairConfirm = false
     @State private var showRename = false
     @State private var draftName = ""
-    @State private var codecPref: HostCodecPreference
 
     init(host: Host, showsButton: Bool = false, onRename: (() -> Void)? = nil) {
         self.host = host
         self.showsButton = showsButton
         self.onRename = onRename
-        _codecPref = State(initialValue: HostCodecPreference.load(for: host.id))
     }
 
     @ViewBuilder
@@ -42,32 +41,11 @@ private struct HostContextMenu: ViewModifier {
                     showRename = true
                 }
             }
-        // Per-host codec cap. Automatic negotiates AV1 → HEVC → H.264
-        // against what this host's encoder supports, so the override
-        // exists only for the host whose preferred codec misbehaves -
-        // hence a submenu here, not a Quality-pane item.
-        Picker(selection: $codecPref) {
-            ForEach(HostCodecPreference.allCases) { pref in
-                Text(pref.displayName).tag(pref)
-            }
-        } label: {
-            Label("Codec", systemImage: "film.stack")
-        }
-        .pickerStyle(.menu)
-        // Two surfaces mount this menu; reload at present-time so a
-        // change on one is reflected in the other's checkmark.
-        .onAppear { codecPref = HostCodecPreference.load(for: host.id) }
-        .onChange(of: codecPref) { _, newValue in
-            HostCodecPreference.save(newValue, for: host.id)
-            // Spec chip/summary read the codec via UserDefaults; bump
-            // the observable sentinel so SwiftUI recomputes the Mbps.
-            model.displayInfoRevision &+= 1
-        }
         Divider()
         Button(role: .destructive) {
             showUnpairConfirm = true
         } label: {
-            Label("Remove PC…", systemImage: "minus.circle")
+            Label("Remove “\(host.displayName)”…", systemImage: "minus.circle")
         }
         .disabled(model.isStreaming && model.activeStreamHostID == host.id)
     }
@@ -75,8 +53,11 @@ private struct HostContextMenu: ViewModifier {
     func body(content: Content) -> some View {
         Group {
             if showsButton {
+                // The pull-down beside "Add by Address…", as in Tailscale's
+                // Accounts window.
                 Menu { actions } label: { content }
-                    .menuStyle(.borderlessButton)
+                    .menuStyle(.button)
+                    .buttonStyle(.bordered)
                     .menuIndicator(.hidden)
                     .fixedSize()
             } else {
@@ -100,7 +81,7 @@ private struct HostContextMenu: ViewModifier {
                 isPresented: $showUnpairConfirm,
                 titleVisibility: .visible
             ) {
-                Button("Remove PC", role: .destructive) { model.unpair(host) }
+                Button(host.isPlayStation ? "Remove Console" : "Remove PC", role: .destructive) { model.unpair(host) }
                 Button("Cancel", role: .cancel) { }
             } message: {
                 Text("Shimmer will forget this PC and leave a clean state. You can pair again at any time.")
@@ -109,12 +90,12 @@ private struct HostContextMenu: ViewModifier {
 }
 
 extension View {
-    /// Attach the shared per-host right-click menu (Rename / Codec / Unpair).
+    /// Attach the shared per-host right-click menu (Rename / Remove).
     func hostContextMenu(_ host: Host, onRename: (() -> Void)? = nil) -> some View {
         modifier(HostContextMenu(host: host, onRename: onRename))
     }
 
-    /// The ellipsis and secondary click share actions and presentation state.
+    /// `self` becomes the label of a bordered pull-down with the same actions.
     func hostOptionsMenu(_ host: Host, onRename: (() -> Void)? = nil) -> some View {
         modifier(HostContextMenu(host: host, showsButton: true, onRename: onRename))
     }

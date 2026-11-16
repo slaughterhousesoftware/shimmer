@@ -14,19 +14,22 @@ screen: machines are shown by the system they run.
 - **Tabs:** Servers, General, About. Sunshine and PlayStation tabs are removed.
 - **Sidebar (Servers):** a macOS source list grouped under "PCs" and "Consoles". Each row:
   plain system logo, name, address on a second line, status dot at the trailing edge.
-  "+" at the bottom adds by address (the existing popover). Right-click keeps the existing
-  host actions.
+  Tailscale's bottom bar: "Add by Address…" (the existing popover) and a pull-down for the
+  selected machine (Rename, Remove). Right-click has the same two actions.
+  (Revised 2026-11-16 at Kevin's request: the "+" and the "…" menu are gone.)
 - **System logo, detected automatically, never picked:** Linux (Tux), Windows, Mac (Apple),
   PlayStation — plain monochrome marks in the text colour (set 1). PS5 = PlayStation;
   otherwise Windows when the host answers ping with TTL > 64, Mac when it advertises a Mac
   model over Bonjour (`_device-info._tcp`) or its name says so, else Linux. Cached per host.
 - **Right side:** no title, no big icon, no latency graph. The selected machine's settings in
   the existing gutter style, starting with a **Stream** row (game popup for a PC, then a
-  blue Stream/Resume button and a Picture in Picture button); "…" menu top-right.
-  - PC: Stream, Resolution, Frame rate, Bitrate, When the stream ends, Codec, HDR.
-  - PS5: Stream, Resolution, Frame rate (popup), Bitrate, Codec (popup HEVC / H.264),
-    HDR (checkbox, needs HEVC), Presentation (popup), Haptics (popup), Controller,
-    When the stream ends.
+  Stream/Resume button and a Picture in Picture button, then what ending the stream does).
+  - PC: Stream (+ quit the game when the stream ends), Resolution, Frame rate, Bitrate,
+    Codec, HDR.
+  - PS5: Stream (+ rest the PS5 when the stream ends), Resolution, Frame rate (popup),
+    Bitrate, Codec (popup HEVC / H.264), HDR (checkbox, needs HEVC), Presentation (popup),
+    Haptics (popup), Controller.
+  - No caption under the bitrate slider; short help lines only where a choice needs one.
   - All choices are popups with the same width; one shared bitrate slider with 12 snap
     points / even ticks (5 10 15 20 30 40 50 75 100 150 200 300 Mbps; PS5 up to 100).
 - **Settings per machine (approach A):** every PC and PS5 has its own complete settings.
@@ -35,8 +38,9 @@ screen: machines are shown by the system they run.
   switch.
 - **Stays in General:** shortcuts, controller, login item, diagnostics, and the stream
   window options (window / full screen, PiP, audio, keep awake, Game Mode, Wi-Fi).
-- **Window:** wider (780 pt) on every tab; sidebar narrower than today's 200 pt is the
-  builder's call.
+- **Window:** Tailscale's size, 600 pt wide (528 tall on Servers), as before this change.
+  A machine's page uses a narrower gutter and control width to fit beside the 190 pt
+  sidebar. (Revised 2026-11-16: 780 pt read as blown up.)
 
 ## Approaches considered
 

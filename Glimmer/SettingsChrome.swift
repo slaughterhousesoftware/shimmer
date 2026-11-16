@@ -73,9 +73,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     /// shrinks to fit the rows actually showing, and scrolls past this.
     var windowHeight: CGFloat {
         switch self {
-        // Match Tailscale's Accounts window. The apps scroll independently
-        // while the latency panel stays anchored above the bottom bar.
-        case .computers: return 700 - 32
+        // Tailscale's Accounts window. A machine's page scrolls if its
+        // settings run longer; the sidebar's bottom bar stays put.
+        case .computers: return 528 - 32
         // Allow room for the descriptions and CLI row. Unusual expanded
         // controls and diagnostics can still scroll within the page.
         case .general: return 744 - 32
@@ -187,7 +187,7 @@ enum SettingsMetrics {
     /// The reference window's exact width, and its per-tab heights. It is not
     /// resizable - the zoom and minimise buttons are disabled - and the height
     /// changes with the tab rather than the user dragging it.
-    static let windowWidth: CGFloat = 780
+    static let windowWidth: CGFloat = 600
     /// The box every popup / slider / segmented control is laid out in. ONE
     /// width for the whole app: the panes used to mix 200 and 260, so the Video
     /// pane's own rows didn't line up with each other, never mind with Stream's.
@@ -195,6 +195,31 @@ enum SettingsMetrics {
     /// The box for controls that need more room than a popup - hotkey
     /// recorders, the stats row editor, the DualSense panel.
     static let wideControlWidth: CGFloat = 460
+
+    /// Servers: the sidebar, and a machine's page beside it - the same rows
+    /// in the 409 pt left over, with a gutter sized to its own labels (the
+    /// longest is "Presentation:") and narrower controls.
+    static let serversSidebarWidth: CGFloat = 190
+    static let serversPageLeading: CGFloat = 8
+    static let serversPageTrailing: CGFloat = 16
+    static let serversLabelGutter: CGFloat = 92
+    static let serversControlWidth: CGFloat = 196
+}
+
+extension EnvironmentValues {
+    /// The gutter `SettingsField` right-aligns its label into.
+    @Entry var settingsLabelGutter: CGFloat = SettingsMetrics.labelGutter
+    /// The box `settingsControl()` lays a control out in.
+    @Entry var settingsControlWidth: CGFloat = SettingsMetrics.controlWidth
+}
+
+/// `settingsControl()`: the control box from the environment, or a given width.
+private struct SettingsControlFrame: ViewModifier {
+    let width: CGFloat?
+    @Environment(\.settingsControlWidth) private var environmentWidth
+    func body(content: Content) -> some View {
+        content.frame(width: width ?? environmentWidth, alignment: .leading)
+    }
 }
 
 extension View {
@@ -211,8 +236,8 @@ extension View {
     /// popup at 203, while the checkboxes and the slider (which does stretch)
     /// sat at 192. `.leading` pins them all to 192; widths stay ragged on the
     /// right, the way macOS's own settings panes look.
-    func settingsControl(width: CGFloat = SettingsMetrics.controlWidth) -> some View {
-        frame(width: width, alignment: .leading)
+    func settingsControl(width: CGFloat? = nil) -> some View {
+        modifier(SettingsControlFrame(width: width))
     }
 
     /// A regular push button at the trailing end of a text row (Open
@@ -254,6 +279,7 @@ extension View {
 struct SettingsField<Content: View>: View {
     private let label: String?
     private let content: Content
+    @Environment(\.settingsLabelGutter) private var gutter
 
     init(_ label: String? = nil, @ViewBuilder content: () -> Content) {
         self.label = label
@@ -263,7 +289,7 @@ struct SettingsField<Content: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: SettingsMetrics.labelGap) {
             Text(label.map { $0.hasSuffix(":") ? $0 : "\($0):" } ?? "")
-                .frame(width: SettingsMetrics.labelGutter, alignment: .trailing)
+                .frame(width: gutter, alignment: .trailing)
                 .foregroundStyle(.primary)
             VStack(alignment: .leading, spacing: SettingsMetrics.contentSpacing) {
                 content
