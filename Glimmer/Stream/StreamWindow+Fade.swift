@@ -227,9 +227,12 @@ extension StreamWindow {
         // invisible (defensive - close() is currently the last call).
         window.alphaValue = 1.0
         guard handsOffToLauncher else { return }
-        NSApp.activate()
-        if let main = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "Shimmer" }) {
-            main.makeKeyAndOrderFront(nil)
+        // Shimmer lives in the menu bar: the stream closing leaves the user
+        // where they are - no launcher window, no activation, so no Space
+        // switch. Give focus back to the app underneath if nothing of ours is
+        // left on screen.
+        if NSApp.isActive, !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeKey && $0 !== window }) {
+            NSApp.hide(nil)
         }
     }
 }

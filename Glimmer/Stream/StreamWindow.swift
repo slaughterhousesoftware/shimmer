@@ -258,6 +258,8 @@ public final class StreamWindow {
     /// first frames call `onStandbyReady` and AppModel hands PiP over.
     var standbyForHandover = false
     var onStandbyReady: (@MainActor () -> Void)?
+    /// The PiP return found another app full screen in front (window mode).
+    var returnedOverFullScreenApp = false
     /// AppModel's "Switch PC" is ending this stream for another: the closing
     /// window leaves the app where it is (no launcher hand-off).
     static var switchingHosts = false

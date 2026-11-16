@@ -258,7 +258,13 @@ extension StreamWindow {
     func returnFromPictureInPicture(fromPanel: Bool = false, ready: (@MainActor () -> Void)? = nil) {
         guard !didClose else { ready?(); return }
         PiPTrace.log("returnFromPictureInPicture fromPanel=\(fromPanel) backgrounded=\(isBackgrounded)", window)
-        Self.becomeRegularApp()
+        // Over another app's full screen, stay a menu-bar app: macOS keeps a
+        // Dock app's window off another app's full-screen Space and switches
+        // the user to a desktop to show it (measured 2026-11-16 - the
+        // "jumps to my other screen" return). An accessory app's window
+        // joins the full-screen Space where the user is.
+        let overFullScreen = displayMode == .window && MenuBarController.frontmostAppIsFullScreen()
+        if !overFullScreen { Self.becomeRegularApp() }
         pipReturnInFlight = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
             MainActor.assumeIsolated { self?.pipReturnInFlight = false }
@@ -267,17 +273,22 @@ extension StreamWindow {
         // into it, and takes over the video only once PiP has stopped (didStop
         // hands the frames back). Clear the frame it showed before PiP.
         displayLayer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
-        Self.forceActivate()
         if displayMode == .window {
-            // A floating, unmanaged shape until the app is active: Stage
-            // Manager files an inactive app's window into the strip. Not on
-            // every space - that kept macOS from switching to its desktop.
+            // The window comes to the user: on every Space for the return
+            // (over a full-screen app too), so it is already on the one they
+            // are looking at when the app activates - macOS has no other
+            // Space to switch to. Floating and unmanaged until then: Stage
+            // Manager files an inactive app's window into the strip.
             if savedShapeBeforePiP == nil { savedShapeBeforePiP = (window.level, window.collectionBehavior) }
-            window.collectionBehavior = [.transient, .ignoresCycle]
+            returnedOverFullScreenApp = overFullScreen
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
             window.level = .floating
         }
         window.alphaValue = 1
         window.orderFrontRegardless()
+        // Activate only once the window is on this Space (window mode), so
+        // activation has nowhere else to take the user.
+        Self.forceActivate()
         isBackgrounded = false
         publishPresentSuppression()
         onBackgroundedChanged?(false)
@@ -372,7 +383,13 @@ extension StreamWindow {
     /// floating shape. No-op when already restored.
     func restorePiPSourceShape() {
         guard let shape = savedShapeBeforePiP else { return }
-        window.collectionBehavior = shape.behavior
+        // Back to an ordinary window on the Space it was brought to. Over
+        // another app's full screen it stays an auxiliary window there (an
+        // ordinary one would be sent to a desktop Space, taking the user
+        // with it), and follows the user if they move on.
+        window.collectionBehavior = returnedOverFullScreenApp
+            ? [.fullScreenAuxiliary, .moveToActiveSpace]
+            : shape.behavior
         window.level = shape.level
         savedShapeBeforePiP = nil
     }

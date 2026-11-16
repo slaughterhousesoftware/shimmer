@@ -451,12 +451,10 @@ extension AppModel {
             startPendingHostSwitch(next)
             return
         }
-        NSApp.activate()
-        if let main = NSApp.windows.first(where: {
-            $0.identifier?.rawValue == "main" || $0.title == "Shimmer"
-        }) {
-            main.makeKeyAndOrderFront(nil)
-        }
+        // No launcher hand-off: Shimmer lives in the menu bar, and bringing
+        // its window up (with an activation) dragged the user to whichever
+        // Space it was on. A failure shows in the menu bar (and in the main
+        // window, if it is open).
     }
 
     /// Network interruptions never raise the menu-bar triangle; failures that

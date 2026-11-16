@@ -53,6 +53,10 @@ final class AgentControl: NSObject {
         case switchPC = "switch-pc"
         /// As the menu bar's Picture in Picture.
         case pictureInPicture = "picture-in-picture"
+        /// As the menu bar's Exit Picture in Picture / Back to.
+        case showStream = "show-stream"
+        /// As the menu bar's End Stream.
+        case endStream = "end-stream"
     }
 
     private weak var model: AppModel?
@@ -182,6 +186,22 @@ final class AgentControl: NSObject {
                 return
             }
             model.enterPictureInPicture()
+            finish(id: id, name: name, result: "ok")
+        case .showStream:
+            guard let model, model.isStreaming else {
+                finish(id: id, name: name, result: "nothing is streaming")
+                return
+            }
+            if !MenuBarController.frontmostAppIsFullScreen() { StreamWindow.becomeRegularApp() }
+            NSApp.activate()
+            model.resumeStreamWindow()
+            finish(id: id, name: name, result: "ok")
+        case .endStream:
+            guard let model, model.isStreaming else {
+                finish(id: id, name: name, result: "nothing is streaming")
+                return
+            }
+            model.endStream()
             finish(id: id, name: name, result: "ok")
         case .cancelConnect:
             if case .connecting = model?.streamPhase {

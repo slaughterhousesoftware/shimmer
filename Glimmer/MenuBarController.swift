@@ -139,15 +139,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// The frontmost app (not Shimmer) has a window covering a whole screen.
+    /// Another app's full screen is the Space showing: an on-screen window of
+    /// another app covers a whole screen. Not only the frontmost app's - with
+    /// Shimmer's own window in front of it (a PiP return over a full-screen
+    /// app), it is still that app's full-screen Space, and turning into a
+    /// Dock app there would make macOS move the user to a desktop.
     static func frontmostAppIsFullScreen() -> Bool {
-        guard let front = NSWorkspace.shared.frontmostApplication,
-              front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return false }
+        let me = ProcessInfo.processInfo.processIdentifier
         let screens = NSScreen.screens.map(\.frame.size)
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
         return windows.contains { info in
-            guard (info[kCGWindowOwnerPID as String] as? pid_t) == front.processIdentifier,
+            guard let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner != me,
                   (info[kCGWindowLayer as String] as? Int) == 0,
                   let dict = info[kCGWindowBounds as String] as? NSDictionary,
                   let bounds = CGRect(dictionaryRepresentation: dict) else { return false }
@@ -354,6 +357,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func resumeStream() {
+        // Over another app's full screen Shimmer stays a menu-bar app: the
+        // stream window joins that Space instead of macOS moving the user.
+        if Self.frontmostAppIsFullScreen() {
+            NSApp.activate()
+            model.resumeStreamWindow()
+            return
+        }
         // Claim activation inside this click: cooperative activation honours
         // a request made while handling the user's event, and Shimmer may be
         // headless (stream only in PiP) - by the time the session's async hop
