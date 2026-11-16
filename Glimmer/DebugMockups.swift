@@ -1,6 +1,8 @@
 //
-//  DebugMockups.swift  (THROWAWAY - design spike for the per-PC settings page)
+//  DebugMockups.swift
 //
+//  Debug-only screenshots of the main window, for UI work on a machine whose
+//  screen can't be captured remotely (the MacBook over ssh).
 //  `--debug-snap=<host part>`: select that PC on the Servers tab, open the
 //  main window, and after 3 s write the window (title bar included) to
 //  /tmp/shimmer-snap-<host part>.png at the display's own scale.
@@ -9,8 +11,8 @@
 import AppKit
 
 @MainActor
-enum DebugMockups {
-    static func showIfRequested(model: AppModel) {
+enum DebugSnapshot {
+    static func runIfRequested(model: AppModel) {
         guard let want = AppModel.debugKnob("snap")?.lowercased() else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             guard let host = model.hosts.first(where: { $0.displayName.lowercased().contains(want) }) else { return }
@@ -29,6 +31,4 @@ enum DebugMockups {
         }
     }
 }
-
-import SwiftUI
 
