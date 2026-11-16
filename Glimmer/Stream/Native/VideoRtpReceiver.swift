@@ -31,7 +31,7 @@
 //  and feeds the depacketizer → VideoSink.
 //
 //  Teardown is bounded: the recv loop blocks in recvfrom with a 100ms SO_RCVTIMEO
-//  so it polls `interrupted` and exits within 100ms; stop() also close()s the fd,
+//  so it polls `interrupted` and exits within 100ms; stop() also shutdown()s the fd,
 //  which unblocks any in-flight recvfrom immediately. The ping Task is cancellable.
 
 import Foundation
@@ -74,6 +74,14 @@ final class VideoRtpReceiver: VideoDepacketizerDelegate, @unchecked Sendable {
     /// receive from the resolved PC on any source port. A connected socket would
     /// drop video that Sunshine sources from a port != videoPort.
     private var fd: Int32 = -1
+    /// Guards `fd`'s lifetime across threads: stop() (session teardown), the
+    /// ping thread's sendto and the receive loop's final close. The socket is
+    /// closed only by the receive loop as it exits (or deinit if it never ran),
+    /// never by stop(): closing in stop() released the descriptor number while
+    /// the ping thread could still sendto() it and the receive loop recvfrom()
+    /// it - and the next stream's socket can get that same number
+    /// (ThreadSanitizer caught the stop/ping race on stream teardown).
+    private let fdLock = NSLock()
     /// Precomputed destination (host:videoPort) for the ping sendto.
     private var destAddr = sockaddr_storage()
     private var destAddrLen: socklen_t = 0
@@ -170,8 +178,22 @@ final class VideoRtpReceiver: VideoDepacketizerDelegate, @unchecked Sendable {
     func stop() {
         interrupted.set()
         pingThread = nil // the dedicated ping thread exits on the interrupted flag
-        if fd >= 0 { close(fd); fd = -1 } // unblocks the in-flight recvfrom
+        // Wake an in-flight recvfrom without giving up the descriptor number;
+        // the receive loop closes it on its way out (it also polls `interrupted`
+        // every 100 ms).
+        fdLock.lock()
+        if fd >= 0 { shutdown(fd, SHUT_RDWR) }
+        fdLock.unlock()
     }
+
+    /// Close the socket - the receive loop's exit, or deinit if it never ran.
+    private func closeSocket() {
+        fdLock.lock()
+        if fd >= 0 { close(fd); fd = -1 }
+        fdLock.unlock()
+    }
+
+    deinit { closeSocket() }
 
     // MARK: - Socket
 
@@ -299,6 +321,8 @@ final class VideoRtpReceiver: VideoDepacketizerDelegate, @unchecked Sendable {
             // anonymous instead of mislabeling later unrelated work.
             pthread_setname_np("Glimmer.videoRecv")
             defer { pthread_setname_np("") }
+            // This loop owns the socket from here: close it once the loop is done.
+            defer { self?.closeSocket() }
             // Batched receive: up to `cap` datagrams per recvmsg_x
             // syscall, cutting the ~14k recvfrom/s floor at 4K240 (measurably
             // smoother). Buffers allocated once and reused; handleDatagram
@@ -437,7 +461,10 @@ final class VideoRtpReceiver: VideoDepacketizerDelegate, @unchecked Sendable {
     }
 
     private func sendPing() {
-        guard fd >= 0 else { return }
+        // Under the lock, so stop()/the receive loop can't close the socket mid-send.
+        fdLock.lock()
+        defer { fdLock.unlock() }
+        guard fd >= 0, !interrupted.isSet else { return }
         let datagram: [UInt8]
         if !pingPayload.isEmpty {
             pingCount &+= 1
