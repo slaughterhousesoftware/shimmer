@@ -154,11 +154,12 @@ final class StreamInputView: NSView {
         // SECURITY: do NOT include the character value here - `chars=...` at
         // `.public` would leak every keystroke (passwords typed mid-stream
         // included) into the unified log, where any process with the right
-        // entitlement can read it. Scan code + modifier mask are positional
-        // and not PII; that's all we need to fingerprint event delivery.
+        // entitlement can read it. Nor the key code in the clear: key codes
+        // with timestamps spell out what was typed just as well. The
+        // modifier mask is enough to fingerprint event delivery.
         let modsHex = String(event.modifierFlags.rawValue, radix: 16)
         Logger(subsystem: "io.ugfugl.Glimmer", category: "Stream.Input")
-            .debug("StreamInputView.keyDown keyCode=\(event.keyCode, privacy: .public) mods=0x\(modsHex, privacy: .public)")
+            .debug("StreamInputView.keyDown keyCode=\(event.keyCode, privacy: .private) mods=0x\(modsHex, privacy: .public)")
         // The delegate returns `true` when it consumed the event (forwarded
         // to the host, or handled it locally as the quit hotkey). It returns
         // `false` for Cmd-modified events when sys-key capture is off - in
@@ -183,7 +184,7 @@ final class StreamInputView: NSView {
     override func flagsChanged(with event: NSEvent) {
         let modsHex = String(event.modifierFlags.rawValue, radix: 16)
         Logger(subsystem: "io.ugfugl.Glimmer", category: "Stream.Input")
-            .info("StreamInputView.flagsChanged keyCode=\(event.keyCode, privacy: .public) mods=0x\(modsHex, privacy: .public)")
+            .info("StreamInputView.flagsChanged keyCode=\(event.keyCode, privacy: .private) mods=0x\(modsHex, privacy: .public)")
         delegate?.streamView(self, handleFlagsChanged: event)
     }
 

@@ -333,6 +333,14 @@ extension InputForwarder {
     /// connection to tell.
     func releaseAttachedControllers() {
         for state in attachedControllers.values {
+            // Give Create/Share and Home their macOS gestures back (screenshot
+            // / recording, Game Overlay) - they were only ours for the stream.
+            if let pad = state.controller?.extendedGamepad {
+                for button in [pad.buttonOptions, pad.buttonHome].compactMap({ $0 })
+                where button.isBoundToSystemGesture && button.preferredSystemGestureState == .disabled {
+                    button.preferredSystemGestureState = .enabled
+                }
+            }
             ControllerHaptics.shared.unregister(slot: state.slot)
             ControllerMotion.shared.unregister(slot: state.slot)
             ControllerBattery.shared.unregister(slot: state.slot)

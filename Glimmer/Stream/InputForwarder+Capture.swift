@@ -347,8 +347,17 @@ extension InputForwarder {
     // run) - a UX cost we don't pay until the diagnostic confirms we need
     // the tap.
 
+    /// The per-event input log is a debugging aid - it records every key
+    /// code and click - so it is off unless asked for: launch with
+    /// `--debug-input-events`, or `defaults write com.kevinbpatel.shimmer
+    /// debugInputEvents -bool true`.
+    static var diagnosticMonitorsEnabled: Bool {
+        ProcessInfo.processInfo.arguments.contains("--debug-input-events")
+            || UserDefaults.standard.bool(forKey: "debugInputEvents")
+    }
+
     func installDiagnosticMonitors() {
-        guard diagnosticLocalMonitor == nil else { return }
+        guard diagnosticLocalMonitor == nil, Self.diagnosticMonitorsEnabled else { return }
 
         // Constraint: this monitor must touch ONLY NSEvent primitives
         // documented as valid for every event type - type raw, modifier
