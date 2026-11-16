@@ -70,10 +70,16 @@ struct MenuBarPresentation: Equatable {
 
 extension AppModel {
     var menuBarPresentation: MenuBarPresentation? {
-        // A saved launch target alone is not a currently running app.
-        let appGlyph: LibraryApp.Glyph? = isStreaming
-            ? heroTargetApp?.glyph ?? .symbol("play.fill")
-            : runningAppName != nil ? heroTargetApp?.glyph : nil
+        // A saved launch target alone is not a currently running app - but a
+        // PS5 is one thing, the console, so with one selected its mark shows
+        // idle as well as streaming.
+        let appGlyph: LibraryApp.Glyph? = if isStreaming {
+            heroTargetApp?.glyph ?? .symbol("play.fill")
+        } else if runningAppName != nil || selectedHost?.isPlayStation == true {
+            heroTargetApp?.glyph
+        } else {
+            nil
+        }
         return MenuBarPresentation(warning: menuBarShowsStreamError,
                                    controller: menuBarControllerKind.map { ($0, menuBarControllerBattery) },
                                    appGlyph: appGlyph)

@@ -189,6 +189,18 @@ struct MenuBarVisibilityTests {
                                              menuBarVisible: idle != nil) == .accessory)
     }
 
+    @Test @MainActor func aSelectedPlayStationShowsItsMarkWhileIdle() {
+        let model = AppModel()
+        model.selectedHost = Host(id: "ps5-test", name: "PS5", customName: nil,
+                                  localAddress: nil, manualAddress: nil, apps: [.playStationHome],
+                                  lastConnected: nil, serverCertPEM: nil, appVersion: nil,
+                                  gfeVersion: nil, macAddress: nil)
+        model.isStreaming = false
+        let mark = LibraryApp.playStationHome.glyph
+        #expect(mark != .asset(MenuBarPresentation.idleAsset))
+        #expect(model.menuBarPresentation?.glyph == mark || model.menuBarControllerKind != nil)
+    }
+
     @Test func steamStatusReturnsAndDisappearsWithoutAFallback() {
         let steam = MenuBarPresentation(warning: false, controller: nil,
                                         appGlyph: .asset("SteamGlyph"))
