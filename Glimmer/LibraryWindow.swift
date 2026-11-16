@@ -336,22 +336,27 @@ struct ComputersTab: View {
             .id(target.id)
         } else if let host = model.selectedHost {
             ScrollView {
-                VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-                    streamRow(for: host)
-                    if host.isPlayStation {
-                        PlayStationSettingsPane(settings: .forConsole(host.id))
-                    } else {
-                        StreamPane()
-                        VideoPane()
+                VStack(spacing: 0) {
+                    hostTitle(for: host)
+                        .padding(.top, 18)
+                        .padding(.horizontal, 16)
+                    VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
+                        streamRow(for: host)
+                        if host.isPlayStation {
+                            PlayStationSettingsPane(settings: .forConsole(host.id))
+                        } else {
+                            StreamPane()
+                            VideoPane()
+                        }
                     }
+                    .padding(.leading, SettingsMetrics.serversPageLeading)
+                    .padding(.trailing, SettingsMetrics.serversPageTrailing)
+                    .padding(.top, 18)
+                    .padding(.bottom, 20)
+                    // Each machine's page has its own view state: a value
+                    // half-typed on one PC must not commit into the next.
+                    .id(host.id)
                 }
-                .padding(.leading, SettingsMetrics.serversPageLeading)
-                .padding(.trailing, SettingsMetrics.serversPageTrailing)
-                .padding(.top, 20)
-                .padding(.bottom, 20)
-                // Each machine's page has its own view state: a value
-                // half-typed on one PC must not commit into the next.
-                .id(host.id)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             // The page is narrower than a settings tab: its own gutter and
@@ -365,6 +370,24 @@ struct ComputersTab: View {
         }
     }
 
+
+    /// The machine's name and address over its settings, as Tailscale titles
+    /// an account. Right-click for Rename / Remove.
+    private func hostTitle(for host: Host) -> some View {
+        VStack(spacing: 2) {
+            Text(host.displayName)
+                .font(.system(size: 18, weight: .semibold))
+                .lineLimit(1)
+            Text(model.selectedHostRouteAddress ?? model.dialAddress(for: host))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity)
+        .hostContextMenu(host)
+    }
 
     /// Streaming, as the page's first row: what to stream (a PC's apps; a PS5
     /// is just the console), then Stream / Resume and Picture in Picture. While
@@ -592,18 +615,20 @@ private struct NearbyPlayStationRow: View {
     let console: PlayStationDiscovery.Found
     let selected: Bool
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 8) {
             HostSystemLogo(kind: .playStation, size: 22)
+                .frame(width: SettingsMetrics.sidebarIconSize, height: SettingsMetrics.sidebarIconSize)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 Text(console.name).font(.system(size: 13)).lineLimit(1)
-                Text(console.address).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(console.address).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 40)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .frame(minHeight: SettingsMetrics.sidebarRowHeight)
         .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.primary.opacity(0.13) : .clear))
         .contentShape(Rectangle())
     }
@@ -613,19 +638,21 @@ private struct NearbyPCRow: View {
     let pc: HostDiscovery.Discovered
     let selected: Bool
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 8) {
             HostSystemLogo(kind: HostSystemKind.resolve(isPlayStation: false, ttl: nil, serverName: pc.displayName),
                            size: 22)
+                .frame(width: SettingsMetrics.sidebarIconSize, height: SettingsMetrics.sidebarIconSize)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 Text(pc.displayName).font(.system(size: 13)).lineLimit(1)
-                Text(pc.host).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(pc.host).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 40)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .frame(minHeight: SettingsMetrics.sidebarRowHeight)
         .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.primary.opacity(0.13) : .clear))
         .contentShape(Rectangle())
     }
@@ -633,8 +660,9 @@ private struct NearbyPCRow: View {
 
 // MARK: - Sidebar row
 
-/// One PC: a round glyph, the name, and the address beneath -
-/// the shape of the reference app's account rows (48pt plate, 6pt inset).
+/// One machine: its round avatar (status on its corner), the name, and the
+/// address beneath - the shape of Tailscale's account rows (48pt plate, 6pt
+/// inset).
 private struct HostRow: View {
     let host: Host
     let address: String
@@ -643,31 +671,28 @@ private struct HostRow: View {
     let statusText: String
 
     var body: some View {
-        HStack(spacing: 9) {
-            HostSystemLogo(host: host, size: 22)
+        HStack(spacing: 8) {
+            HostAvatar(host: host, status: status, statusText: statusText)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(host.displayName)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                 Text(address)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
-            HostStatusDot(status: status)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 40)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .frame(minHeight: SettingsMetrics.sidebarRowHeight)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(selected ? Color.primary.opacity(0.13) : Color.clear))
     }
 }
-
-
-
 
 // MARK: - App glyph
 
