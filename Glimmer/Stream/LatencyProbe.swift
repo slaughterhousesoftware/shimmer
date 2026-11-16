@@ -33,17 +33,28 @@ final class LatencyProbe: @unchecked Sendable {
 
     /// Normalized (0-1, origin top-left) region of the frame to watch.
     var region = CGRect(x: 0, y: 0, width: 1, height: 1)
-    /// Mean absolute luma difference (0-255) that counts as "changed".
-    var threshold: Double = 6
+    /// Floor for the frame-to-frame motion (mean |dLuma|, 0-255) that counts
+    /// as the reaction; the working trigger is 3x the idle motion's p90 if higher.
+    var threshold: Double = 3
 
     private struct State {
-        var reference: [UInt8]?            // region samples of the last frame before the press
-        var latest: [UInt8]?               // region samples of the newest frame
+        var previous: [UInt8]?             // region samples of the frame before this one
+        var idleMotion: [Double] = []      // recent frame-to-frame motion while not waiting
+        var trigger: Double = 0            // motion that counts as the reaction, for this press
+        var trace: [(ms: Double, motion: Double)]?  // per-frame motion after the press, when tracing
         var pressNanos: UInt64 = 0         // 0 = not waiting
         var detectedNanos: UInt64 = 0
         var detectedDiff: Double = 0
         var frames: UInt64 = 0
         var dumpPath: String?              // next frame goes here as PNG
+        // Smoothness, over the whole run: a frame that barely differs from the
+        // one before while the frames around it move is a repeated frame (the
+        // host sent the same picture twice, then jumped) - visible judder.
+        var lastMotions: [Double] = []     // the last three frame-to-frame motions
+        var movingFrames = 0
+        var repeatedFrames = 0
+        var lastFrameNanos: UInt64 = 0
+        var intervals: [Double] = []       // decode-output spacing, ms
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
 
@@ -57,14 +68,34 @@ final class LatencyProbe: @unchecked Sendable {
         let threshold = self.threshold
         let dump = state.withLock { st -> String? in
             st.frames += 1
-            if st.pressNanos != 0, st.detectedNanos == 0, let reference = st.reference, reference.count == samples.count {
-                let diff = Self.meanAbsDiff(reference, samples)
-                if diff >= threshold {
-                    st.detectedNanos = now
-                    st.detectedDiff = diff
+            // Frame-to-frame motion in the region. Idle animation (breathing,
+            // stances) moves every frame; the reaction is the first frame that
+            // moves clearly more than the idle motion just before the press.
+            if st.lastFrameNanos != 0 { st.intervals.append(Double(now &- st.lastFrameNanos) / 1e6) }
+            st.lastFrameNanos = now
+            if let previous = st.previous, previous.count == samples.count {
+                let motion = Self.meanAbsDiff(previous, samples)
+                st.lastMotions.append(motion)
+                if st.lastMotions.count > 3 { st.lastMotions.removeFirst() }
+                if st.lastMotions.count == 3 {
+                    let around = min(st.lastMotions[0], st.lastMotions[2])
+                    if around >= 0.8 {
+                        st.movingFrames += 1
+                        if st.lastMotions[1] < 0.3 * around { st.repeatedFrames += 1 }
+                    }
+                }
+                if st.pressNanos == 0 {
+                    st.idleMotion.append(motion)
+                    if st.idleMotion.count > 40 { st.idleMotion.removeFirst() }
+                } else {
+                    if st.detectedNanos == 0, motion >= st.trigger {
+                        st.detectedNanos = now
+                        st.detectedDiff = motion
+                    }
+                    st.trace?.append((Double(now &- st.pressNanos) / 1e6, motion))
                 }
             }
-            st.latest = samples
+            st.previous = samples
             defer { st.dumpPath = nil }
             return st.dumpPath
         }
@@ -84,34 +115,55 @@ final class LatencyProbe: @unchecked Sendable {
         var samples: [Double] = []
         var misses = 0
         for i in 1...presses {
-            // Let the region settle, then take the reference from the newest frame.
+            // Let the idle motion settle, then press.
             try? await Task.sleep(for: .milliseconds(Int.random(in: 700...1100)))
+            let threshold = self.threshold
+            let tracing = true
             state.withLock { st in
-                st.reference = st.latest
+                // 3x the idle motion's median: a lively idle stance or a rare
+                // blip (a gauge segment refilling) mustn't hide the reaction.
+                let idle = st.idleMotion.sorted()
+                let median = idle.isEmpty ? 0 : idle[idle.count / 2]
+                st.trigger = max(threshold, median * 3)
+                st.trace = tracing ? [] : nil
                 st.detectedNanos = 0
                 st.pressNanos = DispatchTime.now().uptimeNanoseconds
             }
             send(backend, buttons: button)
             try? await Task.sleep(for: .milliseconds(100))
             send(backend, buttons: 0)
-            // Wait up to 400 ms more for the change.
+            // Wait up to 400 ms more for the change (a trace keeps 600 ms).
+            try? await Task.sleep(for: .milliseconds(500))
             var result: (UInt64, UInt64, Double) = (0, 0, 0)
             for _ in 0..<40 {
                 result = state.withLock { ($0.pressNanos, $0.detectedNanos, $0.detectedDiff) }
                 if result.1 != 0 { break }
                 try? await Task.sleep(for: .milliseconds(10))
             }
-            state.withLock { $0.pressNanos = 0 }
+            let (trace, idle, trigger) = state.withLock { st -> ([(ms: Double, motion: Double)]?, Double, Double) in
+                st.pressNanos = 0
+                defer { st.trace = nil }
+                return (st.trace, st.idleMotion.max() ?? 0, st.trigger)
+            }
+            let missed = state.withLock { $0.detectedNanos == 0 }
+            if let trace, i <= 3 || missed {
+                let line = trace.map { String(format: "%.0f:%.1f", $0.ms, $0.motion) }.joined(separator: " ")
+                Diag.notice("LATENCY trace \(i): idle max \(String(format: "%.1f", idle)) trigger \(String(format: "%.1f", trigger)) | \(line)", "Debug")
+            }
             if result.1 != 0 {
                 let ms = Double(result.1 &- result.0) / 1e6
                 samples.append(ms)
-                Diag.notice("LATENCY \(i)/\(presses): \(String(format: "%.1f", ms)) ms (diff \(String(format: "%.1f", result.2)))", "Debug")
+                Diag.notice("LATENCY \(i)/\(presses): \(String(format: "%.1f", ms)) ms (motion \(String(format: "%.1f", result.2)))", "Debug")
             } else {
                 misses += 1
                 Diag.notice("LATENCY \(i)/\(presses): no change within 500 ms", "Debug")
             }
         }
         Diag.notice("LATENCY summary: \(Self.summary(samples)), misses \(misses)/\(presses)", "Debug")
+        let (moving, repeated, intervals) = state.withLock { ($0.movingFrames, $0.repeatedFrames, $0.intervals) }
+        let late = intervals.filter { $0 > 25 }.count, bunched = intervals.filter { $0 < 8 }.count
+        Diag.notice("SMOOTHNESS: repeated \(repeated) of \(moving) frames in motion (\(String(format: "%.1f", moving > 0 ? 100.0 * Double(repeated) / Double(moving) : 0))%); "
+            + "decode spacing: \(intervals.count) frames, >25 ms \(late), <8 ms \(bunched), \(Self.summary(intervals))", "Debug")
         if let dumpDir { await dump(to: "\(dumpDir)/latency-end.png") }
     }
 
@@ -119,7 +171,8 @@ final class LatencyProbe: @unchecked Sendable {
     struct Step { var buttons: Int32; var ms: Int }
 
     /// Send `steps` `repeats` times, saving a frame after each run.
-    func runCombo(backend: StreamingBackend, name: String, steps: [Step], repeats: Int, dumpDir: String) async {
+    func runCombo(backend: StreamingBackend, name: String, steps: [Step], repeats: Int, dumpDir: String,
+                  dumpAfterMs: Int = 400) async {
         guard await waitForFrames() else { return }
         announce(backend)
         for r in 1...repeats {
@@ -136,11 +189,22 @@ final class LatencyProbe: @unchecked Sendable {
                 if wait > 0 { try? await Task.sleep(for: .nanoseconds(wait)) }
             }
             send(backend, buttons: 0)
-            try? await Task.sleep(for: .milliseconds(400))
+            try? await Task.sleep(for: .milliseconds(dumpAfterMs))
             await dump(to: "\(dumpDir)/combo-\(name)-\(r).png")
             let worst = late.max() ?? 0
             Diag.notice("COMBO \(name) \(r)/\(repeats): sent \(steps.count) steps, worst send lateness \(String(format: "%.1f", worst)) ms", "Debug")
         }
+    }
+
+    /// Send `steps` once (e.g. walk into the corner before measuring), then release.
+    func runSteps(backend: StreamingBackend, steps: [Step]) async {
+        guard await waitForFrames() else { return }
+        announce(backend)
+        for step in steps {
+            send(backend, buttons: step.buttons)
+            try? await Task.sleep(for: .milliseconds(step.ms))
+        }
+        send(backend, buttons: 0)
     }
 
     // MARK: Helpers

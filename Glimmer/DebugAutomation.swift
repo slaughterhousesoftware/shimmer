@@ -325,12 +325,26 @@ extension AppModel {
                 return
             }
             let backend = await session.backend
+            // `--debug-latency-delay=<sec>`: start after this (e.g. once PiP is up).
+            if let delay = Self.debugKnob("latency-delay").flatMap(Double.init) {
+                try? await Task.sleep(for: .seconds(delay))
+            }
+            // `--debug-latency-prep=<steps>` (combo syntax without the name):
+            // e.g. walk into the corner so the character sits at a fixed spot.
+            if let prep = Self.debugKnob("latency-prep"), let parsed = Self.parseCombo("prep=\(prep)") {
+                await probe.runSteps(backend: backend, steps: parsed.steps)
+                try? await Task.sleep(for: .milliseconds(800))
+            }
             if regionSpec != nil {
-                await probe.runLatency(backend: backend, presses: count, button: StreamProtocol.X_FLAG, dumpDir: dumpDir)
+                // `--debug-latency-button=triangle+circle` (default square).
+                let button = Self.debugKnob("latency-button")
+                    .flatMap { Self.parseCombo("b=\($0):1")?.steps.first?.buttons } ?? StreamProtocol.X_FLAG
+                await probe.runLatency(backend: backend, presses: count, button: button, dumpDir: dumpDir)
             }
             if let comboSpec, let parsed = Self.parseCombo(comboSpec) {
                 await probe.runCombo(backend: backend, name: parsed.name, steps: parsed.steps, repeats: repeats,
-                                     dumpDir: dumpDir ?? NSTemporaryDirectory())
+                                     dumpDir: dumpDir ?? NSTemporaryDirectory(),
+                                     dumpAfterMs: Self.debugKnob("combo-dump-ms").flatMap(Int.init) ?? 400)
             }
             Diag.notice("LATENCY probe done", "Debug")
         }
