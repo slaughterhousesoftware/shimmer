@@ -22,14 +22,16 @@ screen: machines are shown by the system they run.
   otherwise Windows when the host answers ping with TTL > 64, Mac when it advertises a Mac
   model over Bonjour (`_device-info._tcp`) or its name says so, else Linux. Cached per host.
 - **Right side:** the machine's name and address as a small centred title; no big icon, no
-  latency graph. The selected machine's settings in
-  the existing gutter style, starting with a **Stream** row (game popup for a PC, then a
-  Stream/Resume button and a Picture in Picture button, then what ending the stream does).
-  - PC: Stream (+ quit the game when the stream ends), Resolution, Frame rate, Bitrate,
-    Codec, HDR.
-  - PS5: Stream (+ rest the PS5 when the stream ends), Resolution, Frame rate (popup),
-    Bitrate, Codec (popup HEVC / H.264), HDR (checkbox, needs HEVC), Presentation (popup),
-    Haptics (popup), Controller.
+  latency graph. Under it a **stream card**, set apart from the settings: the app's icon
+  tile and name (a menu to pick another app on a PC; "PlayStation 5" on a console), a status
+  line, then a square Picture in Picture button and Stream/Resume. Mid-stream the card shows
+  the stream's state, Picture in Picture (or back to the window) and End Stream. The
+  settings follow in the existing gutter style, Quality (resolution + frame rate) first, and
+  end with an unlabelled checkbox for what ending the stream does.
+  - PC: Quality, Bitrate, Codec + HDR, then "Quit the game when the stream ends".
+  - PS5: Quality, Bitrate, Codec (popup HEVC / H.264) + HDR (needs HEVC), Presentation,
+    Controller (haptics popup, adaptive triggers, light bar), then "Rest the PS5 when the
+    stream ends".
   - No caption under the bitrate slider; short help lines only where a choice needs one.
   - All choices are popups with the same width; one shared bitrate slider with 12 snap
     points / even ticks (5 10 15 20 30 40 50 75 100 150 200 300 Mbps; PS5 up to 100).
@@ -60,4 +62,4 @@ screen: machines are shown by the system they run.
 ## Left to the builder
 
 Storage format and migration, how stream config reads per-host settings, OS-detection
-plumbing and caching, the exact sidebar width, what the Stream row shows mid-stream.
+plumbing and caching, the exact sidebar width, what the stream card shows mid-stream.

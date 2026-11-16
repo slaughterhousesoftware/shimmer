@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		190FFC794092E4334C51C525 /* StreamCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E3DB8EC3703202A18B56EE /* StreamCard.swift */; };
 		2E496D812D9F09AA3280EBEF /* PiPPanelFitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */; };
 		A8154BB6086F8BA46726C747 /* PiPSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94408D713B1FE163D04B1F2E /* PiPSource.swift */; };
 		29D48FFA909DE65C55507C4F /* StreamSession+Handover.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBDB1B8178185A50A1D4EBB9 /* StreamSession+Handover.swift */; };
@@ -383,6 +384,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		79E3DB8EC3703202A18B56EE /* StreamCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamCard.swift; sourceTree = "<group>"; };
 		E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPPanelFitter.swift; sourceTree = "<group>"; };
 		94408D713B1FE163D04B1F2E /* PiPSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPSource.swift; sourceTree = "<group>"; };
 		FBDB1B8178185A50A1D4EBB9 /* StreamSession+Handover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/StreamSession+Handover.swift"; sourceTree = "<group>"; };
@@ -816,6 +818,7 @@
 		A10000031 /* Glimmer */ = {
 			isa = PBXGroup;
 			children = (
+				79E3DB8EC3703202A18B56EE /* StreamCard.swift */,
 				E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */,
 				94408D713B1FE163D04B1F2E /* PiPSource.swift */,
 				FBDB1B8178185A50A1D4EBB9 /* StreamSession+Handover.swift */,
@@ -1301,6 +1304,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				190FFC794092E4334C51C525 /* StreamCard.swift in Sources */,
 				2E496D812D9F09AA3280EBEF /* PiPPanelFitter.swift in Sources */,
 				A8154BB6086F8BA46726C747 /* PiPSource.swift in Sources */,
 				29D48FFA909DE65C55507C4F /* StreamSession+Handover.swift in Sources */,

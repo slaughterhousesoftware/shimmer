@@ -340,18 +340,28 @@ struct ComputersTab: View {
                     hostTitle(for: host)
                         .padding(.top, 14)
                         .padding(.horizontal, 16)
+                    Group {
+                        if !host.isPlayStation && apps.isEmpty {
+                            noAppsNotice(for: host)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            StreamCard(host: host, apps: apps, chosenAppName: $chosenAppName)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
                     VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
-                        streamRow(for: host)
                         if host.isPlayStation {
                             PlayStationSettingsPane(settings: .forConsole(host.id))
                         } else {
                             StreamPane()
                             VideoPane()
                         }
+                        SettingsField { endOfStreamToggle(for: host) }
                     }
                     .padding(.leading, SettingsMetrics.serversPageLeading)
                     .padding(.trailing, SettingsMetrics.serversPageTrailing)
-                    .padding(.top, 16)
+                    .padding(.top, 18)
                     .padding(.bottom, 16)
                     // Each machine's page has its own view state: a value
                     // half-typed on one PC must not commit into the next.
@@ -387,55 +397,6 @@ struct ComputersTab: View {
         }
         .frame(maxWidth: .infinity)
         .hostContextMenu(host)
-    }
-
-    /// Streaming, as the page's first row: what to stream (a PC's apps; a PS5
-    /// is just the console), then Stream / Resume and Picture in Picture. While
-    /// this machine is streaming the row shows that stream's controls instead.
-    private func streamRow(for host: Host) -> some View {
-        let chosen = apps.first { $0.name == (chosenAppName ?? model.heroTargetAppName) } ?? apps.first
-        let resumes = chosen.map { model.runningAppName == $0.name } ?? false
-        let streamingHere = model.isStreaming && model.activeStreamHostID == host.id
-        return SettingsField("Stream") {
-            if apps.isEmpty {
-                noAppsNotice(for: host)
-            } else if apps.count > 1 {
-                CompactPopup(selection: Binding(get: { chosen?.name ?? "" }, set: { chosenAppName = $0 }),
-                             options: apps.map { .init(title: $0.name, value: $0.name, image: $0.menuImage) })
-                    .disabled(model.isStreaming)
-                    .accessibilityLabel("Game")
-            }
-            HStack(spacing: 8) {
-                if streamingHere, case .connecting(let stage) = model.streamPhase {
-                    ProgressView().controlSize(.small).help(stage)
-                    Button("Cancel") { model.cancelConnect() }
-                } else if streamingHere {
-                    Button { model.resumeStreamWindow() } label: {
-                        Label("Show Stream", systemImage: "pip.exit")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!model.activeStreamHasVideo)
-                    Button("End Stream") { model.endStream() }
-                } else {
-                    Button {
-                        guard let chosen else { return }
-                        model.requestStream(app: chosen, on: host)
-                    } label: {
-                        Label(resumes ? "Resume" : "Stream", systemImage: "play.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button {
-                        guard let chosen else { return }
-                        model.pictureInPictureLaunchRequestedAt = Date()
-                        model.requestStream(app: chosen, on: host)
-                    } label: {
-                        Label("Picture in Picture", systemImage: "pip.enter")
-                    }
-                }
-            }
-            .disabled(chosen == nil || (model.isStreaming && !streamingHere))
-            endOfStreamToggle(for: host)
-        }
     }
 
     /// What ending a stream does to the machine. Off, a PC's game keeps
