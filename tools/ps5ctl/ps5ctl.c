@@ -346,6 +346,8 @@ typedef struct
 	double audio_last;
 	// DualSense feedback
 	atomic_long haptic_frames, haptic_active_frames, trigger_events, rumble_events;
+	FILE *haptics_out;  // drive --capture: [f64 t][u16 n][pcm] per haptics frame
+	FILE *events_out;   // drive --capture: one line per console feedback event
 	// drive mode: capture a decodable clip (from an IDR) for a snapshot
 	pthread_mutex_t snap_m;
 	FILE *snap_out;
@@ -374,13 +376,39 @@ static void event_cb(ChiakiEvent *event, void *user)
 		case CHIAKI_EVENT_LOGIN_PIN_REQUEST:
 			fprintf(stderr, "** console asks for its login PIN - not supported here\n");
 			break;
+		case CHIAKI_EVENT_HAPTIC_INTENSITY:
+		case CHIAKI_EVENT_TRIGGER_INTENSITY:
+			fprintf(stderr, "** %s intensity %d\n", event->type == CHIAKI_EVENT_HAPTIC_INTENSITY ? "haptic" : "trigger",
+				(int)event->intensity);
+			if(st->events_out)
+			{
+				fprintf(st->events_out, "%.6f %s_intensity %d\n", now_s(),
+					event->type == CHIAKI_EVENT_HAPTIC_INTENSITY ? "haptic" : "trigger", (int)event->intensity);
+				fflush(st->events_out);
+			}
+			break;
 		case CHIAKI_EVENT_RUMBLE:
 			atomic_fetch_add(&st->rumble_events, 1);
+			if(st->events_out)
+			{
+				fprintf(st->events_out, "%.6f rumble %u %u\n", now_s(), event->rumble.left, event->rumble.right);
+				fflush(st->events_out);
+			}
 			if(g_verbose)
 				fprintf(stderr, "** rumble %u/%u\n", event->rumble.left, event->rumble.right);
 			break;
 		case CHIAKI_EVENT_TRIGGER_EFFECTS:
 			atomic_fetch_add(&st->trigger_events, 1);
+			if(st->events_out)
+			{
+				fprintf(st->events_out, "%.6f trigger %u %u L", now_s(),
+					event->trigger_effects.type_left, event->trigger_effects.type_right);
+				for(int i = 0; i < 10; i++) fprintf(st->events_out, " %02x", event->trigger_effects.left[i]);
+				fprintf(st->events_out, " R");
+				for(int i = 0; i < 10; i++) fprintf(st->events_out, " %02x", event->trigger_effects.right[i]);
+				fprintf(st->events_out, "\n");
+				fflush(st->events_out);
+			}
 			fprintf(stderr, "** trigger effects L type %u R type %u\n",
 				event->trigger_effects.type_left, event->trigger_effects.type_right);
 			break;
@@ -642,6 +670,14 @@ static void haptics_frame_cb(uint8_t *buf, size_t buf_size, void *user)
 {
 	SessionState *st = user;
 	atomic_fetch_add(&st->haptic_frames, 1);
+	if(st->haptics_out)
+	{
+		double t = now_s();
+		uint16_t n = (uint16_t)buf_size;
+		fwrite(&t, sizeof(t), 1, st->haptics_out);
+		fwrite(&n, sizeof(n), 1, st->haptics_out);
+		fwrite(buf, 1, buf_size, st->haptics_out);
+	}
 	for(size_t i = 0; i + 1 < buf_size; i += 2)
 	{
 		int16_t v = (int16_t)(buf[i] | (buf[i + 1] << 8));
@@ -826,10 +862,12 @@ static int cmd_drive(int argc, char **argv)
 	const char *ip = argv[0];
 	bool dualsense = false;
 	const char *control = NULL;
+	const char *capture = NULL;  // PREFIX: PREFIX.haptics (binary) + PREFIX.events (text)
 	for(int i = 1; i < argc; i++)
 	{
 		if(!strcmp(argv[i], "--dualsense")) dualsense = true;
 		else if(!strcmp(argv[i], "--control") && i + 1 < argc) control = argv[++i];
+		else if(!strcmp(argv[i], "--capture") && i + 1 < argc) capture = argv[++i];
 	}
 	char acct[64];
 	char *s = keychain_find_any_regist(acct, sizeof(acct));
@@ -857,6 +895,16 @@ static int cmd_drive(int argc, char **argv)
 	if(chiaki_session_init(&session, &info, &g_log) != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "session init failed\n"); return 1; }
 	chiaki_session_set_event_cb(&session, event_cb, &st);
 	chiaki_session_set_video_sample_cb(&session, video_cb, &st);
+	ChiakiAudioSink capture_sink = { .user = &st, .frame_cb = haptics_frame_cb };
+	if(capture)
+	{
+		char path[600];
+		snprintf(path, sizeof(path), "%s.haptics", capture);
+		st.haptics_out = fopen(path, "wb");
+		snprintf(path, sizeof(path), "%s.events", capture);
+		st.events_out = fopen(path, "w");
+		chiaki_session_set_haptics_sink(&session, &capture_sink);
+	}
 	if(chiaki_session_start(&session) != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "session start failed\n"); chiaki_session_fini(&session); return 1; }
 
 	double deadline = now_s() + 20;
@@ -909,6 +957,47 @@ static int cmd_drive(int argc, char **argv)
 			usleep(120000);
 			printf("ok %s %s %d\n", cmd, arg, ms);
 		}
+		else if(!strcmp(cmd, "mic") && n >= 2)
+		{
+			// The console's view of a live chat mic: connect it, then unmute/mute.
+			// (libchiaki's toggle argument: true = live.) No audio is sent.
+			static bool mic_connected = false;
+			if(!mic_connected) { chiaki_session_connect_microphone(&session); mic_connected = true; usleep(200000); }
+			bool live = !strcmp(arg, "on");
+			chiaki_session_toggle_microphone(&session, live);
+			if(st.events_out) { fprintf(st.events_out, "%.6f mic %s\n", now_s(), live ? "on" : "off"); fflush(st.events_out); }
+			printf("ok mic %s\n", live ? "on" : "off");
+		}
+		else if(!strcmp(cmd, "mark") && n >= 2)
+		{
+			if(st.events_out) { fprintf(st.events_out, "%.6f mark %s\n", now_s(), arg); fflush(st.events_out); }
+			printf("ok mark %s\n", arg);
+		}
+		else if(!strcmp(cmd, "stick") && n >= 2)
+		{
+			// stick DIR MS: left stick fully up/down/left/right for MS
+			ChiakiControllerState cs = idle;
+			if(!strcmp(arg, "up")) cs.left_y = -32767;
+			else if(!strcmp(arg, "down")) cs.left_y = 32767;
+			else if(!strcmp(arg, "left")) cs.left_x = -32767;
+			else if(!strcmp(arg, "right")) cs.left_x = 32767;
+			chiaki_session_set_controller_state(&session, &cs);
+			usleep((ms > 0 ? ms : 150) * 1000);
+			chiaki_session_set_controller_state(&session, &idle);
+			printf("ok stick %s %d\n", arg, ms);
+		}
+		else if(!strcmp(cmd, "r2") || !strcmp(cmd, "l2"))
+		{
+			// r2 VALUE MS: hold the trigger at VALUE (0-255) for MS
+			ChiakiControllerState cs = idle;
+			int v = atoi(arg);
+			if(!strcmp(cmd, "r2")) { cs.r2_state = (uint8_t)v; if(v) cs.buttons |= CHIAKI_CONTROLLER_ANALOG_BUTTON_R2; }
+			else { cs.l2_state = (uint8_t)v; if(v) cs.buttons |= CHIAKI_CONTROLLER_ANALOG_BUTTON_L2; }
+			chiaki_session_set_controller_state(&session, &cs);
+			usleep((ms > 0 ? ms : 150) * 1000);
+			chiaki_session_set_controller_state(&session, &idle);
+			printf("ok %s %d %d\n", cmd, v, ms);
+		}
 		else if(!strcmp(cmd, "snap") && n >= 2)
 		{
 			char clip[600];
@@ -948,6 +1037,8 @@ static int cmd_drive(int argc, char **argv)
 	chiaki_session_stop(&session);
 	chiaki_session_join(&session);
 	chiaki_session_fini(&session);
+	if(st.haptics_out) fclose(st.haptics_out);
+	if(st.events_out) fclose(st.events_out);
 	if(in != stdin) fclose(in);
 	return 0;
 }

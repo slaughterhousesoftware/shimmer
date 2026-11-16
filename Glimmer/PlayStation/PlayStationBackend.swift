@@ -106,6 +106,13 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// Audio arrival jitter, which sizes the haptics buffer (libchiaki's
     /// receive thread only).
     private var audioJitter = ArrivalJitter()
+    /// The haptics frames' own arrival gaps (libchiaki's receive thread),
+    /// to compare with the audio's: the buffer is sized from the audio today.
+    private var hapticsJitter = ArrivalJitter()
+    private var lastHapticsArrivalNanos: UInt64 = 0
+    /// Debug (`PS5.debugDumpHaptics`): every haptics frame as received, for
+    /// offline analysis (libchiaki's receive thread only).
+    private lazy var hapticsDump: HapticsDump? = HapticsDump.openIfEnabled()
     private var audioFramesSeen = 0
     private var lastHapticsTargetMs: Double = 0
 
@@ -137,6 +144,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private var triggerNibble: UInt8 = 0
     /// Haptics frames played on the actuators / how many carried signal (`lock`).
     private var hapticsFrames = (total: 0, active: 0)
+    /// Sum of the per-frame peak over frames with signal, and the latest
+    /// arrival-gap line (`lock`), for the end-of-haptics summary.
+    private var hapticsPeakSum = 0
+    private var hapticsGapSummary = "-"
 
     init(console: PlayStationConsole, options: PlayStationStreamOptions) {
         self.console = console
@@ -675,6 +686,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// One haptics frame: interleaved Int16 L/R samples. Sum |amplitude| per side.
     private func handleHapticsFrame(_ pcm: UnsafeRawBufferPointer) {
         guard options.settings.haptics != .off else { return }
+        let arrival = DispatchTime.now().uptimeNanoseconds
+        if lastHapticsArrivalNanos != 0 {
+            hapticsJitter.add(gapMs: Double(arrival &- lastHapticsArrivalNanos) / 1_000_000)
+        }
+        lastHapticsArrivalNanos = arrival
+        hapticsDump?.write(arrival: arrival, pcm: pcm)
         if let player = lock.withLock({ audioHaptics }) {
             player.push(pcm)
             noteActuatorFrame(pcm, player: player)
@@ -801,9 +818,11 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         let stats = player.stats
         player.stop()
         DualSenseHID.shared.setAudioHapticsMode(false)
-        let frames = lock.withLock { hapticsFrames }
+        let (frames, peakSum, gapLine) = lock.withLock { (hapticsFrames, hapticsPeakSum, hapticsGapSummary) }
+        let meanPeak = frames.active > 0 ? peakSum / frames.active : 0
         Diag.info("PS5: DualSense haptics stopped (\(reason)); \(frames.active)/\(frames.total) frames with "
-            + "signal in \(stats.runs) runs (\(stats.cut) cut short), buffer \(stats.targetMs) ms; "
+            + "signal (mean peak \(meanPeak)) in \(stats.runs) runs (\(stats.cut) cut short), buffer "
+            + "\(stats.targetMs) ms; arrival gaps \(gapLine); "
             + "\(DualSenseHID.shared.takeTriggerStats())"
             + ((player as? DualSenseBluetoothHaptics).map { "; Bluetooth: \($0.linkStats)" } ?? ""), Self.logCategory)
         if fallBackToRumble, !lock.withLock({ stopped }) {
@@ -834,8 +853,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         for i in 0..<(pcm.count / 2) { peak = max(peak, abs(Int32(pcm.loadUnaligned(fromByteOffset: i * 2, as: Int16.self)))) }
         let (total, active) = lock.withLock { () -> (Int, Int) in
             hapticsFrames.total += 1
-            if peak > 64 { hapticsFrames.active += 1 }
+            if peak > 64 { hapticsFrames.active += 1; hapticsPeakSum += Int(peak) }
             return hapticsFrames
+        }
+        if total % 100 == 0 {
+            let line = "haptics \(Self.gapSummary(hapticsJitter)), audio \(Self.gapSummary(audioJitter))"
+            lock.withLock { hapticsGapSummary = line }
         }
         if peak > 64, active == 1 {
             Diag.notice("PS5: first haptics from the console (playing on the actuators)", Self.logCategory)
@@ -843,8 +866,16 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         if total % 3000 == 0 {
             let stats = player.stats
             Diag.info("PS5: haptics \(active)/\(total) frames with signal; buffer \(stats.targetMs) ms, "
-                + "\(stats.runs) runs (\(stats.cut) cut short)", Self.logCategory)
+                + "\(stats.runs) runs (\(stats.cut) cut short); arrival gaps "
+                + "\(lock.withLock { hapticsGapSummary })", Self.logCategory)
         }
+    }
+
+    static func gapSummary(_ j: ArrivalJitter) -> String {
+        guard let p50 = j.percentile(0.5), let p95 = j.percentile(0.95), let p99 = j.percentile(0.99) else {
+            return "- (\(j.count) gaps)"
+        }
+        return String(format: "p50 %.1f p95 %.1f p99 %.1f ms (%d gaps)", p50, p95, p99, j.count)
     }
 
     /// Debug: feed `seconds` of a 90 Hz half-scale tone into the haptics path
@@ -1148,6 +1179,13 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 }
                 continue
             }
+            if parts[0] == "mic" {             // the Mute button: chat live <-> muted
+                DispatchQueue.global().asyncAfter(deadline: .now() + at) { [weak self] in
+                    guard let self else { return }
+                    self.lock.withLock { self.microphone }?.toggle()
+                }
+                continue
+            }
             if parts[0] == "rumble" {          // as if the console sent half-strength rumble
                 DispatchQueue.global().asyncAfter(deadline: .now() + at) { [weak self] in
                     self?.handleRumble(left: 128, right: 128)
@@ -1233,5 +1271,35 @@ struct PadMotion {
         chiaki_accel_new_zero_set_active(&zero, raw.x, raw.y, raw.z, false)
         chiaki_orientation_tracker_init(&tracker)
         chiaki_orientation_tracker_update(&tracker, g.0, g.1, g.2, raw.x, raw.y, raw.z, &zero, false, us)
+    }
+}
+
+/// Debug: the console's haptics frames written as received:
+/// [u64 arrival ns][u16 byte count][Int16 L/R PCM] per frame, little endian.
+final class HapticsDump {
+    private let handle: FileHandle
+
+    static func openIfEnabled() -> HapticsDump? {
+        guard UserDefaults.standard.bool(forKey: "PS5.debugDumpHaptics") else { return nil }
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Shimmer")
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let url = dir.appendingPathComponent("haptics-\(stamp).bin")
+        guard FileManager.default.createFile(atPath: url.path, contents: nil),
+              let handle = try? FileHandle(forWritingTo: url) else { return nil }
+        Diag.notice("PS5: dumping haptics frames to \(url.lastPathComponent)", "PlayStation")
+        return HapticsDump(handle: handle)
+    }
+
+    private init(handle: FileHandle) { self.handle = handle }
+    deinit { try? handle.close() }
+
+    func write(arrival: UInt64, pcm: UnsafeRawBufferPointer) {
+        var header = Data(count: 10)
+        header.withUnsafeMutableBytes {
+            $0.storeBytes(of: arrival.littleEndian, toByteOffset: 0, as: UInt64.self)
+            $0.storeBytes(of: UInt16(pcm.count).littleEndian, toByteOffset: 8, as: UInt16.self)
+        }
+        header.append(contentsOf: pcm)
+        try? handle.write(contentsOf: header)
     }
 }
