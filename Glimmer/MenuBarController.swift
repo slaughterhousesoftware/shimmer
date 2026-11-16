@@ -29,8 +29,10 @@ enum MenuBarPreferences {
     }
 }
 
-/// Only meaningful status belongs in the menu bar. An idle app has no label,
-/// rather than a substitute logo or an invisible button taking up space.
+/// What the menu bar icon shows: warnings, then the connected pad and its
+/// battery, then the streamed app, and otherwise the Shimmer prism - the icon
+/// is always there, so Shimmer can live in the menu bar with no window and no
+/// Dock icon (Kevin, 2026-11-16).
 struct MenuBarPresentation: Equatable {
     let glyph: LibraryApp.Glyph
     let title: String
@@ -57,9 +59,13 @@ struct MenuBarPresentation: Equatable {
             title = ""
             assetHeight = 15
         } else {
-            return nil
+            glyph = .asset(Self.idleAsset)
+            title = ""
+            assetHeight = 16
         }
     }
+
+    static let idleAsset = "MenuBarShimmer"
 }
 
 extension AppModel {
@@ -174,7 +180,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// pad gets the bundled DualSense mark with a STEAM-style battery baked in
     /// (MenuBarBatteryGlyph); anything else gets Apple's generic controller
     /// symbol and the number. The app glyph (streaming or host-running) shows
-    /// only when NO pad is connected. There is no idle logo.
+    /// only when NO pad is connected. Idle: the Shimmer prism.
     private func applyLabel() {
         let presentation = model.menuBarPresentation
         let visible = model.showMenuBarItem && presentation != nil

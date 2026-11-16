@@ -20,6 +20,17 @@ struct OpenWindowPublisher: Commands {
 /// we control both sides of the launch.
 private let launchedAtLogin = ProcessInfo.processInfo.arguments.contains("--launched-at-login")
 
+extension GlimmerApp {
+    static let hasLaunchedBeforeKey = "hasLaunchedBefore"
+    /// Read once, at scene construction.
+    static let startsInMenuBarOnly: Bool = {
+        let defaults = UserDefaults.standard
+        let launchedBefore = defaults.bool(forKey: hasLaunchedBeforeKey)
+        defaults.set(true, forKey: hasLaunchedBeforeKey)
+        return launchedAtLogin || (launchedBefore && MenuBarPreferences.isVisible(in: defaults))
+    }()
+}
+
 @main
 struct GlimmerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -135,9 +146,11 @@ struct GlimmerApp: App {
         // launcher always re-spawns fresh next launch (the bug that made
         // first Dock click do nothing pre-restoration-fix).
         .restorationBehavior(.disabled)
-        // Finder/Spotlight launches always open a window: an idle app no longer
-        // has a menu-bar fallback. Login launches remain quiet in the Dock.
-        .defaultLaunchBehavior(launchedAtLogin ? .suppressed : .automatic)
+        // Shimmer lives in the menu bar: after the first launch it starts with
+        // no window (the menu's "Open Shimmer", or opening the app again,
+        // brings it up). The first launch, or with the menu bar icon turned
+        // off, still opens the window - otherwise there'd be no way in.
+        .defaultLaunchBehavior(Self.startsInMenuBarOnly ? .suppressed : .automatic)
         .commands {
             OpenWindowPublisher(open: { openWindow(id: "main") })
             CommandGroup(replacing: .newItem) {}

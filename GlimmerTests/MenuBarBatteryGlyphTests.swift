@@ -181,11 +181,12 @@ struct MenuBarVisibilityTests {
         #expect(!MenuBarPreferences.isVisible(in: reloaded))
     }
 
-    @Test func idleHasNoStatusItemAndKeepsDockAccess() {
+    @Test func idleShowsTheShimmerPrismAndLeavesTheDock() {
         let idle = MenuBarPresentation(warning: false, controller: nil, appGlyph: nil)
-        #expect(idle == nil)
+        #expect(idle?.glyph == .asset(MenuBarPresentation.idleAsset))
+        // Nothing open, nothing streaming: menu bar only.
         #expect(AppDelegate.activationPolicy(mainOpen: false, streaming: false,
-                                             menuBarVisible: idle != nil) == .regular)
+                                             menuBarVisible: idle != nil) == .accessory)
     }
 
     @Test func steamStatusReturnsAndDisappearsWithoutAFallback() {
@@ -197,7 +198,7 @@ struct MenuBarVisibilityTests {
         #expect(AppDelegate.activationPolicy(mainOpen: false, streaming: false,
                                              menuBarVisible: steam != nil) == .accessory)
         let ended = MenuBarPresentation(warning: false, controller: nil, appGlyph: nil)
-        #expect(ended == nil)
+        #expect(ended?.glyph == .asset(MenuBarPresentation.idleAsset))
     }
 
     @Test func warningsStillTakePrecedenceOverControllerAndAppStatus() {
