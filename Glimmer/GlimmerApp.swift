@@ -212,6 +212,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor static func refreshActivationPolicy() {
         guard let app = NSApp else { return }   // hostless unit tests
+        // Out of the Dock just while the menu bar menu is open over another
+        // app's full screen; the menu's close re-runs this.
+        guard !MenuBarController.headlessForMenu else { return }
         let mainOpen = app.windows.contains { $0.identifier?.rawValue == "main" && $0.isVisible }
         let streaming = boundManager?.isStreaming == true
         let wanted = activationPolicy(mainOpen: mainOpen, streaming: streaming,

@@ -94,8 +94,62 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
-        item.menu = menu
+        // No `item.menu`: the click comes here first (see `statusItemClicked`).
+        item.button?.target = self
+        item.button?.action = #selector(statusItemClicked)
+        item.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
         observeLabel()
+    }
+
+    // MARK: - Opening over a full-screen app
+
+    /// True while Shimmer dropped out of the Dock just to show its menu.
+    private(set) static var headlessForMenu = false
+
+    /// macOS 27.2 never shows a REGULAR app's status-item menu while another
+    /// app is in full screen (measured 2026-11-16: the menu window is created
+    /// but never on screen); an accessory app's opens normally. So when that
+    /// is the situation, Shimmer is an accessory app for exactly as long as
+    /// its menu is open, and returns to the Dock when it closes - invisible,
+    /// since the Dock is hidden in another app's full screen anyway.
+    @objc private func statusItemClicked() {
+        if NSApp.activationPolicy() == .regular, Self.frontmostAppIsFullScreen() {
+            Self.headlessForMenu = true
+            NSApp.setActivationPolicy(.accessory)
+            Diag.info("menu bar: another app is full screen - out of the Dock while the menu is open", "MenuBar")
+        }
+        // Next turn, after the policy change lands.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.item.menu = self.menu
+            self.item.button?.performClick(nil)
+        }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        // Detach again so the next click comes back through statusItemClicked.
+        DispatchQueue.main.async { [weak self] in
+            self?.item.menu = nil
+            guard Self.headlessForMenu else { return }
+            Self.headlessForMenu = false
+            AppDelegate.refreshActivationPolicy()
+        }
+    }
+
+    /// The frontmost app (not Shimmer) has a window covering a whole screen.
+    static func frontmostAppIsFullScreen() -> Bool {
+        guard let front = NSWorkspace.shared.frontmostApplication,
+              front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return false }
+        let screens = NSScreen.screens.map(\.frame.size)
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        return windows.contains { info in
+            guard (info[kCGWindowOwnerPID as String] as? pid_t) == front.processIdentifier,
+                  (info[kCGWindowLayer as String] as? Int) == 0,
+                  let dict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: dict) else { return false }
+            return screens.contains { abs($0.width - bounds.width) < 1 && abs($0.height - bounds.height) < 1 }
+        }
     }
 
     // MARK: - Label
