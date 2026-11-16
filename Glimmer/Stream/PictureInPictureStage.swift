@@ -38,6 +38,8 @@ final class PictureInPictureStage {
     let pictureInPicture: StreamPictureInPicture
     /// Keeps the picture whole inside Apple's PiP window.
     let fitter = PiPPanelFitter()
+    /// `--debug-pip-rate`: what the PiP window really shows, every 2 s.
+    let rateSampler = PiPRateSampler()
 
     /// The stream window the stage serves.
     private(set) weak var owner: StreamWindow?
@@ -151,6 +153,7 @@ final class PictureInPictureStage {
     }
 
     private func finishHold() {
+        rateSampler.stop()
         heldKeepAlive?.stop()
         heldKeepAlive = nil
         if let flag = heldControllerBackgroundFlag {

@@ -197,6 +197,7 @@ extension StreamWindow {
                 return
             }
             self.enableBackgroundControllerEvents()
+            PictureInPictureStage.shared.rateSampler.start(layer: self.pipLayer)
             // Normally already attached (from the start request); a no-op then.
             if self.pipFitter.panel == nil { self.pipFitter.attach() }
             self.publishPresentSuppression()
@@ -219,6 +220,7 @@ extension StreamWindow {
             PiPTrace.log("onDidStop restoreRequested=\(restoreRequested) backgrounded=\(self.isBackgrounded) inFlight=\(self.pipReturnInFlight)", self.window)
             self.setPictureInPictureActive(false)
             self.pictureInPicturePaused = false
+            PictureInPictureStage.shared.rateSampler.stop()
             self.restoreBackgroundControllerEvents()
             self.leavePiPSource()
             self.onPictureInPictureChanged?(false)

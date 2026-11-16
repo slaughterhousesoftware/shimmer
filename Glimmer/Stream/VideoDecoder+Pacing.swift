@@ -302,10 +302,15 @@ extension VideoDecoder {
         if renderer.status == .failed {
             log.warning("Picture in Picture layer renderer failed - flushing (error=\(String(describing: renderer.error)))")
             renderer.flush()
+            PiPRateProbe.count(.failed)
             return false
         }
-        guard renderer.isReadyForMoreMediaData else { return false }
+        guard renderer.isReadyForMoreMediaData else {
+            PiPRateProbe.count(.notReady)
+            return false
+        }
         renderer.enqueue(sampleBuffer)
+        PiPRateProbe.count(.enqueued)
         return true
     }
 

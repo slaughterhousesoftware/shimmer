@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		2E496D812D9F09AA3280EBEF /* PiPPanelFitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */; };
 		A8154BB6086F8BA46726C747 /* PiPSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94408D713B1FE163D04B1F2E /* PiPSource.swift */; };
+		C55026FC886CAF4D2C25D928 /* PiPRateProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19E246B19BC719FCF2CB0DB6 /* PiPRateProbe.swift */; };
 		3A97156B5C9DE953072FCAE2 /* PictureInPictureStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4247DAF6486055EC31B1F96 /* PictureInPictureStage.swift */; };
 		47F8C25731614FFBACD38F55 /* StreamWindow+LaunchIntoPiP.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C8A1AF11F8728E03E76125 /* StreamWindow+LaunchIntoPiP.swift */; };
 		F39D4AA9997B390B7432A6E1 /* LatencyProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = C32F02F8536431B3CFFF2385 /* LatencyProbe.swift */; };
@@ -369,6 +370,7 @@
 /* Begin PBXFileReference section */
 		E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPPanelFitter.swift; sourceTree = "<group>"; };
 		94408D713B1FE163D04B1F2E /* PiPSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPSource.swift; sourceTree = "<group>"; };
+		19E246B19BC719FCF2CB0DB6 /* PiPRateProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPRateProbe.swift; sourceTree = "<group>"; };
 		C4247DAF6486055EC31B1F96 /* PictureInPictureStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PictureInPictureStage.swift; sourceTree = "<group>"; };
 		F5C8A1AF11F8728E03E76125 /* StreamWindow+LaunchIntoPiP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/StreamWindow+LaunchIntoPiP.swift"; sourceTree = "<group>"; };
 		C32F02F8536431B3CFFF2385 /* LatencyProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/LatencyProbe.swift; sourceTree = "<group>"; };
@@ -784,6 +786,7 @@
 			children = (
 				E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */,
 				94408D713B1FE163D04B1F2E /* PiPSource.swift */,
+				19E246B19BC719FCF2CB0DB6 /* PiPRateProbe.swift */,
 				C4247DAF6486055EC31B1F96 /* PictureInPictureStage.swift */,
 				F5C8A1AF11F8728E03E76125 /* StreamWindow+LaunchIntoPiP.swift */,
 				C32F02F8536431B3CFFF2385 /* LatencyProbe.swift */,
@@ -1255,6 +1258,7 @@
 			files = (
 				2E496D812D9F09AA3280EBEF /* PiPPanelFitter.swift in Sources */,
 				A8154BB6086F8BA46726C747 /* PiPSource.swift in Sources */,
+				C55026FC886CAF4D2C25D928 /* PiPRateProbe.swift in Sources */,
 				3A97156B5C9DE953072FCAE2 /* PictureInPictureStage.swift in Sources */,
 				47F8C25731614FFBACD38F55 /* StreamWindow+LaunchIntoPiP.swift in Sources */,
 				F39D4AA9997B390B7432A6E1 /* LatencyProbe.swift in Sources */,
