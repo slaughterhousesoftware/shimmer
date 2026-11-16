@@ -49,6 +49,8 @@ final class AgentControl: NSObject {
         case openLoginItems = "open-login-items"
         case openInputMonitoring = "open-input-monitoring"
         case cancelConnect = "cancel-connect"
+        /// params: host = part of the PC's name. As the menu bar's Switch PC.
+        case switchPC = "switch-pc"
     }
 
     private weak var model: AppModel?
@@ -163,6 +165,15 @@ final class AgentControl: NSObject {
             NSWorkspace.shared.open(URL(string:
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
             finish(id: id, name: name, result: "opened; the user must switch Shimmer on, then relaunch it")
+        case .switchPC:
+            let want = (query.first { $0.name == "host" }?.value ?? "").lowercased()
+            guard let model, !want.isEmpty,
+                  let host = model.hosts.first(where: { $0.displayName.lowercased().contains(want) }) else {
+                finish(id: id, name: name, result: "no PC matching that name")
+                return
+            }
+            model.switchHost(to: host)
+            finish(id: id, name: name, result: "switching to \(host.displayName)")
         case .cancelConnect:
             if case .connecting = model?.streamPhase {
                 model?.cancelConnect()

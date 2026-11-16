@@ -418,12 +418,33 @@ extension StreamWindow {
         pipKeepAlive = nil
     }
 
+    /// Switch PC, both streams up: the next stream's window takes PiP over
+    /// right now - this one lets go of it without stopping it, and won't hand
+    /// off to the launcher when it closes. False when this window isn't in PiP.
+    func handOffPictureInPicture() -> Bool {
+        let stage = PictureInPictureStage.shared
+        guard !didClose, isPictureInPictureActive, stage.isOwned(by: self) else { return false }
+        stage.holdForSwitch()
+        guard stage.holdIfRequested(by: self, keepAlive: pipKeepAlive,
+                                    controllerBackgroundFlag: savedControllerBackgroundFlag) else {
+            stage.cancelHoldRequest()
+            return false
+        }
+        pipKeepAlive = nil
+        savedControllerBackgroundFlag = nil
+        setPictureInPictureActive(false)
+        pipSourceMode = false
+        handsOffToLauncher = false
+        return true
+    }
+
     /// Take over a PiP the previous stream left up (PictureInPictureStage).
     /// Its frames already reach the PiP layer; this makes the PiP this
     /// stream's: its handlers, its pacing, its keyboard/mouse state. False
     /// when nothing is held.
     func adoptHeldPictureInPicture() -> Bool {
         guard !didClose, let inherited = PictureInPictureStage.shared.adopt(by: self) else { return false }
+        standbyForHandover = false
         installPictureInPictureHandlers()
         pipStartIsLaunch = false
         launchingIntoPiP = false

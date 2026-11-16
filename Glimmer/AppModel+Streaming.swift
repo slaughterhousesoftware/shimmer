@@ -162,6 +162,26 @@ extension AppModel {
         hostStatusTask = nil
         hostLiveStatus = nil
 
+        let cfg = sessionStreamConfig(for: host, app: app)
+        let info = nativeServerInfo(for: host)
+        // Hero-verb memory: stamp the app NAME at stream START (unlike the
+        // lastConnected DATE above) so the next launcher visit names the app in
+        // "Stream <app>" even if this session ends badly.
+        UserDefaults.standard.set(app.name, forKey: Self.lastPlayedAppKey(for: host.id))
+        // Arm the session-receipt latch with this session's identity (host +
+        // requested mode). The live edge stamps the wall clock; the teardown
+        // hook in StreamSession.stop() adds the end-of-session numbers; the
+        // cleanup below finalizes. See SessionReceiptStore for the contract.
+        SessionReceiptStore.markStreamStart(
+            hostId: host.id, width: cfg.width, height: cfg.height, refreshHz: cfg.fps)
+        let token = UUID()
+        currentStreamToken = token
+        launchSession(app: app, host: host, cfg: cfg, info: info, token: token, standby: false)
+    }
+
+    /// The StreamConfig for a stream of `app` on `host` (a PS5 sends a fixed
+    /// preset; the window, pacer, receipt and stats are sized for that).
+    func sessionStreamConfig(for host: Host, app: LibraryApp) -> StreamConfig {
         var cfg = nativeStreamConfig(for: host)
         if host.isPlayStation {
             // The console sends a fixed preset (1080p/720p at 60/30, SDR); size
@@ -179,17 +199,16 @@ extension AppModel {
         // so a "why is it 1080p in a window" report answers itself from the log.
         Diag.info("Show the stream: \(cfg.displayMode.displayName.lowercased()) - requesting "
             + "\(cfg.width)x\(cfg.height) at \(cfg.fps) Hz", "Stream")
-        let info = nativeServerInfo(for: host)
-        // Hero-verb memory: stamp the app NAME at stream START (unlike the
-        // lastConnected DATE above) so the next launcher visit names the app in
-        // "Stream <app>" even if this session ends badly.
-        UserDefaults.standard.set(app.name, forKey: Self.lastPlayedAppKey(for: host.id))
-        // Arm the session-receipt latch with this session's identity (host +
-        // requested mode). The live edge stamps the wall clock; the teardown
-        // hook in StreamSession.stop() adds the end-of-session numbers; the
-        // cleanup below finalizes. See SessionReceiptStore for the contract.
-        SessionReceiptStore.markStreamStart(
-            hostId: host.id, width: cfg.width, height: cfg.height, refreshHz: cfg.fps)
+        return cfg
+    }
+
+    /// Start a StreamSession and run it to its end. `token` is the stream's
+    /// identity: AppModel's live state follows only the CURRENT stream
+    /// (`currentStreamToken`), so a stream connecting in standby behind a
+    /// live one (Switch PC in PiP, `standby`) or one retired by a switch
+    /// can't touch it. Every callback and event checks it.
+    func launchSession(app: LibraryApp, host: Host, cfg: StreamConfig, info: ServerInfo,
+                       token: UUID, standby: Bool) {
         // Hotkey chords are read live via providers (see below) rather
         // than captured here, so edits to quitHotkey/statsHotkey in
         // Settings take effect mid-stream without restarting.
@@ -203,9 +222,21 @@ extension AppModel {
         Task { [weak self] in
             guard let self else { return }
             // The Swift-native engine is the only path.
-            let session = StreamSession(backend: self.makeStreamingBackend(for: host))
+            let backend = self.makeStreamingBackend(for: host)
+            let session = StreamSession(backend: backend)
+            let backendID = ControllerFocus.id(backend as AnyObject)
+            if standby {
+                // The pad stays with the live stream until the cut-over.
+                ControllerFocus.beginStandby(backendID)
+                await session.setStandby(true)
+            }
             await MainActor.run {
-                self.nativeSession = session
+                if standby {
+                    self.standbyStream = StandbyStream(token: token, session: session, host: host, app: app,
+                                                       backendID: backendID, startedAt: Date())
+                } else {
+                    self.nativeSession = session
+                }
                 // The audio cushion ceiling, before the engine seeds the cushion.
                 session.audioDecoder.setCushionCeiling(
                     self.preferLowAudioLatency ? AudioDecoder.lowLatencyCushionCeilingMs : nil)
@@ -215,7 +246,8 @@ extension AppModel {
                 // to reach the menu bar. The decoder just stores it here (its
                 // engine doesn't exist yet) and applies it when it builds the
                 // graph - see AudioDecoder.outputVolume.
-                self.applyStreamVolume()
+                // A standby stream is silent until it takes over.
+                if standby { session.audioDecoder.setOutputVolume(0) } else { self.applyStreamVolume() }
             }
             var caughtError: Error?
             do {
@@ -257,14 +289,18 @@ extension AppModel {
                         self?.customControllerChord ?? []
                     },
                     onBackgroundedChanged: { [weak self] backgrounded in
+                        guard self?.currentStreamToken == token else { return }
                         self?.nativeStreamBackgrounded = backgrounded
                     },
                     pipHotkeyProvider: { [weak self] in self?.pipHotkey ?? .defaultPiP },
                     autoPictureInPictureProvider: { [weak self] in self?.autoPictureInPicture ?? false },
-                    startInPictureInPictureProvider: { [weak self] in self?.consumePictureInPictureLaunch() ?? false },
+                    startInPictureInPictureProvider: { [weak self] in
+                        standby ? false : (self?.consumePictureInPictureLaunch() ?? false)
+                    },
                     keepAwakeProvider: { [weak self] in self?.keepAwakePolicy ?? .always },
                     quitAppOnStopProvider: { [weak self] in self?.quitAppWhenStreamEnds ?? false },
                     onPictureInPictureChanged: { [weak self] active in
+                        guard self?.currentStreamToken == token else { return }
                         self?.nativeStreamPictureInPicture = active
                     },
                     pipPointerProvider: { true },
@@ -274,14 +310,14 @@ extension AppModel {
                     // Pass the SESSION's host, not selectedHost: ⌘1-⌘9 / the
                     // toolbar pill can re-select mid-flight, and failure copy
                     // resolved at event time would then blame the wrong PC.
-                    await MainActor.run { self.handleNativeEvent(event, host: host) }
+                    await MainActor.run { self.route(event, host: host, token: token) }
                 }
             } catch {
                 caughtError = error
             }
             // Single cleanup site: runs whether start() threw or the event
             // loop drained normally.
-            self.cleanupAfterStream(host: host, caughtError: caughtError)
+            self.finishSession(host: host, caughtError: caughtError, token: token)
         }
     }
 
@@ -289,7 +325,9 @@ extension AppModel {
     /// isolation; named so the entry path stays readable and the cleanup
     /// stays one site - never duplicate any of this elsewhere (a second
     /// "cleanup" is how zombie state is made).
-    private func cleanupAfterStream(host: Host, caughtError: Error?) {
+    func cleanupAfterStream(host: Host, caughtError: Error?) {
+        // A switch still connecting behind this stream goes with it.
+        cancelStandbyStream(reason: "the stream it was replacing ended")
         AWDLGuard.shared.streamEnded()
         GameModeBoost.shared.streamLive(false, enabled: gameModeDuringStreams)
         if caughtError != nil, Self.connectCancelRequested {
@@ -636,26 +674,45 @@ extension AppModel {
         let streamingElsewhere = isStreaming && activeStreamHostID != host.id
         let inPictureInPicture = nativeStreamPictureInPicture
         selectHost(host)
+        // Back to the PC already playing: drop a switch still connecting.
+        if isStreaming, activeStreamHostID == host.id {
+            switchWakeTask?.cancel()
+            switchWakeTask = nil
+            cancelStandbyStream(reason: "back to the current PC")
+            return
+        }
         // Once the old stream is ending, the switch is committed.
         guard streamingElsewhere, !StreamWindow.switchingHosts else { return }
         switchWakeTask?.cancel()
         switchWakeTask = nil
-        pendingHostSwitch = PendingHostSwitch(hostID: host.id, inPictureInPicture: inPictureInPicture,
-                                              requestedAt: Date())
+        // In Picture in Picture both streams run for a moment: the next one
+        // connects in standby while this one keeps playing, then a one-frame
+        // cut (AppModel+StreamHandover). In a window or full screen, end this
+        // one and start the next.
+        let overlap = inPictureInPicture
+        if overlap {
+            cancelStandbyStream(reason: "another PC picked")
+            pendingHostSwitch = nil
+        } else {
+            pendingHostSwitch = PendingHostSwitch(hostID: host.id, inPictureInPicture: false, requestedAt: Date())
+        }
+        let begin: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
+            if overlap { self.startStandbyStream(on: host) } else { self.beginHostSwitch() }
+        }
         guard host.isPlayStation else {
-            beginHostSwitch()
+            begin()
             return
         }
         // A PS5 in rest mode takes ~15 s to wake: wake it while the current
-        // game keeps playing, and switch once it answers - the PiP then holds
-        // a frame only for the connect itself.
+        // game keeps playing, and connect once it answers.
         Diag.notice("Switching the stream to \(host.displayName, privacy: .private) - waking it first", "Stream")
         switchWakeTask = Task { [weak self] in
             await self?.wakePlayStationForSwitch(host)
-            guard let self, !Task.isCancelled, self.pendingHostSwitch?.hostID == host.id, self.isStreaming,
-                  !StreamWindow.switchingHosts else { return }
+            guard let self, !Task.isCancelled, self.selectedHost?.id == host.id, self.isStreaming,
+                  self.activeStreamHostID != host.id, !StreamWindow.switchingHosts else { return }
             self.switchWakeTask = nil
-            self.beginHostSwitch()
+            begin()
         }
     }
 
@@ -734,11 +791,12 @@ extension AppModel {
 
     func endStream() {
         // Ending the stream yourself while a switch is still waking its PS5
-        // ends it for good - the switch is dropped.
-        if !StreamWindow.switchingHosts, pendingHostSwitch != nil {
+        // (or connecting in standby) ends it for good - the switch is dropped.
+        if !StreamWindow.switchingHosts {
             switchWakeTask?.cancel()
             switchWakeTask = nil
             pendingHostSwitch = nil
+            cancelStandbyStream(reason: "stream ended")
         }
         guard isStreaming, let session = nativeSession else { return }
         Diag.notice("User ended the stream from the menu bar", "Stream")

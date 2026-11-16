@@ -26,6 +26,7 @@ extension StreamSession {
         await MainActor.run {
             self.presentMetricTimer?.invalidate()
             EnvSignalController.shared.beginSession()
+            Self.envSignalOwner = ObjectIdentifier(self)
             self.prevMetricTotalTicks = 0
             self.prevMetricTotalReleases = 0
             self.prevMetricTime = CFAbsoluteTimeGetCurrent()
@@ -48,8 +49,15 @@ extension StreamSession {
     func stopPresentMetricTimer() {
         presentMetricTimer?.invalidate()
         presentMetricTimer = nil
+        // Only the session that began it: across a Switch PC in PiP the old
+        // stream ends after the new one has begun its own.
+        guard Self.envSignalOwner == ObjectIdentifier(self) else { return }
+        Self.envSignalOwner = nil
         EnvSignalController.shared.endSession()
     }
+
+    /// The session whose env-signal session is running (main actor).
+    @MainActor static var envSignalOwner: ObjectIdentifier?
 
     @MainActor
     private func emitPresentMetric(dec: VideoDecoder) {

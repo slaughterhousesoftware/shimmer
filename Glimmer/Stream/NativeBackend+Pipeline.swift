@@ -222,8 +222,16 @@ extension NativeBackend {
         // lifts the actuator's quiesce gate (armed at init and on every stream
         // teardown) - without it a late event from a PREVIOUS session could
         // re-spin motors with no host left to send the (0,0) clear.
-        ControllerHaptics.shared.streamActivated()
+        // ControllerFocus: a stream connecting in standby behind a live one
+        // (Switch PC in PiP) arms the pad only at the cut-over, and drops the
+        // host's feedback until then - the pad belongs to the game in play.
+        let focus = ControllerFocus.id(self)
+        // What the host asked of the pad while in standby, replayed at the cut
+        // (it asks once, when the game wants it, and not again).
+        let deferred = DeferredPadRequests()
+        ControllerFocus.activate(focus) { ControllerHaptics.shared.streamActivated() }
         enet.onRumble = { controllerNumber, lowFreq, highFreq in
+            guard ControllerFocus.allows(focus) else { return }
             events.rumble(controller: controllerNumber, lowFreq: lowFreq, highFreq: highFreq)
         }
         // No stuck motors, no ghost sampling: whatever ends this control
@@ -233,8 +241,11 @@ extension NativeBackend {
         // engines down, and halts motion sampling. The host's own "motors
         // off" / "reporting off" events can't arrive on a dead channel.
         enet.onTeardown = {
-            ControllerHaptics.shared.stopAll(reason: "stream teardown")
-            ControllerMotion.shared.stopAll(reason: "stream teardown")
+            // Not if another stream has the pad now (a switch's old stream).
+            ControllerFocus.deactivate(focus) {
+                ControllerHaptics.shared.stopAll(reason: "stream teardown")
+                ControllerMotion.shared.stopAll(reason: "stream teardown")
+            }
         }
         // The other two in-protocol controller-feedback messages ride the same
         // shape as rumble: the receive thread only forwards values, and the
@@ -245,9 +256,11 @@ extension NativeBackend {
         // stopAll/teardown path above (trigger motors at zero; the light bar
         // needs no parking - it is lit hardware state, not motion).
         enet.onRumbleTriggers = { controllerNumber, left, right in
+            guard ControllerFocus.allows(focus) else { return }
             events.rumbleTriggers(controller: controllerNumber, left: left, right: right)
         }
         enet.onSetRgbLed = { controllerNumber, red, green, blue in
+            guard ControllerFocus.allows(focus) else { return }
             events.setControllerLED(controller: controllerNumber, r: red, g: green, b: blue)
         }
         // Motion (0x5501) closes the loop the LI_CCAP_ACCEL/GYRO caps open:
@@ -257,8 +270,16 @@ extension NativeBackend {
         // the trio; ControllerMotion hops to main itself. streamActivated
         // arms the sampler's uplink - the same quiesce discipline as the
         // haptics actuator's streamActivated above.
-        ControllerMotion.shared.streamActivated(backend: self)
+        ControllerFocus.activate(focus) { [weak self] in
+            guard let self else { return }
+            ControllerMotion.shared.streamActivated(backend: self)
+            deferred.replay(events)
+        }
         enet.onSetMotionEvent = { controllerNumber, motionType, reportRateHz in
+            guard ControllerFocus.allows(focus) else {
+                deferred.motion(controllerNumber, motionType, reportRateHz)
+                return
+            }
             events.setMotionEventState(controller: controllerNumber,
                                        motionType: motionType, reportRateHz: reportRateHz)
         }
@@ -269,6 +290,10 @@ extension NativeBackend {
         // above - DualSenseHID resets the trigger blocks to "off" on the final
         // release(), so a stream ending mid-effect can't strand a stiff trigger.
         enet.onSetAdaptiveTriggers = { controllerNumber, eventFlags, typeLeft, typeRight, left, right in
+            guard ControllerFocus.allows(focus) else {
+                deferred.triggers(controllerNumber, eventFlags, typeLeft, typeRight, left, right)
+                return
+            }
             events.setAdaptiveTriggers(controller: controllerNumber, eventFlags: eventFlags,
                                        typeLeft: typeLeft, typeRight: typeRight,
                                        left: left, right: right)
@@ -518,5 +543,41 @@ extension NativeConnectionEvents {
         DualSenseHID.shared.setAdaptiveTriggers(eventFlags: eventFlags,
                                                 typeLeft: typeLeft, typeRight: typeRight,
                                                 left: left, right: right)
+    }
+}
+
+/// The host's motion-rate and adaptive-trigger requests that arrived while a
+/// stream sat in standby (ControllerFocus), latest per pad, replayed when it
+/// takes the pad.
+final class DeferredPadRequests: @unchecked Sendable {
+    private struct Triggers { let flags: UInt8; let typeLeft: UInt8; let typeRight: UInt8; let left: [UInt8]; let right: [UInt8] }
+    private let lock = NSLock()
+    private var motionRequests: [UInt32: (controller: UInt16, type: UInt8, rate: UInt16)] = [:]
+    private var triggerRequests: [UInt16: Triggers] = [:]
+
+    func motion(_ controller: UInt16, _ type: UInt8, _ rate: UInt16) {
+        lock.withLock { motionRequests[UInt32(controller) << 8 | UInt32(type)] = (controller, type, rate) }
+    }
+
+    func triggers(_ controller: UInt16, _ flags: UInt8, _ typeLeft: UInt8, _ typeRight: UInt8,
+                  _ left: [UInt8], _ right: [UInt8]) {
+        lock.withLock {
+            triggerRequests[controller] = Triggers(flags: flags, typeLeft: typeLeft, typeRight: typeRight,
+                                                   left: left, right: right)
+        }
+    }
+
+    func replay(_ events: NativeConnectionEvents) {
+        let (motion, triggers) = lock.withLock { () -> ([(controller: UInt16, type: UInt8, rate: UInt16)], [(UInt16, Triggers)]) in
+            defer { motionRequests.removeAll(); triggerRequests.removeAll() }
+            return (Array(motionRequests.values), triggerRequests.map { ($0.key, $0.value) })
+        }
+        for m in motion {
+            events.setMotionEventState(controller: m.controller, motionType: m.type, reportRateHz: m.rate)
+        }
+        for (controller, t) in triggers {
+            events.setAdaptiveTriggers(controller: controller, eventFlags: t.flags, typeLeft: t.typeLeft,
+                                       typeRight: t.typeRight, left: t.left, right: t.right)
+        }
     }
 }

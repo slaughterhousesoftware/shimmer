@@ -94,6 +94,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// gyro aiming see a pad that never moves. Under `lock`.
     private var motion: [UInt8: PadMotion] = [:]
     private var lastTriggerTypes: (UInt8, UInt8)?
+    /// ControllerFocus identity; and the console's last trigger effect while
+    /// in standby, applied at the cut-over.
+    private var focusID: ObjectIdentifier { ControllerFocus.id(self) }
+    private var deferredTriggerEffect: ChiakiTriggerEffectsEvent?
     /// Chat to the console; the Mute button toggles it (`lock`).
     private var microphone: PS5Microphone?
     private var muteHeld: Set<UInt8> = []
@@ -415,7 +419,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         chiaki_session_set_haptics_sink(session, &haptics)
 
         let mic = PS5Microphone(session: session, log: chiakiLog)
-        mic.onMutedChange = { muted in DualSenseHID.shared.setMicLED(lit: muted) }
+        let focus = focusID
+        mic.onMutedChange = { muted in
+            if ControllerFocus.allows(focus) { DualSenseHID.shared.setMicLED(lit: muted) }
+        }
         lock.withLock { microphone = mic }
 
         let startErr = chiaki_session_start(session)
@@ -457,7 +464,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             return (s, r, m)
         }
         // Capture stops, and the encoder's sender goes, before the session.
-        if mic != nil { DualSenseHID.shared.setMicLED(lit: nil) }
+        if mic != nil, ControllerFocus.allows(focusID) { DualSenseHID.shared.setMicLED(lit: nil) }
         mic?.close()
         if let session {
             chiaki_session_stop(session)
@@ -494,8 +501,11 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         if lock.withLock({ () -> Bool in defer { retainedHID = false }; return retainedHID }) {
             DualSenseHID.shared.release()
         }
-        ControllerHaptics.shared.stopAll(reason: "stream teardown")
-        ControllerMotion.shared.stopAll(reason: "stream teardown")
+        // Not if another stream has the pad now (a switch's old stream).
+        ControllerFocus.deactivate(focusID) {
+            ControllerHaptics.shared.stopAll(reason: "stream teardown")
+            ControllerMotion.shared.stopAll(reason: "stream teardown")
+        }
         video?.stop()
         video?.cleanup()
         audio?.cleanup()
@@ -577,26 +587,14 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 events?.connectionTerminated(code: isError ? Self.terminatedWithError : Self.terminatedCleanly)
             }
         case CHIAKI_EVENT_RUMBLE:
+            guard ControllerFocus.allows(focusID) else { break }
             handleRumble(left: event.rumble.left, right: event.rumble.right)
         case CHIAKI_EVENT_TRIGGER_EFFECTS:
-            // Trigger effects switched off in the console's settings, or here.
-            guard options.settings.adaptiveTriggers,
-                  lock.withLock({ triggerNibble }) != Self.intensityOff & 0xF0 else { break }
-            let effect = event.trigger_effects
-            let left = withUnsafeBytes(of: effect.left) { Array($0) }
-            let right = withUnsafeBytes(of: effect.right) { Array($0) }
-            let events = lock.withLock { self.events }
-            // 0x04 | 0x08: both trigger blocks (DS_EFFECT_RIGHT/LEFT_TRIGGER).
-            events?.setAdaptiveTriggers(controller: 0, eventFlags: 0x0C,
-                                        typeLeft: effect.type_left, typeRight: effect.type_right,
-                                        left: left, right: right)
-            let types = (effect.type_left, effect.type_right)
-            if lock.withLock({ () -> Bool in
-                defer { lastTriggerTypes = types }
-                return lastTriggerTypes.map { $0 != types } ?? true
-            }) {
-                Diag.info("PS5: adaptive triggers L=\(types.0) R=\(types.1)", Self.logCategory)
+            guard ControllerFocus.allows(focusID) else {
+                lock.withLock { deferredTriggerEffect = event.trigger_effects }
+                break
             }
+            applyTriggerEffect(event.trigger_effects)
         case CHIAKI_EVENT_MOTION_RESET:
             // A game re-centred motion: the pad's pose now is "level".
             lock.withLock {
@@ -611,7 +609,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             }
             _ = pushPad()
         case CHIAKI_EVENT_LED_COLOR:
-            guard options.settings.lightBar else { break }
+            guard options.settings.lightBar, ControllerFocus.allows(focusID) else { break }
             let (events, usbHaptics) = lock.withLock { (self.events, audioHaptics != nil) }
             let led = event.led_state
             // GameController's light setter would switch the pad's audio haptics off.
@@ -989,6 +987,27 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
     }
 
+    /// The console's adaptive-trigger effect → the pad (unless trigger effects
+    /// are switched off in the console's settings, or here).
+    private func applyTriggerEffect(_ effect: ChiakiTriggerEffectsEvent) {
+        guard options.settings.adaptiveTriggers,
+              lock.withLock({ triggerNibble }) != Self.intensityOff & 0xF0 else { return }
+        let left = withUnsafeBytes(of: effect.left) { Array($0) }
+        let right = withUnsafeBytes(of: effect.right) { Array($0) }
+        let events = lock.withLock { self.events }
+        // 0x04 | 0x08: both trigger blocks (DS_EFFECT_RIGHT/LEFT_TRIGGER).
+        events?.setAdaptiveTriggers(controller: 0, eventFlags: 0x0C,
+                                    typeLeft: effect.type_left, typeRight: effect.type_right,
+                                    left: left, right: right)
+        let types = (effect.type_left, effect.type_right)
+        if lock.withLock({ () -> Bool in
+            defer { lastTriggerTypes = types }
+            return lastTriggerTypes.map { $0 != types } ?? true
+        }) {
+            Diag.info("PS5: adaptive triggers L=\(types.0) R=\(types.1)", Self.logCategory)
+        }
+    }
+
     /// Off in chiaki's intensity enum; as a nibble pair, 0xF0 | 0x0F.
     static let intensityOff: UInt8 = 0xFF
 
@@ -1006,7 +1025,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             lock.withLock { self.events }?.setAdaptiveTriggers(controller: 0, eventFlags: 0x0C, typeLeft: 0x05,
                                                                typeRight: 0x05, left: off, right: off)
         }
-        DualSenseHID.shared.setIntensity(haptics: h, triggers: t)
+        if ControllerFocus.allows(focusID) { DualSenseHID.shared.setIntensity(haptics: h, triggers: t) }
         Diag.info("PS5: \(haptics ? "vibration" : "trigger effect") intensity \(intensity.rawValue)", Self.logCategory)
     }
 
@@ -1028,7 +1047,19 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// Same gates NativeBackend arms on connect: haptics actuator live, motion
     /// sampler uplinked to us, and motion reporting requested for pad 0 (the PS5
     /// reads motion whenever a game wants it; it never asks).
+    /// Through ControllerFocus: a PS5 stream connecting in standby behind a
+    /// live one (Switch PC in PiP) takes the pad only at the cut-over.
     private func armControllerFeedback() {
+        ControllerFocus.activate(focusID) { [self] in
+            armControllerFeedbackNow()
+            // What the console asked for while in standby.
+            let (h, t, effect) = lock.withLock { (hapticsNibble, triggerNibble, deferredTriggerEffect) }
+            DualSenseHID.shared.setIntensity(haptics: h, triggers: t)
+            if let effect { applyTriggerEffect(effect) }
+        }
+    }
+
+    private func armControllerFeedbackNow() {
         ControllerHaptics.shared.streamActivated()
         ControllerMotion.shared.streamActivated(backend: self)
         DualSenseHID.shared.retain()

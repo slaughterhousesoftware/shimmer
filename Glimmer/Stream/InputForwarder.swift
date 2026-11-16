@@ -363,7 +363,10 @@ public final class InputForwarder {
 
     /// False only in tests: skip GameController observers and the ready-edge
     /// rescans so a controller connected to the machine can't join the fixture.
-    let observesGamepads: Bool
+    /// False for a stream connecting in standby behind a live one (a PiP
+    /// switch): the pad stays with the live stream until the cut-over calls
+    /// `enableGamepads()`.
+    var observesGamepads: Bool
 
     /// Bitmask of slots currently in use; bit N == 1 means slot N is occupied.
     /// Sent to the host as `activeGamepadMask` on every controller event.

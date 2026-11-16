@@ -217,4 +217,40 @@ extension InputForwarder {
             }
         }
     }
+
+    // MARK: - Handing the pad between two streams (Switch PC in PiP)
+
+    /// The outgoing stream of a switch: let go of every pad NOW - before the
+    /// incoming stream attaches, since the haptics / motion / battery slots
+    /// are released by slot number - and stop watching for new ones. The
+    /// saved background-events flag goes to the incoming stream instead of
+    /// being restored here (`inheritBackgroundControllerFlag`).
+    func releaseGamepadsForHandover() {
+        raiseAllHeldInputs(reason: "stream handover")
+        if let observer = connectObserver { NotificationCenter.default.removeObserver(observer) }
+        if let observer = disconnectObserver { NotificationCenter.default.removeObserver(observer) }
+        connectObserver = nil
+        disconnectObserver = nil
+        observesGamepads = false
+        releaseAttachedControllers()
+    }
+
+    /// The incoming stream of a switch takes the pad: attach every connected
+    /// pad and announce it to the host now (the stream is already live).
+    func enableGamepads() {
+        guard !observesGamepads else { return }
+        observesGamepads = true
+        setupGamepadObservers()
+        if isReady { resyncControllers() }
+    }
+
+    /// Carry the outgoing stream's saved `shouldMonitorBackgroundEvents` (the
+    /// value from before ANY stream touched it), so the last stream to end
+    /// restores the user's setting rather than another stream's `true`.
+    func inheritBackgroundControllerFlag(from outgoing: InputForwarder) {
+        if let saved = outgoing.savedBackgroundControllerEvents {
+            savedBackgroundControllerEvents = saved
+            outgoing.savedBackgroundControllerEvents = nil
+        }
+    }
 }

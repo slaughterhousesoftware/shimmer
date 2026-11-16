@@ -48,6 +48,19 @@ extension StreamWindow {
 
     /// The first frame decoded: start PiP once the layer holds video.
     func finishLaunchIntoPictureInPicture() {
+        if standbyForHandover {
+            // A few frames in, so the decoder is past its first keyframe and
+            // steady when the PiP shows it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, !self.didClose, self.standbyForHandover else { return }
+                    let ready = self.onStandbyReady
+                    self.onStandbyReady = nil
+                    ready?()
+                }
+            }
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, !self.didClose, self.launchingIntoPiP else { return }

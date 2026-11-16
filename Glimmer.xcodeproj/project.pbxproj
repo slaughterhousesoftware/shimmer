@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		2E496D812D9F09AA3280EBEF /* PiPPanelFitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */; };
 		A8154BB6086F8BA46726C747 /* PiPSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94408D713B1FE163D04B1F2E /* PiPSource.swift */; };
+		29D48FFA909DE65C55507C4F /* StreamSession+Handover.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBDB1B8178185A50A1D4EBB9 /* StreamSession+Handover.swift */; };
+		205BA52B16D9335009F30014 /* ControllerFocus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C537F7434A293085450ED0F /* ControllerFocus.swift */; };
 		C55026FC886CAF4D2C25D928 /* PiPRateProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19E246B19BC719FCF2CB0DB6 /* PiPRateProbe.swift */; };
 		3A97156B5C9DE953072FCAE2 /* PictureInPictureStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4247DAF6486055EC31B1F96 /* PictureInPictureStage.swift */; };
 		47F8C25731614FFBACD38F55 /* StreamWindow+LaunchIntoPiP.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C8A1AF11F8728E03E76125 /* StreamWindow+LaunchIntoPiP.swift */; };
@@ -171,6 +173,7 @@
 		A1C0DE000910000000000000 /* DebugAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000920000000000000 /* DebugAutomation.swift */; };
 		D2000097 /* AppModel+Defaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000096 /* AppModel+Defaults.swift */; };
 		D1000060 /* AppModel+Streaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100005F /* AppModel+Streaming.swift */; };
+		2274BC14A91D86A74D6B569E /* AppModel+StreamHandover.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8B2E559CFDDB6E3827997C7 /* AppModel+StreamHandover.swift */; };
 		A1C0DESTRMAUD10000000000 /* AppModel+StreamAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DESTRMAUD20000000000 /* AppModel+StreamAudio.swift */; };
 		A1C0DEMBBATGLY1000000000 /* MenuBarBatteryGlyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEMBBATGLY2000000000 /* MenuBarBatteryGlyph.swift */; };
 		A1C0DEMBCTRL100000000000 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEMBCTRL200000000000 /* MenuBarController.swift */; };
@@ -320,6 +323,7 @@
 		D20000F1 /* ControllerArrivalOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000F0 /* ControllerArrivalOrderTests.swift */; };
 		D20000F3 /* DatagramSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000F2 /* DatagramSourceTests.swift */; };
 		A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000320000000000000 /* PictureInPictureTests.swift */; };
+		71F9D0F9B22B3659EF407CFE /* ControllerFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543FD190D081183C172632CC /* ControllerFocusTests.swift */; };
 		A1C0DEAV1SEQ100000000000 /* AV1SequenceHeaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEAV1SEQ200000000000 /* AV1SequenceHeaderTests.swift */; };
 		A1C0DEAUDCEL100000000000 /* AudioCushionCeilingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEAUDCEL200000000000 /* AudioCushionCeilingTests.swift */; };
 		A1C0DEADRSMP100000000000 /* AudioResamplerHoldTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEADRSMP200000000000 /* AudioResamplerHoldTests.swift */; };
@@ -370,6 +374,8 @@
 /* Begin PBXFileReference section */
 		E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPPanelFitter.swift; sourceTree = "<group>"; };
 		94408D713B1FE163D04B1F2E /* PiPSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPSource.swift; sourceTree = "<group>"; };
+		FBDB1B8178185A50A1D4EBB9 /* StreamSession+Handover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/StreamSession+Handover.swift"; sourceTree = "<group>"; };
+		9C537F7434A293085450ED0F /* ControllerFocus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/ControllerFocus.swift; sourceTree = "<group>"; };
 		19E246B19BC719FCF2CB0DB6 /* PiPRateProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPRateProbe.swift; sourceTree = "<group>"; };
 		C4247DAF6486055EC31B1F96 /* PictureInPictureStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PictureInPictureStage.swift; sourceTree = "<group>"; };
 		F5C8A1AF11F8728E03E76125 /* StreamWindow+LaunchIntoPiP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/StreamWindow+LaunchIntoPiP.swift"; sourceTree = "<group>"; };
@@ -537,6 +543,7 @@
 		A1C0DE000920000000000000 /* DebugAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DebugAutomation.swift"; sourceTree = "<group>"; };
 		D2000096 /* AppModel+Defaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Defaults.swift"; sourceTree = "<group>"; };
 		D100005F /* AppModel+Streaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Streaming.swift"; sourceTree = "<group>"; };
+		F8B2E559CFDDB6E3827997C7 /* AppModel+StreamHandover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+StreamHandover.swift"; sourceTree = "<group>"; };
 		A1C0DESTRMAUD20000000000 /* AppModel+StreamAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+StreamAudio.swift"; sourceTree = "<group>"; };
 		A1C0DEMBBATGLY2000000000 /* MenuBarBatteryGlyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarBatteryGlyph.swift"; sourceTree = "<group>"; };
 		A1C0DEMBCTRL200000000000 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarController.swift"; sourceTree = "<group>"; };
@@ -687,6 +694,7 @@
 		D20000F0 /* ControllerArrivalOrderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerArrivalOrderTests.swift; sourceTree = "<group>"; };
 		D20000F2 /* DatagramSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatagramSourceTests.swift; sourceTree = "<group>"; };
 		A1C0DE000320000000000000 /* PictureInPictureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PictureInPictureTests.swift"; sourceTree = "<group>"; };
+		543FD190D081183C172632CC /* ControllerFocusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ControllerFocusTests.swift"; sourceTree = "<group>"; };
 		A1C0DEAV1SEQ200000000000 /* AV1SequenceHeaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AV1SequenceHeaderTests.swift; sourceTree = "<group>"; };
 		A1C0DEAUDCEL200000000000 /* AudioCushionCeilingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioCushionCeilingTests.swift"; sourceTree = "<group>"; };
 		A1C0DEADRSMP200000000000 /* AudioResamplerHoldTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioResamplerHoldTests.swift"; sourceTree = "<group>"; };
@@ -786,6 +794,8 @@
 			children = (
 				E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */,
 				94408D713B1FE163D04B1F2E /* PiPSource.swift */,
+				FBDB1B8178185A50A1D4EBB9 /* StreamSession+Handover.swift */,
+				9C537F7434A293085450ED0F /* ControllerFocus.swift */,
 				19E246B19BC719FCF2CB0DB6 /* PiPRateProbe.swift */,
 				C4247DAF6486055EC31B1F96 /* PictureInPictureStage.swift */,
 				F5C8A1AF11F8728E03E76125 /* StreamWindow+LaunchIntoPiP.swift */,
@@ -905,6 +915,7 @@
 				E20000A3 /* AppModel+Power.swift */,
 				E20000A1 /* LunaPower.swift */,
 				D100005F /* AppModel+Streaming.swift */,
+				F8B2E559CFDDB6E3827997C7 /* AppModel+StreamHandover.swift */,
 				A1C0DESTRMAUD20000000000 /* AppModel+StreamAudio.swift */,
 				A1C0DEMBBATGLY2000000000 /* MenuBarBatteryGlyph.swift */,
 				A1C0DEMBCTRL200000000000 /* MenuBarController.swift */,
@@ -1110,6 +1121,7 @@
 				D20000F0 /* ControllerArrivalOrderTests.swift */,
 				D20000F2 /* DatagramSourceTests.swift */,
 				A1C0DE000320000000000000 /* PictureInPictureTests.swift */,
+				543FD190D081183C172632CC /* ControllerFocusTests.swift */,
 				A1C0DEAV1SEQ200000000000 /* AV1SequenceHeaderTests.swift */,
 				A1C0DEAUDCEL200000000000 /* AudioCushionCeilingTests.swift */,
 				A1C0DEADRSMP200000000000 /* AudioResamplerHoldTests.swift */,
@@ -1258,6 +1270,8 @@
 			files = (
 				2E496D812D9F09AA3280EBEF /* PiPPanelFitter.swift in Sources */,
 				A8154BB6086F8BA46726C747 /* PiPSource.swift in Sources */,
+				29D48FFA909DE65C55507C4F /* StreamSession+Handover.swift in Sources */,
+				205BA52B16D9335009F30014 /* ControllerFocus.swift in Sources */,
 				C55026FC886CAF4D2C25D928 /* PiPRateProbe.swift in Sources */,
 				3A97156B5C9DE953072FCAE2 /* PictureInPictureStage.swift in Sources */,
 				47F8C25731614FFBACD38F55 /* StreamWindow+LaunchIntoPiP.swift in Sources */,
@@ -1380,6 +1394,7 @@
 				E20000A4 /* AppModel+Power.swift in Sources */,
 				E20000A2 /* LunaPower.swift in Sources */,
 				D1000060 /* AppModel+Streaming.swift in Sources */,
+				2274BC14A91D86A74D6B569E /* AppModel+StreamHandover.swift in Sources */,
 				A1C0DESTRMAUD10000000000 /* AppModel+StreamAudio.swift in Sources */,
 				A1C0DEMBBATGLY1000000000 /* MenuBarBatteryGlyph.swift in Sources */,
 				A1C0DEMBCTRL100000000000 /* MenuBarController.swift in Sources */,
@@ -1572,6 +1587,7 @@
 				D20000F1 /* ControllerArrivalOrderTests.swift in Sources */,
 				D20000F3 /* DatagramSourceTests.swift in Sources */,
 				A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */,
+				71F9D0F9B22B3659EF407CFE /* ControllerFocusTests.swift in Sources */,
 				A1C0DEAV1SEQ100000000000 /* AV1SequenceHeaderTests.swift in Sources */,
 				A1C0DEAUDCEL100000000000 /* AudioCushionCeilingTests.swift in Sources */,
 				A1C0DEADRSMP100000000000 /* AudioResamplerHoldTests.swift in Sources */,

@@ -286,9 +286,16 @@ extension VideoDecoder {
     @discardableResult
     nonisolated func presentFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
         guard isStreaming else { return false }
-        let (mirror, exclusive) = mirrorTarget
+        // The PiP enqueue happens under the mirror lock, so once
+        // `setMirrorLayer(nil)` returns no frame of this stream can still land
+        // on the PiP layer - the Switch PC cut-over flushes it next and hands
+        // it to the other stream.
+        mirrorLock.lock()
+        let mirror = _mirrorLayer
+        let exclusive = _mirrorExclusive && mirror != nil
         var presented = false
         if let mirror { presented = presentToMirror(mirror, sampleBuffer) }
+        mirrorLock.unlock()
         if !exclusive { presented = presentToMain(sampleBuffer) }
         guard presented else { return false }
         recordPresented(sampleBuffer)
