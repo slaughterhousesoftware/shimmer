@@ -1,3 +1,5 @@
+#include <execinfo.h>
+#include <signal.h>
 // ps5ctl - developer tool for Shimmer's PS5 Remote Play work, on chiaki-ng's libchiaki.
 //
 //   ps5ctl status   <ip>                     discovery probe (power state, running app)
@@ -1056,6 +1058,13 @@ static int cmd_drive(int argc, char **argv)
 		else printf("error unknown command: %s\n", line);
 		fflush(stdout);
 	}
+	// Summary of the session, before teardown: what arrived, on which Takion version.
+	fprintf(stderr, "** summary takion=%u jitter=%.2fms frames=%ld lost=%ld MB=%.1f audio=%ld audio_gaps>30ms=%ld haptic=%ld haptic_active=%ld triggers=%ld rumble=%ld\n",
+		(unsigned)session.stream_connection.takion.version, session.stream_connection.takion.ext_rx_jitter_us / 1000.0,
+		atomic_load(&st.frames), atomic_load(&st.lost), atomic_load(&st.bytes) / 1e6,
+		atomic_load(&st.audio_frames), atomic_load(&st.audio_gaps_over_30ms),
+		atomic_load(&st.haptic_frames), atomic_load(&st.haptic_active_frames),
+		atomic_load(&st.trigger_events), atomic_load(&st.rumble_events));
 	chiaki_session_stop(&session);
 	chiaki_session_join(&session);
 	chiaki_session_fini(&session);
@@ -1065,8 +1074,28 @@ static int cmd_drive(int argc, char **argv)
 	return 0;
 }
 
+// A crash prints its stack: lldb can't attach here and no report is written for a CLI tool.
+static void crash_handler(int sig)
+{
+	void *frames[64];
+	int n = backtrace(frames, 64);
+	fprintf(stderr, "** crashed with signal %d\n", sig);
+	backtrace_symbols_fd(frames, n, 2);
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
 int main(int argc, char **argv)
 {
+	static uint8_t alt_stack[256 * 1024];
+	stack_t ss = { .ss_sp = alt_stack, .ss_size = sizeof(alt_stack), .ss_flags = 0 };
+	sigaltstack(&ss, NULL);
+	struct sigaction sa = { 0 };
+	sa.sa_handler = crash_handler;
+	sa.sa_flags = SA_ONSTACK;
+	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGBUS, &sa, NULL);
+	sigaction(SIGABRT, &sa, NULL);
 	if(getenv("PS5CTL_VERBOSE"))
 		g_verbose = true;
 	if(getenv("PS5CTL_REORDER_US"))

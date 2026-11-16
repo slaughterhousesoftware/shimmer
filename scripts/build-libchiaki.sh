@@ -121,6 +121,12 @@ done
 
 # Any public header changing (a patch, config.h) rebuilds everything.
 NEWEST_HEADER=($OUT/include/chiaki/**/*.h(om[1]))
+# A source that reaches a public header by relative path ("../include/...")
+# bypasses $OUT/include and compiles against the unpatched layouts - silent
+# memory corruption (videoreceiver.c did, until patch 0002). Refuse to build.
+bad=$(grep -l '#include "\.\./include/' $FILES 2>/dev/null || true)
+[[ -z $bad ]] || { echo "libchiaki: relative public-header include in: $bad" >&2; exit 1; }
+
 OBJS=()
 pids=()
 for f in $FILES; do

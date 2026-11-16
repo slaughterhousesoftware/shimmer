@@ -1084,3 +1084,16 @@ index abc3ef2..6da8d1d 100644
  }
  
  CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_v7_av_packet_format_header(uint8_t *buf, size_t buf_size, size_t *header_size_out, ChiakiTakionAVPacket *packet)
+diff --git a/lib/src/videoreceiver.c b/lib/src/videoreceiver.c
+index c20c9b6..fbe6b98 100644
+--- a/lib/src/videoreceiver.c
++++ b/lib/src/videoreceiver.c
+@@ -2,7 +2,7 @@
+ 
+ #include <chiaki/videoreceiver.h>
+ #include <chiaki/time.h>
+-#include "../include/chiaki/session.h"
++#include <chiaki/session.h> // Shimmer: through the include path, which carries the patched headers
+ 
+ #include <string.h>
+ 
