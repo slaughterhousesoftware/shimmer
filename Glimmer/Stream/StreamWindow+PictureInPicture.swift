@@ -203,9 +203,10 @@ extension StreamWindow {
             self.publishPresentSuppression()
             if self.pipStartIsLaunch { self.showWindowAfterFailedPiPLaunch("AVKit refused to start") }
         }
-        pictureInPicture.onRestoreRequested = { [weak self] in
-            // The PiP window's return button.
-            self?.returnFromPictureInPicture(fromPanel: true)
+        pictureInPicture.onRestoreRequested = { [weak self] ready in
+            // The PiP window's return button: AVKit flies back on `ready`.
+            guard let self else { ready(); return }
+            self.returnFromPictureInPicture(fromPanel: true, ready: ready)
         }
         pictureInPicture.onDidStop = { [weak self] restoreRequested in
             guard let self, !self.didClose else { return }
@@ -234,65 +235,99 @@ extension StreamWindow {
         pipSourceMode = false
     }
 
-    /// Bring the stream window back from PiP - identical to the launcher's
-    /// "Back to stream" (`StreamSession.resumeWindow()`).
+    /// Bring the stream window back from PiP - the PiP window's return control,
+    /// the menu bar's "Back to", the launcher.
     ///
-    /// `fromPanel`: the PiP window's own return control, which AVKit is
-    /// already closing. Any other caller (the menu bar's "Back to") closes it
-    /// here: macOS drops activation while the PiP panel is alive, and nothing
-    /// else would close it until activation had landed.
-    func returnFromPictureInPicture(fromPanel: Bool = false) {
-        guard !didClose else { return }
+    /// The window comes forward FIRST - Shimmer active, the user switched to
+    /// the desktop the window lives on - and only then does the picture fly
+    /// back, into a window that is on screen and already live. (Earlier the
+    /// PiP flew to a window in a space the user wasn't looking at, and
+    /// vanished: after the PiP's return control macOS refused activation for
+    /// the full 3 s, measured 2026-11-16 with T3 Code full screen.)
+    ///
+    /// `fromPanel`: AVKit is already stopping; `ready` lets it finish (fly
+    /// back) - see StreamPictureInPicture.onRestoreRequested.
+    func returnFromPictureInPicture(fromPanel: Bool = false, ready: (@MainActor () -> Void)? = nil) {
+        guard !didClose else { ready?(); return }
         PiPTrace.log("returnFromPictureInPicture fromPanel=\(fromPanel) backgrounded=\(isBackgrounded)", window)
-        // Headless during PiP: a window can't come forward from an accessory app.
         Self.becomeRegularApp()
         pipReturnInFlight = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
             MainActor.assumeIsolated { self?.pipReturnInFlight = false }
         }
-        // The window takes the frames again NOW, so it is live - not a frozen
-        // last frame - when the PiP lands on it. (didStop repeats this; it is
-        // idempotent.)
+        // The window takes the frames again now, so it is live, not a frozen
+        // last frame, when the picture lands on it. (didStop repeats this.)
         onPictureInPictureChanged?(false)
-        // AVKit's fly-back ends on the source layer's rect: put the source
-        // exactly over the window's picture, so the PiP flies into the window
-        // it is returning to and hands over to it in place.
-        pipSource.place(at: pipReturnTarget())
+        Self.forceActivate()
         if displayMode == .window {
-            // Activation is dropped while the PiP panel is alive and only
-            // sticks once re-requested after it is gone, and Stage Manager
-            // files an inactive app's window into the strip. So: the window
-            // comes back now on a floating, unmanaged shape (Stage Manager
-            // leaves those alone), and takes its normal shape - key, on the
-            // active app's own stage - once activation is real.
+            // A floating, unmanaged shape until the app is active: Stage
+            // Manager files an inactive app's window into the strip. Not on
+            // every space - that kept macOS from switching to its desktop.
             if savedShapeBeforePiP == nil { savedShapeBeforePiP = (window.level, window.collectionBehavior) }
-            // NOT on every space: such a window still can't show in another
-            // app's full-screen space, and because it counts as "here" macOS
-            // never switches to the desktop where it does show - the PiP
-            // landed mid-screen on nothing (2026-11-16, T3 Code full screen).
-            // On its own desktop, activation takes the user there.
             window.collectionBehavior = [.transient, .ignoresCycle]
             window.level = .floating
-            window.alphaValue = 1
-            window.orderFrontRegardless()
-            isBackgrounded = false
-            publishPresentSuppression()
-            onBackgroundedChanged?(false)
-            if !fromPanel, isPictureInPictureActive || pictureInPicturePending {
-                pictureInPicture.stop()
+        }
+        window.alphaValue = 1
+        window.orderFrontRegardless()
+        isBackgrounded = false
+        publishPresentSuppression()
+        onBackgroundedChanged?(false)
+        let started = Date()
+        awaitWindowForward(attempt: 0) { [weak self] in
+            guard let self else { ready?(); return }
+            Diag.info("PiP return: window forward=\(NSApp.isActive && self.window.isOnActiveSpace) "
+                + "after \(Int(Date().timeIntervalSince(started) * 1000)) ms", "Stream.PiP")
+            // AVKit's fly-back ends on the source layer's rect: exactly over
+            // the window's picture, now on the screen the user is looking at.
+            self.pipSource.place(at: self.pipReturnTarget())
+            if self.displayMode == .window {
+                self.presentReturnedWindow()
+            } else {
+                self.window.makeKeyAndOrderFront(nil)
+                self.reengageForeground()
+                self.reassertActivation(attempt: 0)
             }
-            NSApp.activate()
-            awaitActivationThenPresent(attempt: 0)
+            // The PiP flies back now: AVKit's own return finishes, or ours
+            // (menu bar) stops it (reengageForeground; a no-op when stopping).
+            ready?()
+            if !fromPanel, self.isPictureInPictureActive || self.pictureInPicturePending {
+                self.pictureInPicture.stop()
+            }
+        }
+    }
+
+    /// Wait (up to ~1.5 s) until Shimmer is active and the window is in the
+    /// space on screen, re-asking every 30 ms; then `then`. On timeout carry
+    /// on anyway - a window the user can find beats a return that never ends.
+    func awaitWindowForward(attempt: Int, then: @escaping @MainActor () -> Void) {
+        guard !didClose else { then(); return }
+        if (NSApp.isActive && window.isOnActiveSpace) || attempt >= 50 {
+            then()
             return
         }
-        // Fullscreen cover: above the menu bar, stationary - Stage Manager
-        // doesn't manage it.
+        if attempt == 10 { Self.forceActivate() }   // once more, if the first was early
         NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-        reengageForeground()
-        // An activate() in the same turn as the accessory -> regular flip can
-        // be dropped; keep asking until it lands.
-        reassertActivation(attempt: 0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            MainActor.assumeIsolated { self?.awaitWindowForward(attempt: attempt + 1, then: then) }
+        }
+    }
+
+    /// Come forward without a fresh user click: cooperative activation
+    /// ignores `NSApp.activate()` then (after the PiP's return control it was
+    /// refused for 3 s), but a LaunchServices open of the running app is
+    /// honoured - measured: active and on the window's space within 0.3 s,
+    /// over a full-screen app. The reopen that sends is ignored
+    /// (`AppDelegate.suppressReopenUntil`).
+    static func forceActivate() {
+        NSApp.activate()
+        AppDelegate.suppressReopenUntil = Date().addingTimeInterval(2)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+        configuration.promptsUserIfNeeded = false
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
+            if let error { Diag.warn("PiP return: LaunchServices activation failed: \(error.localizedDescription)", "Stream.PiP") }
+        }
     }
 
     /// Re-request activation (and key) every 50 ms until the app is active,
@@ -311,25 +346,6 @@ extension StreamWindow {
                 self.window.makeKeyAndOrderFront(nil)
                 self.reassertActivation(attempt: attempt + 1)
             }
-        }
-    }
-
-    /// Poll for genuine activation (up to ~3 s, re-requesting every 50 ms -
-    /// early requests are refused while the panel winds down), then present.
-    /// On timeout present anyway: an on-screen window the user can click
-    /// beats one that never comes back.
-    func awaitActivationThenPresent(attempt: Int) {
-        guard !didClose else { return }
-        if NSApp.isActive || attempt >= 60 {
-            PiPTrace.log("awaitActivation done attempt=\(attempt)", window)
-            Diag.info("PiP return: app \(NSApp.isActive ? "active" : "NOT active") after \(attempt * 50) ms; "
-                + "window on the active space=\(window.isOnActiveSpace)", "Stream.PiP")
-            presentReturnedWindow()
-            return
-        }
-        NSApp.activate()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            MainActor.assumeIsolated { self?.awaitActivationThenPresent(attempt: attempt + 1) }
         }
     }
 

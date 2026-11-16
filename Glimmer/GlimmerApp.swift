@@ -366,7 +366,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Dock-click handler. Fires on Dock-icon click, `open -a Glimmer`, and
     /// Launchpad reopen - NOT on every app activation (Cmd-Tab, in-app
     /// window clicks).
+    /// `StreamWindow.forceActivate()` opens Shimmer through LaunchServices to
+    /// come forward; the reopen that sends is ours, not the user's.
+    @MainActor static var suppressReopenUntil: Date?
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if let until = Self.suppressReopenUntil, until > Date() { return false }
         if model?.isStreaming == true {
             model?.resumeStreamWindow()
             return false

@@ -75,7 +75,11 @@ public final class StreamPictureInPicture: NSObject {
     /// (the window should come back), false for the × close button (the
     /// stream stays hidden).
     public var onDidStop: (@MainActor (_ restoreRequested: Bool) -> Void)?
-    public var onRestoreRequested: (@MainActor () -> Void)?
+    /// The user asked to come back (the PiP window's return control). Call
+    /// `ready` once the window is on screen where the user is looking: AVKit
+    /// waits for it before flying the picture back, so the animation lands
+    /// in a visible window. A 2 s backstop answers if the owner never does.
+    public var onRestoreRequested: (@MainActor (_ ready: @escaping @MainActor () -> Void) -> Void)?
     public var onPauseChanged: (@MainActor (Bool) -> Void)?
     public var onFailedToStart: (@MainActor (Error) -> Void)?
 
@@ -253,20 +257,32 @@ extension StreamPictureInPicture: AVPictureInPictureControllerDelegate {
         _ pictureInPictureController: AVPictureInPictureController,
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
     ) {
+        // The handler is not Sendable; it is only ever called on main.
+        let box = RestoreCompletion(completionHandler)
         onMain { [self] in
             isStopping = true
             disarmStopWatchdog()
             // AVKit asks for restore on EVERY stop, including ours. Only a stop
             // we did not initiate is the user asking to come back.
-            if !stoppingProgrammatically {
-                restoreRequested = true
-                onRestoreRequested?()
+            guard !stoppingProgrammatically, let onRestoreRequested else {
+                box.finish()
+                return
             }
+            restoreRequested = true
+            onRestoreRequested { box.finish() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { box.finish() }
         }
-        // AVKit calls us on the main thread, so the block above ran inline and
-        // the window is already coming back by the time we answer. The handler
-        // is not Sendable - keep it out of the actor closure.
-        completionHandler(true)
+    }
+
+    /// AVKit's restore completion, answered exactly once.
+    private final class RestoreCompletion: @unchecked Sendable {
+        private var handler: ((Bool) -> Void)?
+        init(_ handler: @escaping (Bool) -> Void) { self.handler = handler }
+        func finish() {
+            guard let handler else { return }
+            self.handler = nil
+            handler(true)
+        }
     }
 
     public nonisolated func pictureInPictureControllerDidStopPictureInPicture(
