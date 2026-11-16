@@ -21,21 +21,22 @@ struct PlayStationSettingsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
             SettingsField("Resolution") {
-                Picker("", selection: $settings.height) {
-                    Text("1920 × 1080 (1080p)").tag(1080)
-                    Text("1280 × 720 (720p)").tag(720)
+                HStack(spacing: 8) {
+                    Picker("", selection: $settings.height) {
+                        Text("1920 × 1080").tag(1080)
+                        Text("1280 × 720").tag(720)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel("Resolution")
+                    Picker("", selection: $settings.fps) {
+                        Text("60 Hz").tag(60)
+                        Text("30 Hz").tag(30)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel("Frame rate")
                 }
-                .labelsHidden()
-                .settingsPopup()
-            }
-
-            SettingsField("Frame rate") {
-                Picker("", selection: $settings.fps) {
-                    Text("60 Hz").tag(60)
-                    Text("30 Hz").tag(30)
-                }
-                .labelsHidden()
-                .settingsPopup()
             }
 
             SettingsField("Bitrate") {

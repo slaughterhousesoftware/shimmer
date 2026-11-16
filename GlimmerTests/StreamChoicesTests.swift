@@ -22,13 +22,11 @@ struct StreamChoicesTests {
         #expect(ResolutionChoice.from(preset: .custom, customWidth: 3024, customHeight: 1964) == .custom)
     }
 
-    @Test func pickerListsEveryStandardSizeBetweenMatchAndCustom() {
-        #expect(ResolutionChoice.all.first == .matchDisplay)
-        #expect(ResolutionChoice.all.last == .custom)
-        // Match display, then every standard size, then Custom. HiDPI was
-        // removed, so there is exactly one leading row before the standards.
-        #expect(ResolutionChoice.all.count == 1 + CommonResolution.allCases.count + 1)
+    /// Standard sizes only since 2026-11-16 (StandardResolutionTests).
+    @Test func pickerHasNoMatchDisplayHiDPIOrCustom() {
+        #expect(!ResolutionChoice.all.contains(.matchDisplay))
         #expect(!ResolutionChoice.all.contains(.hidpi))
+        #expect(!ResolutionChoice.all.contains(.custom))
     }
 
     // MARK: Frame rate picker

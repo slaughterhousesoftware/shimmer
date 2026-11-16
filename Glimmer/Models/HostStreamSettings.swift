@@ -26,6 +26,27 @@ struct HostStreamSettings: Codable, Equatable, Sendable {
         customFPS: 60, bitrateAuto: true, manualBitrateMbps: 20, customHDR: true,
         quitAppWhenStreamEnds: false)
 
+    /// These settings on a standard size: a Match display, HiDPI or
+    /// non-standard Custom size (all gone from the picker) becomes the
+    /// standard size nearest what it streamed at. `display` / `hidpi` are
+    /// what those two meant on this Mac.
+    func withStandardResolution(display: (Int, Int), hidpi: (Int, Int)) -> HostStreamSettings {
+        let size: (Int, Int)
+        switch QualityPreset(rawValue: qualityPreset) ?? .defaultPreset {
+        case .matchDisplay: size = display
+        case .hidpi: size = hidpi
+        case .custom:
+            if CommonResolution.matching(width: customWidth, height: customHeight) != nil { return self }
+            size = (customWidth, customHeight)
+        }
+        let standard = CommonResolution.nearest(width: size.0, height: size.1)
+        var fixed = self
+        fixed.qualityPreset = QualityPreset.custom.rawValue
+        fixed.customWidth = standard.width
+        fixed.customHeight = standard.height
+        return fixed
+    }
+
     static func storageKey(for hostID: String) -> String { "glimmer.streamSettings.\(hostID)" }
 
     static func load(hostID: String, defaults: UserDefaults = .standard) -> HostStreamSettings? {

@@ -10,8 +10,8 @@
 
 import Foundation
 
-/// The standard sizes the Resolution picker offers between "Match display"
-/// and "Custom…".
+/// The sizes the Resolution picker offers - the only ones (no Match display,
+/// HiDPI or Custom since 2026-11-16).
 enum CommonResolution: CaseIterable, Hashable {
     case hd720, hd1080, qhd1440, uhd4K
 
@@ -40,6 +40,16 @@ enum CommonResolution: CaseIterable, Hashable {
         }
     }
 
+    /// The standard size closest to `width` x `height` by pixel count (a tie
+    /// goes to the larger): what a PC saved on a removed choice now streams.
+    static func nearest(width: Int, height: Int) -> CommonResolution {
+        let pixels = width * height
+        return allCases.min { a, b in
+            let da = abs(a.width * a.height - pixels), db = abs(b.width * b.height - pixels)
+            return da != db ? da < db : a.width > b.width
+        } ?? .hd1080
+    }
+
     /// The standard size with exactly these dimensions, if any.
     static func matching(width: Int, height: Int) -> CommonResolution? {
         allCases.first { $0.width == width && $0.height == height }
@@ -55,11 +65,12 @@ enum ResolutionChoice: Hashable {
     case standard(CommonResolution)
     case custom
 
-    /// Every row the picker lists, in order. HiDPI was removed - it upscaled
-    /// the panel to a virtual "Looks like" size and confused more than it
-    /// helped; Match display plus the explicit standard sizes cover it.
-    static let all: [ResolutionChoice] =
-        [.matchDisplay] + CommonResolution.allCases.map { .standard($0) } + [.custom]
+    /// Every row the picker lists, in order: the standard sizes. Match
+    /// display, HiDPI and Custom were removed (2026-11-16) - a size you can
+    /// read is clearer than one that depends on the panel; a PC saved on one
+    /// of them moves to the nearest standard size when it loads
+    /// (HostStreamSettings.withStandardResolution).
+    static let all: [ResolutionChoice] = CommonResolution.allCases.map { .standard($0) }
 
     /// The choice a (preset, width, height) triple reads as.
     static func from(preset: QualityPreset, customWidth: Int, customHeight: Int) -> ResolutionChoice {

@@ -45,12 +45,14 @@ extension AppModel {
     /// seen before starts from the defaults).
     func applyStreamSettings(forSelected host: Host) {
         guard !host.isPlayStation else { return }
-        if let saved = HostStreamSettings.load(hostID: host.id) {
-            loadHostStreamSettings(saved)
-        } else {
-            loadHostStreamSettings(.defaults)
-            HostStreamSettings.defaults.save(hostID: host.id)
-        }
+        let saved = HostStreamSettings.load(hostID: host.id)
+        let display = smartDefaultsForCurrentDisplay(), hidpi = hidpiDefaultsForCurrentDisplay()
+        // Resolution offers standard sizes only: a PC saved on a removed
+        // choice moves to the nearest one, and keeps it.
+        let settings = (saved ?? .defaults).withStandardResolution(
+            display: (display.width, display.height), hidpi: (hidpi.width, hidpi.height))
+        loadHostStreamSettings(settings)
+        if settings != saved { settings.save(hostID: host.id) }
     }
 
     /// A stream is starting on `host`: make it the selected PC, so the live

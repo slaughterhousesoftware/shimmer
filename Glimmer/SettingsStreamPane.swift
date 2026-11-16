@@ -18,24 +18,15 @@ import SwiftUI
 struct StreamPane: View {
     @Environment(AppModel.self) private var model
 
-    /// "Custom…" was picked while the Custom numbers still equal a standard
-    /// size; without this the picker would snap back to that size's row and the
-    /// fields would never appear. Cleared by any other pick.
-    @State private var customResolutionEntry = false
+    /// "Custom…" was picked while the Custom number still equals a standard
+    /// rate; without this the picker would snap back to that rate's row and
+    /// the field would never appear. Cleared by any other pick.
     @State private var customFrameRateEntry = false
 
     // MARK: Picker bindings
 
     private var resolutionSelection: Binding<ResolutionChoice> {
-        Binding(
-            get: {
-                if customResolutionEntry, model.qualityPreset == .custom { return .custom }
-                return model.resolutionChoice
-            },
-            set: { choice in
-                customResolutionEntry = (choice == .custom)
-                model.apply(choice)
-            })
+        Binding(get: { model.resolutionChoice }, set: { model.apply($0) })
     }
 
     private var frameRateSelection: Binding<FrameRateChoice> {
@@ -61,20 +52,10 @@ struct StreamPane: View {
     // MARK: Labels
 
     private func resolutionLabel(_ choice: ResolutionChoice) -> String {
-        _ = model.displayInfoRevision
         switch choice {
-        case .matchDisplay:
-            let d = model.smartDefaultsForCurrentDisplay()
-            return "Match display (\(d.width) × \(d.height))"
-        case .hidpi:
-            let d = model.hidpiDefaultsForCurrentDisplay()
-            return "HiDPI (\(d.width) × \(d.height))"
-        case .standard(let size):
-            // Parentheses, not a middle dot - matches the "Match display (5120 ×
-            // 2880)" row above it.
-            return "\(size.width) × \(size.height) (\(size.shortLabel))"
-        case .custom:
-            return "Custom…"
+        case .standard(let size): return "\(size.width) × \(size.height)"
+        // Not offered; a PC saved on one moves to a standard size on load.
+        case .matchDisplay, .hidpi, .custom: return ""
         }
     }
 
@@ -87,13 +68,6 @@ struct StreamPane: View {
 
     // MARK: Clamps (run on EVERY commit, focus loss included)
 
-    private func clampCustomResolution() {
-        let width = StreamSizeBounds.clampWidth(model.customWidth)
-        if width != model.customWidth { model.customWidth = width }
-        let height = StreamSizeBounds.clampHeight(model.customHeight)
-        if height != model.customHeight { model.customHeight = height }
-    }
-
     private func clampCustomFPS() {
         let fps = StreamSizeBounds.clampFPS(model.customFPS)
         if fps != model.customFPS { model.customFPS = fps }
@@ -102,35 +76,26 @@ struct StreamPane: View {
     var body: some View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
+            // Size and rate on one row, as the PS5's page has them.
             SettingsField("Resolution") {
-                Picker("", selection: resolutionSelection) {
-                    ForEach(ResolutionChoice.all, id: \.self) { choice in
-                        Text(resolutionLabel(choice)).tag(choice)
+                HStack(spacing: 8) {
+                    Picker("", selection: resolutionSelection) {
+                        ForEach(ResolutionChoice.all, id: \.self) { choice in
+                            Text(resolutionLabel(choice)).tag(choice)
+                        }
                     }
-                }
-                .labelsHidden()
-                .settingsPopup()
-                if resolutionSelection.wrappedValue == .custom {
-                    HStack(spacing: 6) {
-                        TextField("", value: $model.customWidth, format: .number)
-                            .frame(width: 72).multilineTextAlignment(.trailing).monospacedDigit()
-                            .onChange(of: model.customWidth) { _, _ in clampCustomResolution() }
-                        Text("×").foregroundStyle(.secondary)
-                        TextField("", value: $model.customHeight, format: .number)
-                            .frame(width: 72).multilineTextAlignment(.trailing).monospacedDigit()
-                            .onChange(of: model.customHeight) { _, _ in clampCustomResolution() }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel("Resolution")
+                    Picker("", selection: frameRateSelection) {
+                        ForEach(FrameRateChoice.all, id: \.self) { choice in
+                            Text(frameRateLabel(choice)).tag(choice)
+                        }
                     }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel("Frame rate")
                 }
-            }
-
-            SettingsField("Frame rate") {
-                Picker("", selection: frameRateSelection) {
-                    ForEach(FrameRateChoice.all, id: \.self) { choice in
-                        Text(frameRateLabel(choice)).tag(choice)
-                    }
-                }
-                .labelsHidden()
-                .settingsPopup()
                 if frameRateSelection.wrappedValue == .custom {
                     HStack(spacing: 6) {
                         TextField("", value: $model.customFPS, format: .number)
