@@ -30,26 +30,29 @@ struct VideoPane: View {
 
     var body: some View {
         @Bindable var model = model
-        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
+        VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
+            // Codec and HDR share a row: HDR is what the codec carries.
             SettingsField("Codec") {
-                if let host = model.selectedHost {
-                    Picker("", selection: codecSelection) {
-                        ForEach(HostCodecPreference.allCases) { pref in
-                            Text(pref.displayName).tag(pref)
+                if model.selectedHost != nil {
+                    HStack(spacing: 12) {
+                        Picker("", selection: codecSelection) {
+                            ForEach(HostCodecPreference.allCases) { pref in
+                                // Short, so HDR fits beside it.
+                                Text(pref == .auto ? "Automatic" : pref.displayName).tag(pref)
+                            }
                         }
+                        .labelsHidden()
+                        .fixedSize()
+                        .help("Automatic uses AV1 when the PC and this Mac both can, else HEVC.")
+                        Toggle("HDR", isOn: $model.customHDR)
+                            .fixedSize()
+                            .help("Brighter highlights, deeper colour")
                     }
-                    .labelsHidden()
-                    .settingsPopup()
                 } else {
                     Text("Pair a PC to choose the codec it streams with.")
                         .foregroundStyle(.secondary)
                 }
             }
-
-            SettingsField("HDR") {
-                Toggle("Brighter highlights, deeper colour", isOn: $model.customHDR)
-            }
-
         }
         .onAppear { reloadCodec() }
         .onChange(of: model.selectedHost?.id) { _, _ in reloadCodec() }

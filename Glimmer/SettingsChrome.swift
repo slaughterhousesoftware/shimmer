@@ -204,6 +204,9 @@ enum SettingsMetrics {
     static let serversPageTrailing: CGFloat = 16
     static let serversLabelGutter: CGFloat = 92
     static let serversControlWidth: CGFloat = 196
+    /// Between a machine page's groups: tighter than a settings tab's 22 so a
+    /// PS5's whole page fits the window without scrolling.
+    static let serversRowSpacing: CGFloat = 16
 }
 
 extension EnvironmentValues {

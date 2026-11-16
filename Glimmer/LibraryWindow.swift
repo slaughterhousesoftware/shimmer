@@ -338,9 +338,9 @@ struct ComputersTab: View {
             ScrollView {
                 VStack(spacing: 0) {
                     hostTitle(for: host)
-                        .padding(.top, 18)
+                        .padding(.top, 14)
                         .padding(.horizontal, 16)
-                    VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
+                    VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
                         streamRow(for: host)
                         if host.isPlayStation {
                             PlayStationSettingsPane(settings: .forConsole(host.id))
@@ -351,8 +351,8 @@ struct ComputersTab: View {
                     }
                     .padding(.leading, SettingsMetrics.serversPageLeading)
                     .padding(.trailing, SettingsMetrics.serversPageTrailing)
-                    .padding(.top, 18)
-                    .padding(.bottom, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 16)
                     // Each machine's page has its own view state: a value
                     // half-typed on one PC must not commit into the next.
                     .id(host.id)
