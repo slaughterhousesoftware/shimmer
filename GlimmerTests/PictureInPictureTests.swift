@@ -180,3 +180,50 @@ struct PictureInPictureTests {
         #expect(HotkeyChord.defaultPiP.displayString == "⌃⌥P")
     }
 }
+
+/// Switch PC in Picture in Picture: what PiP's own controls do while the old
+/// stream's last frame is held (PictureInPictureStage, AppModel.switchHost).
+@MainActor
+struct PictureInPictureSwitchTests {
+    private func pending(_ model: AppModel) {
+        model.pendingHostSwitch = AppModel.PendingHostSwitch(hostID: "ps5-test", inPictureInPicture: true,
+                                                             requestedAt: Date())
+        StreamWindow.switchingHosts = true
+    }
+
+    @Test func closingTheHeldPiPCancelsASwitchStillEndingTheOldStream() {
+        let model = AppModel()
+        pending(model)
+        model.nativeStreamPictureInPicture = true
+        model.heldPictureInPictureEnded(restore: false)
+        #expect(model.pendingHostSwitch == nil)
+        #expect(!StreamWindow.switchingHosts)
+        #expect(!model.nativeStreamPictureInPicture)
+    }
+
+    @Test func itsReturnButtonOpensTheNextStreamInItsWindow() {
+        let model = AppModel()
+        pending(model)
+        model.heldPictureInPictureEnded(restore: true)
+        #expect(model.pendingHostSwitch?.hostID == "ps5-test")
+        #expect(model.pendingHostSwitch?.inPictureInPicture == false)
+        StreamWindow.switchingHosts = false
+    }
+
+    @Test func endingTheStreamYourselfDropsAnUncommittedSwitch() {
+        let model = AppModel()
+        model.pendingHostSwitch = AppModel.PendingHostSwitch(hostID: "ps5-test", inPictureInPicture: true,
+                                                             requestedAt: Date())
+        StreamWindow.switchingHosts = false   // still waking the PS5
+        model.endStream()
+        #expect(model.pendingHostSwitch == nil)
+    }
+
+    @Test func anIdleStageHoldsNothing() {
+        let stage = PictureInPictureStage.shared
+        #expect(!stage.isHolding)
+        stage.prepareForNextStream()                       // no-op
+        stage.endHold(restoreRequested: false, notify: false)   // no-op
+        #expect(!stage.isHolding)
+    }
+}
