@@ -207,20 +207,24 @@ struct StreamWindowPane: View {
                     set: { model.keepAwakePolicy = KeepAwakePolicy(isOn: $0) }))
             }
 
-            // Forcing Game Mode outside full screen takes Xcode's gamepolicyctl
-            // (GameModeBoost); without it the toggle can't do anything, so it
-            // is disabled and says why. Checked on every draw - a file lookup.
-            SettingsField("Bluetooth controllers") {
+            // One switch for Game Mode wherever the stream is. Holding it in a
+            // window and Picture in Picture takes Xcode's gamepolicyctl
+            // (GameModeBoost); without Xcode macOS still turns it on in full
+            // screen by itself, and the switch can't change anything, so it
+            // shows that instead. Checked on every draw - a file lookup.
+            SettingsField("Game Mode") {
                 let hasXcode = GameModeBoost.tool() != nil
-                Toggle("Turn on Game Mode in a window and Picture in Picture",
+                Toggle("Turn on Game Mode while streaming",
                        isOn: Binding(get: { hasXcode && model.gameModeDuringStreams },
                                      set: { model.gameModeDuringStreams = $0 }))
                     .disabled(!hasXcode)
-                SettingsHelp("In Game Mode macOS checks a Bluetooth controller every 7.5 ms instead of "
-                    + "15, cutting about 4 ms of input lag. In full screen macOS turns Game Mode on by "
-                    + "itself. Anywhere else, only Apple's Xcode can switch it on, so this needs Xcode "
-                    + "installed. A USB cable beats both.")
-                if !hasXcode {
+                if hasXcode {
+                    SettingsHelp("Cuts a Bluetooth controller's input lag (macOS checks it every 7.5 ms "
+                        + "instead of 15) in full screen, a window and Picture in Picture.")
+                } else {
+                    SettingsHelp("Cuts a Bluetooth controller's input lag. Without Xcode, macOS only "
+                        + "turns Game Mode on in full screen. Install Xcode to have it in a window and "
+                        + "Picture in Picture too.")
                     Link("Get Xcode from the App Store",
                          destination: URL(string: "macappstore://apps.apple.com/app/id497799835")!)
                         .font(.system(size: 12))
