@@ -255,9 +255,10 @@ extension StreamWindow {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
             MainActor.assumeIsolated { self?.pipReturnInFlight = false }
         }
-        // The window takes the frames again now, so it is live, not a frozen
-        // last frame, when the picture lands on it. (didStop repeats this.)
-        onPictureInPictureChanged?(false)
+        // Apple's model: the window waits, black, while the picture flies back
+        // into it, and takes over the video only once PiP has stopped (didStop
+        // hands the frames back). Clear the frame it showed before PiP.
+        displayLayer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
         Self.forceActivate()
         if displayMode == .window {
             // A floating, unmanaged shape until the app is active: Stage
@@ -290,6 +291,16 @@ extension StreamWindow {
             // The PiP flies back now: AVKit's own return finishes, or ours
             // (menu bar) stops it (reengageForeground; a no-op when stopping).
             ready?()
+            // didStop hands the frames back to the window. If AVKit never
+            // reports it, don't leave the window black.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, !self.didClose, !self.isBackgrounded,
+                          self.isPictureInPictureActive || self.pictureInPicturePending else { return }
+                    Diag.warn("PiP return: no didStop 2 s after the fly-back - giving the window its frames", "Stream.PiP")
+                    self.onPictureInPictureChanged?(false)
+                }
+            }
             if !fromPanel, self.isPictureInPictureActive || self.pictureInPicturePending {
                 self.pictureInPicture.stop()
             }
