@@ -21,7 +21,8 @@ screen: machines are shown by the system they run.
   PlayStation — plain monochrome marks in the text colour (set 1). PS5 = PlayStation;
   otherwise Windows when the host answers ping with TTL > 64, Mac when it advertises a Mac
   model over Bonjour (`_device-info._tcp`) or its name says so, else Linux. Cached per host.
-- **Right side:** no title, no big icon, no latency graph. The selected machine's settings in
+- **Right side:** the machine's name and address as a small centred title; no big icon, no
+  latency graph. The selected machine's settings in
   the existing gutter style, starting with a **Stream** row (game popup for a PC, then a
   Stream/Resume button and a Picture in Picture button, then what ending the stream does).
   - PC: Stream (+ quit the game when the stream ends), Resolution, Frame rate, Bitrate,
@@ -51,7 +52,8 @@ screen: machines are shown by the system they run.
 
 ## Non-goals / anti-goals
 
-- No avatars, no colour tiles, no per-distro logos (Bazzite shows Linux).
+- (Revised 2026-11-16: Kevin asked for the round avatars and the name/address title back.
+  Avatars are picked automatically - distro by name, else the detected system - never chosen.)
 - No header bar on the right side; no latency graph.
 - No change to pairing, the menu bar, streaming internals beyond reading per-machine settings.
 
