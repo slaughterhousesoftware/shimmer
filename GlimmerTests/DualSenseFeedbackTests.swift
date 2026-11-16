@@ -28,6 +28,19 @@ struct DualSenseOutputReportTests {
         #expect(DualSenseHID.effectsState(s, triggers: false)[0] == 0x03)
     }
 
+    /// Only the side that changed is asserted: re-asserting the other side
+    /// would restart the effect it is running.
+    @Test func oneTriggerSideAtATime() {
+        var s = DualSenseOutputState()
+        s.rightTrigger = [0x26] + [UInt8](repeating: 7, count: 10)
+        s.leftTrigger = [0x21] + [UInt8](repeating: 3, count: 10)
+        let right = DualSenseHID.effectsState(s, triggerFlags: 0x04)
+        #expect(right[0] == 0x04)
+        #expect(right[10] == 0x26)
+        #expect(DualSenseHID.effectsState(s, triggerFlags: 0x08)[0] == 0x08)
+        #expect(DualSenseHID.effectsState(s, triggerFlags: 0xFF)[0] == 0x0C)   // only trigger bits
+    }
+
     @Test func micLightOnlyWhenSetAndLeavesHapticsAlone() {
         var s = DualSenseOutputState()
         s.audioHaptics = true
@@ -151,10 +164,23 @@ struct HapticsBufferTests {
         let silent = render(&b, 128)
         #expect(!b.playing)
         #expect(silent.allSatisfy { $0 == 0 })
-        push(&b, frame())                                  // 30 ms: starts
-        let out = render(&b, 960)
+        push(&b, frame())                                  // 30 ms queued: still waits
+        render(&b, 1200)                                   // 27.7 ms since the first frame
+        #expect(!b.playing)
+        let out = render(&b, 960)                          // passes 30 ms: plays
         #expect(b.playing)
         #expect(abs(out[900] - 0.5) < 0.01)                // settled through the low-pass
+    }
+
+    /// The console's bursts (two frames 4 ms apart, then ~17 ms of nothing)
+    /// must not start a run early just because a burst filled the target.
+    @Test func aBurstThatFillsTheTargetStillWaitsTheTarget() {
+        var b = HapticsBuffer(outputRate: 48_000, targetMs: 15)
+        push(&b, frame()); push(&b, frame())             // 20 ms in one burst > 15 ms target
+        render(&b, 192)                                    // 4 ms later
+        #expect(!b.playing)
+        render(&b, 576)                                    // 16 ms: has waited 15
+        #expect(b.playing)
     }
 
     @Test func aShortEffectPlaysOnceItHasWaitedTheTarget() {

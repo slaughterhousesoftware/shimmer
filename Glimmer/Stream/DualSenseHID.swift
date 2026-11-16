@@ -81,6 +81,11 @@ struct DualSenseOutputState: Equatable, Sendable {
     /// True while haptics play through the pad's USB audio device. The report
     /// must then never set the "rumble instead of haptics" bit.
     var audioHaptics = false
+    /// The pad's own haptics low-pass (byte 39) while `audioHaptics`. Off on
+    /// USB, as Sony's Remote Play app leaves it: our upsampler already band-
+    /// limits at the source's 1.5 kHz, so the pad's filter only dulls crisp
+    /// effects. On for Bluetooth, where the pad gets the raw 3 kHz stream.
+    var hapticsFilter = true
     /// The mic mute light (PS5 chat): true lit (muted), false off, nil untouched.
     var micLED: Bool?
 }
@@ -323,7 +328,7 @@ final class DualSenseHID: @unchecked Sendable {
         // device deallocation. (The `key` opaque pointer is only an identity
         // token, NOT the retain; do not switch this value to Unmanaged.)
         writeDevices[key] = (device: device, bluetooth: isBluetooth)
-        triggersDirty = true    // a pad that (re)connects gets the current effect
+        dirtyTriggers = Self.bothTriggers    // a pad that (re)connects gets the current effects
         lock.unlock()
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputReportCallback(device, buf, bufLen, Self.reportCallback, ctx)
@@ -393,14 +398,23 @@ final class DualSenseHID: @unchecked Sendable {
         let wantLeft = (eventFlags & 0x08) != 0
         guard wantRight || wantLeft else { return }
         lock.lock()
-        let before = (outputState.leftTrigger, outputState.rightTrigger)
-        if wantLeft { outputState.leftTrigger = Self.triggerBlock(mode: typeLeft, params: left) }
-        if wantRight { outputState.rightTrigger = Self.triggerBlock(mode: typeRight, params: right) }
-        let changed = before != (outputState.leftTrigger, outputState.rightTrigger)
+        // Per side: the console sends both triggers in every message, and
+        // asserting an unchanged side restarts its effect (Sony's app flags
+        // only the side a request changes).
+        var sides: UInt8 = 0
+        if wantLeft {
+            let block = Self.triggerBlock(mode: typeLeft, params: left)
+            if block != outputState.leftTrigger { outputState.leftTrigger = block; sides |= Self.flagLeftTrigger }
+        }
+        if wantRight {
+            let block = Self.triggerBlock(mode: typeRight, params: right)
+            if block != outputState.rightTrigger { outputState.rightTrigger = block; sides |= Self.flagRightTrigger }
+        }
+        let changed = sides != 0
         triggerUpdates += 1
         if changed {
             triggerChanges += 1
-            triggersDirty = true
+            dirtyTriggers |= sides
             if triggerRequestedAt == 0 { triggerRequestedAt = DispatchTime.now().uptimeNanoseconds }
         }
         lock.unlock()
@@ -448,7 +462,7 @@ final class DualSenseHID: @unchecked Sendable {
         let hadDevice = !writeDevices.isEmpty
         outputState.leftTrigger = [UInt8](repeating: 0, count: 11)
         outputState.rightTrigger = [UInt8](repeating: 0, count: 11)
-        triggersDirty = true
+        dirtyTriggers = Self.bothTriggers
         lock.unlock()
         guard hadDevice else { return }
         // Synchronous on the write queue so it completes before the manager
@@ -482,8 +496,10 @@ final class DualSenseHID: @unchecked Sendable {
     /// (session breadcrumbs; `lock`).
     var triggerUpdates = 0
     var triggerChanges = 0
-    /// The trigger blocks changed since they were last written (`lock`).
-    var triggersDirty = false
+    /// Which trigger blocks changed since they were last written, as the
+    /// report's valid_flag0 bits (right 0x04, left 0x08; `lock`).
+    var dirtyTriggers: UInt8 = 0
+    static let bothTriggers: UInt8 = flagRightTrigger | flagLeftTrigger
     /// Trigger latency breadcrumbs (`lock`): when the oldest unapplied change
     /// arrived, when its write finished, and the pad's own trigger-status
     /// bytes (USB input report 0x01, bytes 42/43/48: the effect it is running).
@@ -554,13 +570,13 @@ final class DualSenseHID: @unchecked Sendable {
     /// light-bar or mute-light write must not carry them.
     func writeCurrentOutput() {
         lock.lock()
-        let triggers = triggersDirty
-        triggersDirty = false
+        let triggers = dirtyTriggers
+        dirtyTriggers = 0
         lock.unlock()
-        let ok = writeToAll { Self.effectsState($0, triggers: triggers) }
-        if triggers {
+        let ok = writeToAll { Self.effectsState($0, triggerFlags: triggers) }
+        if triggers != 0 {
             lock.lock()
-            if !ok { triggersDirty = true }
+            if !ok { dirtyTriggers |= triggers }
             if ok, triggerRequestedAt != 0, triggerWriteMs.count < 10_000 {
                 triggerWriteMs.append(Double(DispatchTime.now().uptimeNanoseconds &- triggerRequestedAt) / 1e6)
             }

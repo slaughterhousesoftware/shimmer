@@ -76,6 +76,9 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private var quitMessage: String?
     /// The last QUIT was "Remote Play is already in use".
     private var quitInUse = false
+    /// The last QUIT was a network failure before the session came up
+    /// (refused / no answer), which a console just woken often gives.
+    private var quitTransient = false
     private let connectSignal = DispatchSemaphore(value: 0)
 
     // Controller state per GameStream controller number. Remote Play takes one
@@ -110,6 +113,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// to compare with the audio's: the buffer is sized from the audio today.
     private var hapticsJitter = ArrivalJitter()
     private var lastHapticsArrivalNanos: UInt64 = 0
+    /// The last keyframe request (`lock`), for the 100 ms spacing.
+    private var lastIdrRequestNanos: UInt64 = 0
     /// Debug (`PS5.debugDumpHaptics`): every haptics frame as received, for
     /// offline analysis (libchiaki's receive thread only).
     private lazy var hapticsDump: HapticsDump? = HapticsDump.openIfEnabled()
@@ -288,11 +293,14 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         while true {
             let outcome = try runChiakiSession(info: &info, events: events)
             if outcome == .connected { break }
-            if outcome == .inUse, attempt < Self.inUseAttempts {
-                Diag.notice("PS5: the console still holds the previous session - retrying in 3 s "
-                    + "(attempt \(attempt + 1) of \(Self.inUseAttempts))", Self.logCategory)
+            if outcome == .inUse || outcome == .transient, attempt < Self.inUseAttempts {
+                let delay = outcome == .inUse ? 3 : 2
+                Diag.notice("PS5: " + (outcome == .inUse ? "the console still holds the previous session"
+                                                          : "no session yet (\(lock.withLock { quitMessage } ?? "network"))")
+                    + " - retrying in \(delay) s (attempt \(attempt + 1) of \(Self.inUseAttempts))", Self.logCategory)
                 attempt += 1
-                if connectSignal.wait(timeout: .now() + 3) == .success, lock.withLock({ stopped }) {
+                lock.withLock { quitMessage = nil }
+                if connectSignal.wait(timeout: .now() + .seconds(delay)) == .success, lock.withLock({ stopped }) {
                     throw StreamError.sessionFailed(-1)
                 }
                 continue
@@ -312,7 +320,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// ~15 s: the console holds a quit session ~10 s (measured with ps5ctl).
     static let inUseAttempts = 6
 
-    enum SessionOutcome { case connected, inUse, failed }
+    enum SessionOutcome { case connected, inUse, transient, failed }
 
     /// One libchiaki session attempt: init, wire callbacks, start, and wait for
     /// CONNECTED or QUIT (20 s). A failed attempt's session is torn down here;
@@ -323,6 +331,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             connected = false
             quitMessage = nil
             quitInUse = false
+            quitTransient = false
         }
         let session = UnsafeMutablePointer<ChiakiSession>.allocate(capacity: 1)
         session.initialize(to: ChiakiSession())
@@ -382,11 +391,18 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // Block (we run on StreamSession's connect task) until CONNECTED, QUIT,
         // an interrupt, or 20 s.
         _ = connectSignal.wait(timeout: .now() + 20)
-        let (isConnected, inUse) = lock.withLock { (connected, quitInUse) }
+        let (isConnected, inUse, transient) = lock.withLock { (connected, quitInUse, quitTransient) }
         if isConnected { return .connected }
         tearDownChiakiSession()
-        return inUse ? .inUse : .failed
+        return inUse ? .inUse : transient ? .transient : .failed
     }
+
+    /// Failures worth another try (PXPlay retries its session request 5 times,
+    /// 2 s apart, on an I/O error).
+    static let transientQuitReasons: Set<ChiakiQuitReason> = [
+        CHIAKI_QUIT_REASON_SESSION_REQUEST_UNKNOWN, CHIAKI_QUIT_REASON_SESSION_REQUEST_CONNECTION_REFUSED,
+        CHIAKI_QUIT_REASON_CTRL_CONNECT_FAILED, CHIAKI_QUIT_REASON_CTRL_CONNECTION_REFUSED,
+    ]
 
     /// Stop, join and free the current libchiaki session (sinks untouched).
     private func tearDownChiakiSession() {
@@ -466,8 +482,17 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
     }
 
+    /// At most one keyframe request per 100 ms (PXPlay's spacing): a burst of
+    /// decoder errors asks once, not once per frame, and each IDR the console
+    /// sends is a bitrate spike that blurs the picture.
     func requestIdrFrame() {
-        if let session = lock.withLock({ self.session }) { _ = chiaki_session_request_idr(session) }
+        let now = DispatchTime.now().uptimeNanoseconds
+        let session = lock.withLock { () -> UnsafeMutablePointer<ChiakiSession>? in
+            guard now &- lastIdrRequestNanos >= 100_000_000 else { return nil }
+            lastIdrRequestNanos = now
+            return self.session
+        }
+        if let session { _ = chiaki_session_request_idr(session) }
     }
 
     func hdrMetadata() -> HdrMetadata? { nil }
@@ -500,6 +525,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             let (wasConnected, wasStopped, events) = lock.withLock { () -> (Bool, Bool, NativeConnectionEvents?) in
                 if quitMessage == nil { quitMessage = message }
                 quitInUse = event.quit.reason == CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE
+                quitTransient = Self.transientQuitReasons.contains(event.quit.reason)
                 return (connected, stopped, self.events)
             }
             Diag.notice("PS5: session ended - \(message)", Self.logCategory)
@@ -807,7 +833,11 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
         if muted { player.setGain(0) }
         // Over Bluetooth each 0x31 write takes a slot on the link the haptics need.
-        DualSenseHID.shared.setAudioHapticsMode(true, keepAliveEvery: player is DualSenseBluetoothHaptics ? 2 : 1)
+        // USB: a quarter-second keepalive, so a GameController write that
+        // muted the actuators costs at most 250 ms of haptics (a USB report is
+        // free); Bluetooth: every 2 s, outside haptics bursts (a link slot).
+        let bluetooth = player is DualSenseBluetoothHaptics
+        DualSenseHID.shared.setAudioHapticsMode(true, keepAliveEvery: bluetooth ? 2 : 0.25, padFilter: bluetooth)
         Diag.notice("PS5: haptics play on the DualSense's actuators (\(player.deviceName))", Self.logCategory)
     }
 

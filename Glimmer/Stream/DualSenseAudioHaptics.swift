@@ -24,7 +24,7 @@ import Foundation
 
 /// Haptics frames come only while an effect plays, so the buffer can't tell
 /// network jitter from the gap between two footsteps. It plays each run once
-/// its first sample has waited `target` (or that much is queued), and the
+/// its first sample has waited `target`, and the
 /// target comes from outside: the console's audio rides the same packets and
 /// flows continuously, so its arrival gaps measure the jitter (ArrivalJitter).
 struct HapticsBuffer {
@@ -145,13 +145,18 @@ struct HapticsBuffer {
     /// Fill `frames` output frames. Silence (with a short fade from the last
     /// value, so the coil doesn't click) while a run waits or after it ends.
     mutating func render(frames: Int, into write: (Int, Float, Float) -> Void) {
-        // A waiting run starts at the sample where it has waited the target.
+        // A waiting run starts at the sample where its first frame has waited
+        // the target - by time only. The console sends haptics in bursts (2-3
+        // frames every 21.3 ms), so "the target is already queued" says
+        // nothing about the next burst: starting early on it ran dry ~32
+        // times a minute for targets of 12-20 ms in a replay of captured
+        // console streams, against ~2 by waiting.
         var startAt = frames
         if playing {
             startAt = 0
         } else if queued > 0 {
             let waited = renderedFrames - (waitingSince ?? renderedFrames)
-            startAt = queued >= targetFrames ? 0 : max(0, targetFrames - waited)
+            startAt = max(0, targetFrames - waited)
         }
         for i in 0..<frames {
             if i == startAt, !playing {

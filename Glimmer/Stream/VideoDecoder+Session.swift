@@ -394,6 +394,10 @@ extension VideoDecoder {
         if let pacer = framePacer, !presentsDirect {
             pacer.submit(sb, hostPTS: hostPTS)
         } else {
+            // Unpaced: show it on the next refresh whatever its timestamp says
+            // (moonlight-qt marks every frame this way). Without it the layer
+            // may hold a frame against its PTS clock.
+            Self.markDisplayImmediately(sb)
             _ = presentFrame(sb)
         }
     }
@@ -538,5 +542,17 @@ extension VideoDecoder {
         CVBufferRemoveAttachment(buffer, kCVImageBufferDisplayDimensionsKey)
         CVBufferSetAttachment(buffer, kCVImageBufferCleanApertureKey,
                               aperture as CFDictionary, .shouldPropagate)
+    }
+}
+
+extension VideoDecoder {
+    /// kCMSampleAttachmentKey_DisplayImmediately on the buffer's one sample.
+    nonisolated static func markDisplayImmediately(_ sampleBuffer: CMSampleBuffer) {
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: true),
+              CFArrayGetCount(attachments) > 0 else { return }
+        let dict = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+        CFDictionarySetValue(dict,
+                             Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+                             Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
     }
 }

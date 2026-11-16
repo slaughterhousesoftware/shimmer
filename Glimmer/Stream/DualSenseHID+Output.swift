@@ -37,8 +37,14 @@ extension DualSenseHID {
     /// last sent. The rumble bits go in only while the host is rumbling: they
     /// mute USB-audio haptics, and a report without them stops the motors.
     static func effectsState(_ s: DualSenseOutputState, triggers: Bool = true) -> [UInt8] {
+        effectsState(s, triggerFlags: triggers ? flagRightTrigger | flagLeftTrigger : 0)
+    }
+
+    /// `triggerFlags`: which trigger blocks the pad should apply (0x04 right,
+    /// 0x08 left); the other side keeps the effect it is running.
+    static func effectsState(_ s: DualSenseOutputState, triggerFlags: UInt8) -> [UInt8] {
         var d = [UInt8](repeating: 0, count: 47)
-        if triggers { d[0] = flagRightTrigger | flagLeftTrigger }
+        d[0] = triggerFlags & (flagRightTrigger | flagLeftTrigger)
         if s.rumbleLeft != 0 || s.rumbleRight != 0 {
             d[0] |= flagRumbleEmulation | flagRumbleNotHaptics
             d[2] = s.rumbleRight   // high-frequency side
@@ -56,12 +62,13 @@ extension DualSenseHID {
         }
         // Haptics on the actuators: nothing muted, full motor power (the pad
         // keeps whatever reduction its last host set - P5M measured 12.5% of
-        // the signal), and the pad's haptics low-pass on, as the console does.
+        // the signal), and the pad's haptics low-pass set explicitly (the pad
+        // keeps the last host's choice too) - see `hapticsFilter`.
         if s.audioHaptics {
             d[1] |= flagAudioMute | flagHapticsFilter | flagIntensity
             d[9] = 0
             d[36] = s.intensity ?? 0
-            d[39] = 0x01
+            d[39] = s.hapticsFilter ? 0x01 : 0x00
         }
         if let lit = s.micLED {
             d[1] |= flagMicLED
@@ -169,9 +176,10 @@ extension DualSenseHID {
     /// keepalive undoes any GameController write that switched that off. Over
     /// Bluetooth it waits for a pause in the haptics: each write there costs
     /// the haptics stream a slot on the link.
-    func setAudioHapticsMode(_ on: Bool, keepAliveEvery seconds: Double = 1) {
+    func setAudioHapticsMode(_ on: Bool, keepAliveEvery seconds: Double = 1, padFilter: Bool = true) {
         lock.lock()
         outputState.audioHaptics = on
+        outputState.hapticsFilter = padFilter
         lock.unlock()
         writeQueue.async { [weak self] in
             guard let self else { return }
