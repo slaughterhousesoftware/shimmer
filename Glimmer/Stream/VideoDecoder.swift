@@ -480,11 +480,21 @@ public final class VideoDecoder {
     /// into its jitter buffer and released one-per-due-vsync by a CADisplayLink
     /// bound to the stream window's screen. Created in `attach(to:)` on the
     /// main actor, started once the window is on screen, torn down in
-    /// `teardown()`. `nonisolated(unsafe)` for the same single-writer-on-main /
-    /// read-on-decode-queue discipline as the rest of this file's VT-callback-
-    /// touched state - `submit` is called from the decode queue, the renderer
-    /// reference inside the pacer is itself lock-guarded.
-    nonisolated(unsafe) var framePacer: FramePacer?
+    /// `teardown()`.
+    ///
+    /// Behind a lock, not "written on main, read elsewhere": it is read on the
+    /// VT output thread (every frame), the decode queue and the receive thread
+    /// while main starts, stops and re-enables pacing (stream start/stop, the
+    /// present watchdog, PiP). An unsynchronized load of a class reference can
+    /// retain the object main is releasing at that moment - a use-after-free
+    /// that corrupts the heap (ThreadSanitizer caught the race). A read here
+    /// takes a retained reference under the lock, so the pacer it returns stays
+    /// alive for the caller even if main swaps it out right after.
+    nonisolated var framePacer: FramePacer? {
+        get { framePacerStorage.withLock { $0 } }
+        set { framePacerStorage.withLock { $0 = newValue } }
+    }
+    nonisolated private let framePacerStorage = OSAllocatedUnfairLock<FramePacer?>(initialState: nil)
 
     /// Present each decoded frame at once, skipping the pacer's jitter buffer
     /// (PS5 streams). The console paces its own frames and Shimmer's frame

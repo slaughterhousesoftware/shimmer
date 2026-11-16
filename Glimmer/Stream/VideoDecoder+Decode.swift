@@ -282,10 +282,12 @@ extension VideoDecoder {
 
         // If this is an IDR for H.264/HEVC, the parameter sets just changed
         // (or appeared for the first time). Tear down the existing session
-        // and rebuild from the new parameter sets.
+        // and rebuild from the new parameter sets. "No session yet" is decided
+        // on decodeQueue (runDecodeOnQueue), which owns `decompressionSession`:
+        // reading it here, on the receive thread, raced its creation there
+        // (ThreadSanitizer, PS5 stream start).
         let needsParamRebuild =
             (newSps != nil) || (newPps != nil) || (newVps != nil)
-            || (decompressionSession == nil && isIDR)
             || forceSessionRecreate
 
         let pending = PendingDecode(
@@ -323,7 +325,7 @@ extension VideoDecoder {
         let format = streamVideoFormat
         let pictureData = pending.pictureData
 
-        if pending.needsParamRebuild,
+        if pending.needsParamRebuild || (pending.isIDR && decompressionSession == nil),
            !rebuildParamSetsAndSession(
                 newSps: pending.newSps, newPps: pending.newPps, newVps: pending.newVps,
                 format: format, pictureData: pictureData,
