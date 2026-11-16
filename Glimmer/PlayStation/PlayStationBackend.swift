@@ -251,14 +251,14 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // PS5.debugIdrOnFec restores the IDR-and-wait, PS5.debugReorderUs the
         // reorder hold (chiaki's was 16000), PS5.debugDropPermille drops that
         // many per mille of video packets to exercise loss on a clean LAN.
-        // PS5.debugTakionVersion 20 negotiates Takion v20 (Sony's app and
-        // PXPlay's) instead of chiaki's fixed v12; 12 until v20 is proven live.
+        // PS5.debugTakionVersion 12 stays on chiaki's old fixed Takion v12
+        // instead of negotiating v20 (Sony's app's and PXPlay's), for A/B runs.
         let defaults = UserDefaults.standard
         info.enable_idr_on_fec_failure = defaults.bool(forKey: "PS5.debugIdrOnFec")
         let reorderUs = defaults.integer(forKey: "PS5.debugReorderUs")
         let holdUs = reorderUs > 0 ? reorderUs : 4000
         let dropPermille = max(0, min(500, defaults.integer(forKey: "PS5.debugDropPermille")))
-        var takionVersion = defaults.integer(forKey: "PS5.debugTakionVersion") == 20 ? 20 : Self.defaultTakionVersion
+        var takionVersion = defaults.integer(forKey: "PS5.debugTakionVersion") == 12 ? 12 : Self.defaultTakionVersion
         shimmer_set_takion_knobs(Int32(holdUs), Int32(dropPermille), Int32(takionVersion))
         if dropPermille > 0 || reorderUs > 0 || info.enable_idr_on_fec_failure || takionVersion != Self.defaultTakionVersion {
             Diag.notice("PS5 debug: drop \(dropPermille)‰ of video packets, reorder hold \(holdUs) us, "
@@ -340,8 +340,11 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     static let inUseAttempts = 6
 
     /// The Takion version a session offers unless PS5.debugTakionVersion says
-    /// otherwise (libchiaki patch 0002): 12 until v20 passes a live A/B.
-    static let defaultTakionVersion = 12
+    /// otherwise (libchiaki patch 0002). v20 - Sony's app's and PXPlay's - was
+    /// at parity with v12 in live A/B runs (Astro's controller demo: byte-
+    /// identical trigger effects, same haptics rate and frame size, video
+    /// without loss, fewer audio gaps); a v20 session that fails retries on 12.
+    static let defaultTakionVersion = 20
 
     enum SessionOutcome { case connected, inUse, transient, failed }
 

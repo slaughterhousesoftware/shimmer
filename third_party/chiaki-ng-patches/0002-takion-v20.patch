@@ -279,7 +279,7 @@ index 41c6bbf..d4c4bde 100644
  	ChiakiLog *log)
  {
 diff --git a/lib/src/streamconnection.c b/lib/src/streamconnection.c
-index afa1a60..90e6d1a 100644
+index afa1a60..d7f6f12 100644
 --- a/lib/src/streamconnection.c
 +++ b/lib/src/streamconnection.c
 @@ -31,6 +31,16 @@
@@ -295,7 +295,7 @@ index afa1a60..90e6d1a 100644
 + * for {12, 20} before BIG and lets the console choose; 12 skips the request
 + * and streams on chiaki's fixed v12. Set before a session starts.
 + */
-+int chiaki_shimmer_takion_version = 12;
++int chiaki_shimmer_takion_version = 20;
  
  #define HEARTBEAT_INTERVAL_MS 1000
  

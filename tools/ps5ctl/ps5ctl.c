@@ -43,7 +43,7 @@
 
 // Shimmer's libchiaki research hook (third_party/chiaki-ng-patches/0002).
 extern int chiaki_shimmer_reorder_timeout_us;  // patch 0001 (default 4000)
-extern int chiaki_shimmer_takion_version;       // patch 0002 (default 20; 12 = no negotiation)
+extern int chiaki_shimmer_takion_version;       // patch 0002 (default 20; PS5CTL_TAKION=12 = no negotiation)
 ChiakiErrorCode chiaki_shimmer_ctrl_send(ChiakiSession *session, uint16_t type, const uint8_t *payload, size_t payload_size);
 
 // Keychain account name the PSN items are stored under (any label you chose).
@@ -904,6 +904,9 @@ static int cmd_drive(int argc, char **argv)
 	chiaki_session_set_event_cb(&session, event_cb, &st);
 	chiaki_session_set_video_sample_cb(&session, video_cb, &st);
 	ChiakiAudioSink capture_sink = { .user = &st, .frame_cb = haptics_frame_cb };
+	// Count game audio frames too (the frames are decoded Opus; only the count matters here).
+	ChiakiAudioSink drive_audio_sink = { .user = &st, .frame_cb = audio_frame_cb };
+	chiaki_session_set_audio_sink(&session, &drive_audio_sink);
 	if(capture)
 	{
 		char path[600];
