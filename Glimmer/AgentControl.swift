@@ -158,10 +158,9 @@ final class AgentControl: NSObject {
                 self.finish(id: id, name: name, result: "reconciled; login_item shows the outcome")
             }
         case .openSettings:
-            let tab = query.first { $0.name == "tab" }?.value.flatMap(SettingsTab.init(rawValue:))
-            AppDelegate.openMainWindow?()
-            NSApp.activate()
+            let tab = query.first { $0.name == "tab" }?.value.flatMap { SettingsTab(persisted: $0) }
             if let tab { model?.settingsTab = tab }
+            AppDelegate.showMainWindow()
             finish(id: id, name: name, result: "ok")
         case .openLoginItems:
             SMAppService.openSystemSettingsLoginItems()

@@ -400,14 +400,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func showSettingsPage() {
-        AppDelegate.openMainWindow?()
         model.settingsTab = .computers
-        NSApp.activate()
+        AppDelegate.showMainWindow()
     }
 
     @objc private func openWindow() {
-        AppDelegate.openMainWindow?()
-        NSApp.activate()
+        AppDelegate.showMainWindow()
     }
 
     @objc private func quit() { NSApp.terminate(nil) }

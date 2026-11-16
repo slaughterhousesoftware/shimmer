@@ -168,8 +168,7 @@ struct GlimmerApp: App {
             // is ours: bring the window forward, then show the page.
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {
-                    AppDelegate.openMainWindow?()
-                    NSApp.activate()
+                    AppDelegate.showMainWindow()
                     model.settingsTab = .computers
                 }
                 .keyboardShortcut(",", modifiers: .command)
@@ -191,6 +190,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// to be respawned (NSApp.windows no longer contains it, but SwiftUI
     /// will rebuild from the WindowGroup on openWindow).
     nonisolated(unsafe) static var openMainWindow: (@MainActor () -> Void)?
+
+    /// Open the main window (Settings) in front and focused, from a click on
+    /// the menu bar or ⌘,. The activation is claimed FIRST, inside the click
+    /// and with Shimmer already regular - the recipe the stream window's
+    /// return uses (measured: forward in ~80 ms). Opening the window first
+    /// and activating after left it unfocused: showing it flips Shimmer from
+    /// menu-bar-only to regular, and AppKit drops an activate() issued in the
+    /// same turn as a policy change. Once up it is made key; a second look
+    /// after the policy settles catches a window that still isn't.
+    @MainActor static func showMainWindow() {
+        if !MenuBarController.frontmostAppIsFullScreen() { StreamWindow.becomeRegularApp() }
+        NSApp.activate()
+        openMainWindow?()
+        for delay in [0.05, 0.4] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                MainActor.assumeIsolated {
+                    guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" && $0.isVisible }),
+                          !window.isKeyWindow || !NSApp.isActive else { return }
+                    NSApp.activate()
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
+        }
+    }
 
     weak var model: AppModel?
 
