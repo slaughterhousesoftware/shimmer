@@ -170,7 +170,7 @@ struct GlimmerApp: App {
                 Button("Settings…") {
                     AppDelegate.openMainWindow?()
                     NSApp.activate()
-                    model.settingsTab = .stream
+                    model.settingsTab = .computers
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }

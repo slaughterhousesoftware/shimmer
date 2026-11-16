@@ -21,16 +21,13 @@ struct ComputersTab: View {
     @State private var pendingManualAddress: String?
     @State private var setupAddress = ""
     @State private var setupError: String?
-    @State private var renamingHostID: String?
-    @State private var draftHostName = ""
-    @FocusState private var hostNameFocused: Bool
-    @State private var latencyTest = HostLatencyTest()
     @State private var appRefreshTask: Task<Void, Never>?
     @State private var refreshingApps = false
     @State private var appRefreshFailed = false
     @State private var copiedAgentPrompt = false
     @State private var sidebarProbes: [String: SidebarProbe] = [:]
-    @State private var spikeAppName: String?
+    /// The app the Stream row will start (nil: the last one played).
+    @State private var chosenAppName: String?
 
     private struct SidebarProbe {
         let reachable: Bool
@@ -58,19 +55,7 @@ struct ComputersTab: View {
         let paused: Bool
     }
 
-    private struct LatencyScope: Equatable {
-        let hostID: String?
-        let address: String?
-        let routeChangedAt: Date
-        let streaming: Bool
-        let streamHostID: String?
-    }
 
-    private var latencyScope: LatencyScope {
-        LatencyScope(hostID: model.selectedHost?.id, address: model.selectedHostRouteAddress,
-                     routeChangedAt: model.hostRoute.changedAt, streaming: model.isStreaming,
-                     streamHostID: model.activeStreamHostID)
-    }
 
     private var nearby: [HostDiscovery.Discovered] {
         NearbyPCList.available(discovered, saved: model.hosts)
@@ -98,7 +83,7 @@ struct ComputersTab: View {
                 }
             } else {
                 HStack(spacing: 0) {
-                    sidebar.frame(width: 200)
+                    sidebar.frame(width: 190)
                     Divider()
                     detail.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -155,18 +140,12 @@ struct ComputersTab: View {
                 catch { return }
             }
         }
-        .onChange(of: latencyScope) { latencyTest.reset() }
         .onChange(of: setupAddress) { setupError = nil }
         .onChange(of: model.selectedHost?.id) {
-            cancelHostRename()
             resetAppActions()
-        }
-        .onChange(of: pairingTarget?.id) { cancelHostRename() }
-        .onChange(of: hostNameFocused) { _, focused in
-            if !focused { saveHostRename() }
+            chosenAppName = nil
         }
         .onDisappear {
-            latencyTest.reset()
             resetAppActions()
         }
     }
@@ -221,8 +200,7 @@ struct ComputersTab: View {
                             .padding(.top, model.hosts.isEmpty ? 0 : 10)
                         ForEach(nearby) { pc in
                             Button {
-                                latencyTest.reset()
-                                pairingTarget = PCPairingTarget(name: pc.displayName, address: pc.host)
+                                                pairingTarget = PCPairingTarget(name: pc.displayName, address: pc.host)
                             } label: {
                                 NearbyPCRow(pc: pc, selected: pairingTarget?.address == pc.host)
                             }
@@ -233,8 +211,7 @@ struct ComputersTab: View {
                         }
                         ForEach(unregisteredPlayStations) { ps in
                             Button {
-                                latencyTest.reset()
-                                pairingTarget = PCPairingTarget(name: ps.name, address: ps.address,
+                                                pairingTarget = PCPairingTarget(name: ps.name, address: ps.address,
                                                                 isPlayStation: true)
                             } label: {
                                 NearbyPlayStationRow(console: ps, selected: pairingTarget?.address == ps.address)
@@ -284,7 +261,6 @@ struct ComputersTab: View {
             .onDisappear {
                 guard let address = pendingManualAddress else { return }
                 pendingManualAddress = nil
-                latencyTest.reset()
                 if let host = NearbyPCList.savedPC(at: address, in: model.hosts) {
                     pairingTarget = nil
                     model.selectHost(host)
@@ -361,7 +337,7 @@ struct ComputersTab: View {
                     .font(.system(size: 16))
                     .foregroundStyle(.secondary)
                     .frame(width: 26, height: 26)
-                    .hostOptionsMenu(host, onRename: { beginHostRename(host) })
+                    .hostOptionsMenu(host)
                     .help("PC options")
                     .padding(.trailing, 11)
                     .padding(.top, 12)
@@ -373,137 +349,76 @@ struct ComputersTab: View {
         }
     }
 
-    /// Spike: the stream bar - pick what to stream, then Stream or PiP.
-    private func streamBar(for host: Host) -> some View {
-        let chosen = apps.first { $0.name == (spikeAppName ?? model.heroTargetAppName) } ?? apps.first
-        let resumes = chosen.map { model.runningAppName == $0.name } ?? false
-        return HStack(spacing: 10) {
-            if host.isPlayStation || apps.count <= 1 {
-                if let chosen {
-                    HStack(spacing: 7) {
-                        AppGlyphIcon(app: chosen).frame(width: 16)
-                        Text(chosen.name)
-                    }
-                }
-            } else {
-                Picker("", selection: Binding(get: { chosen?.name ?? "" }, set: { spikeAppName = $0 })) {
-                    ForEach(apps) { app in
-                        Label { Text(app.name) } icon: { AppGlyphIcon(app: app) }.tag(app.name)
-                    }
-                }
-                .labelsHidden()
-                .fixedSize()
-            }
-            Spacer(minLength: 8)
-            Button {
-                guard let chosen else { return }
-                model.pictureInPictureLaunchRequestedAt = Date()
-                model.requestStream(app: chosen, on: host)
-            } label: {
-                Label("Picture in Picture", systemImage: "pip.enter")
-            }
-            .controlSize(.large)
-            Button {
-                guard let chosen else { return }
-                model.requestStream(app: chosen, on: host)
-            } label: {
-                Label(resumes ? "Resume" : "Stream", systemImage: "play.fill")
-                    .padding(.horizontal, 6)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 26)
-                .hostOptionsMenu(host, onRename: { beginHostRename(host) })
-                .help("PC options")
-        }
-        .disabled(model.isStreaming)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
-    }
 
-    /// Spike: streaming as the first settings row.
+    /// Streaming, as the page's first row: what to stream (a PC's apps; a PS5
+    /// is just the console), then Stream / Resume and Picture in Picture. While
+    /// this machine is streaming the row shows that stream's controls instead.
     private func streamRow(for host: Host) -> some View {
-        let chosen = apps.first { $0.name == (spikeAppName ?? model.heroTargetAppName) } ?? apps.first
+        let chosen = apps.first { $0.name == (chosenAppName ?? model.heroTargetAppName) } ?? apps.first
         let resumes = chosen.map { model.runningAppName == $0.name } ?? false
+        let streamingHere = model.isStreaming && model.activeStreamHostID == host.id
         return SettingsField("Stream") {
-            if !(host.isPlayStation || apps.count <= 1) {
-                Picker("", selection: Binding(get: { chosen?.name ?? "" }, set: { spikeAppName = $0 })) {
+            if apps.isEmpty {
+                noAppsNotice(for: host)
+            } else if apps.count > 1 {
+                Picker("", selection: Binding(get: { chosen?.name ?? "" }, set: { chosenAppName = $0 })) {
                     ForEach(apps) { app in
                         Label { Text(app.name) } icon: { AppGlyphIcon(app: app) }.tag(app.name)
                     }
                 }
                 .labelsHidden()
-                .settingsControl()
+                .settingsPopup()
+                .disabled(model.isStreaming)
             }
             HStack(spacing: 8) {
-                Button {
-                    guard let chosen else { return }
-                    model.requestStream(app: chosen, on: host)
-                } label: {
-                    Label(resumes ? "Resume" : "Stream", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                Button {
-                    guard let chosen else { return }
-                    model.pictureInPictureLaunchRequestedAt = Date()
-                    model.requestStream(app: chosen, on: host)
-                } label: {
-                    Label("Picture in Picture", systemImage: "pip.enter")
-                }
-            }
-            .disabled(model.isStreaming)
-        }
-    }
-
-    private func hostIdentity(for host: Host) -> some View {
-        let address = model.selectedHostRouteAddress ?? model.dialAddress(for: host)
-        return VStack(spacing: 6) {
-            HostSystemLogo(host: host, size: 56)
-                .padding(.bottom, 4)
-            VStack(spacing: 2) {
-                Group {
-                    if renamingHostID == host.id {
-                        TextField("PC name", text: $draftHostName)
-                            .font(.system(size: 16))
-                            .textFieldStyle(.roundedBorder)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 240)
-                            .focused($hostNameFocused)
-                            .onAppear { hostNameFocused = true }
-                            .onSubmit { saveHostRename() }
-                            .onExitCommand { cancelHostRename() }
-                            .accessibilityLabel("PC name")
-                    } else {
-                        Text(host.displayName)
-                            .lineLimit(1)
-                            .help(host.displayName)
+                if streamingHere, case .connecting(let stage) = model.streamPhase {
+                    ProgressView().controlSize(.small).help(stage)
+                    Button("Cancel") { model.cancelConnect() }
+                } else if streamingHere {
+                    Button { model.resumeStreamWindow() } label: {
+                        Label("Show Stream", systemImage: "pip.exit")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!model.activeStreamHasVideo)
+                    Button("End Stream") { model.endStream() }
+                } else {
+                    Button {
+                        guard let chosen else { return }
+                        model.requestStream(app: chosen, on: host)
+                    } label: {
+                        Label(resumes ? "Resume" : "Stream", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button {
+                        guard let chosen else { return }
+                        model.pictureInPictureLaunchRequestedAt = Date()
+                        model.requestStream(app: chosen, on: host)
+                    } label: {
+                        Label("Picture in Picture", systemImage: "pip.enter")
                     }
                 }
-                .font(.system(size: 18, weight: .semibold))
-                .frame(height: 22)
-                HStack(spacing: 5) {
-                    SpikeStatusDot(status: connectionIndicator(for: host))
-                    Text("\(connectionStatusText(for: host)) · \(address)")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                }
-                .frame(height: 16)
             }
+            .disabled(chosen == nil || (model.isStreaming && !streamingHere))
         }
-        .frame(maxWidth: .infinity)
-        .hostContextMenu(host, onRename: { beginHostRename(host) })
     }
 
-    private func beginHostRename(_ host: Host) {
-        draftHostName = host.displayName
-        renamingHostID = host.id
+    /// A PC that published no apps: refresh, or hand the problem to an agent.
+    private func noAppsNotice(for host: Host) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(appRefreshFailed ? "Couldn’t refresh the apps." : "No apps found.")
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Button(refreshingApps ? "Refreshing…" : "Refresh Apps") { refreshApps(for: host) }
+                    .disabled(refreshingApps || model.isStreaming)
+                Button(copiedAgentPrompt ? "Copied" : "Copy Agent Prompt") { copyAgentPrompt(for: host) }
+                    .help("Copy troubleshooting instructions for Claude Code or another coding agent")
+            }
+            .controlSize(.small)
+        }
     }
+
+
+
 
     private func connectionIndicator(for host: Host) -> HostStatusIndicator {
         if model.selectedHost?.id == host.id || (model.isStreaming && model.activeStreamHostID == host.id) {
@@ -521,72 +436,8 @@ struct ComputersTab: View {
         return probe.reachable ? "Online" : "Asleep or offline"
     }
 
-    private func saveHostRename() {
-        guard let id = renamingHostID else { return }
-        renamingHostID = nil
-        hostNameFocused = false
-        if let host = model.hosts.first(where: { $0.id == id }) {
-            model.renameHost(host, to: draftHostName)
-        }
-    }
 
-    private func cancelHostRename() {
-        renamingHostID = nil
-        hostNameFocused = false
-    }
 
-    @ViewBuilder
-    private func appList(for host: Host) -> some View {
-        if apps.isEmpty {
-            VStack(spacing: 6) {
-                Text("No apps found")
-                    .font(.system(size: 13, weight: .medium))
-                Text(appRefreshFailed
-                     ? "Couldn’t refresh apps. Ask your coding agent to investigate."
-                     : "Refresh the list, or ask your coding agent to investigate.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 10) {
-                    Button { refreshApps(for: host) } label: {
-                        ZStack {
-                            Text("Refresh Apps").hidden().accessibilityHidden(true)
-                            Text(refreshingApps ? "Refreshing…" : "Refresh Apps")
-                        }
-                        .frame(height: 14)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(refreshingApps || model.isStreaming)
-                    Button { copyAgentPrompt(for: host) } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "doc.on.doc")
-                                .font(.system(size: 12))
-                                .frame(width: 12, height: 14)
-                            ZStack {
-                                Text("Copy Agent Prompt").hidden().accessibilityHidden(true)
-                                Text(copiedAgentPrompt ? "Copied" : "Copy Agent Prompt")
-                            }
-                        }
-                        .frame(height: 14)
-                    }
-                    .help("Copy troubleshooting instructions for Claude Code or another coding agent")
-                }
-                .font(.system(size: 12))
-                .controlSize(.small)
-                .padding(.top, 2)
-            }
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity)
-        } else if apps.count > 3 {
-            NativeAppListScrollView(rowCount: apps.count) {
-                appRows(for: host)
-            }
-            .frame(height: AppListMetrics.viewportHeight)
-            .padding(.trailing, -AppListMetrics.scrollerWidth)
-        } else {
-            appRows(for: host)
-        }
-    }
 
     private func resetAppActions() {
         appRefreshTask?.cancel()
@@ -622,145 +473,10 @@ struct ComputersTab: View {
         copiedAgentPrompt = pasteboard.setString(prompt, forType: .string)
     }
 
-    private func appRows(for host: Host) -> some View {
-        VStack(spacing: 0) {
-            ForEach(apps) { app in
-                VStack(spacing: 0) {
-                    appRow(app, on: host)
-                    if app.id != apps.last?.id {
-                        Divider().frame(height: AppListMetrics.dividerHeight).padding(.leading, 43)
-                    }
-                }
-            }
-        }
-    }
 
-    private func appRow(_ app: LibraryApp, on host: Host) -> some View {
-        let active = model.isStreaming && model.activeStreamHostID == host.id
-            && model.activeStreamApp?.id == app.id
-        let title = model.runningAppName == app.name ? "Resume" : "Stream"
-        return HStack(spacing: 11) {
-            Button { model.requestStream(app: app, on: host) } label: {
-                HStack(spacing: 11) {
-                    AppGlyphIcon(app: app, size: 22)
-                        .font(.system(size: 22))
-                        .frame(width: 27, height: 25)
-                    Text(app.name).font(.system(size: 13)).lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(.primary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(model.isStreaming)
-            .accessibilityLabel("\(title) \(app.name)")
-            if active {
-                if model.activeStreamHasVideo {
-                    Button { model.resumeStreamWindow() } label: {
-                        Image(systemName: "pip.exit")
-                            .font(.system(size: 15)).foregroundStyle(Color.accentColor)
-                            .frame(width: 22, height: 22).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Show \(app.name) stream")
-                    .accessibilityLabel("Show \(app.name) stream")
-                }
-                if case .connecting(let stage) = model.streamPhase {
-                    ProgressView().controlSize(.small).frame(width: 12).help(stage)
-                    Button { model.cancelConnect() } label: {
-                        AppRowActionLabel(title: "Cancel")
-                    }
-                    .controlSize(.small)
-                } else {
-                    Button("End Stream") { model.endStream() }.controlSize(.small)
-                        .disabled(model.streamPhase != .streaming)
-                }
-            } else {
-                Button { model.requestStream(app: app, on: host) } label: {
-                    AppRowActionLabel(title: title)
-                }
-                    .controlSize(.small)
-                    .disabled(model.isStreaming)
-                    .help("\(title) \(app.name)")
-            }
-        }
-        .padding(.horizontal, 10)
-        .frame(height: AppListMetrics.rowHeight)
-        .opacity(model.isStreaming && !active ? 0.4 : 1)
-    }
 
-    private func latencySection(for host: Host) -> some View {
-        let streaming = model.isStreaming && model.activeStreamHostID == host.id
-        return VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                HStack(alignment: .center, spacing: 5) {
-                    Text("\(Text("Latency").font(.system(size: 13, weight: .medium)))\(Text(model.macConnectionLabel.map { " over \($0)" } ?? "").foregroundStyle(.secondary))")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
-                        .fixedSize()
-                    if model.macConnectionLabel != nil {
-                        connectionIcon
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .help("Latency over this Mac’s connection to the PC")
-                Spacer(minLength: 0)
-                if latencyTest.hasRun {
-                    Text(latencyTest.latestDescription)
-                        .font(.system(size: 12, weight: .medium)).monospacedDigit()
-                }
-                Button {
-                    if latencyTest.isRunning { latencyTest.stop() }
-                    else { startLatencyTest() }
-                } label: {
-                    ZStack(alignment: .trailing) {
-                        Text("Test latency").hidden().accessibilityHidden(true)
-                        Text(latencyTest.isRunning ? "Stop" : "Test latency")
-                    }
-                    .contentShape(Rectangle())
-                }
-                .font(.system(size: 12))
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
-                .disabled(model.isStreaming && !streaming)
-            }
-            NetworkHistoryGraph(test: latencyTest, streaming: streaming)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
-    @ViewBuilder
-    private var connectionIcon: some View {
-        Group {
-            if model.macConnectionIsEthernet {
-                EthernetPortGlyph()
-                    .stroke(style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
-                    .frame(width: 14, height: 12)
-            } else if let symbol = model.macConnectionSymbol {
-                Image(systemName: symbol).font(.system(size: 11))
-            }
-        }
-        .help("This Mac’s connection to the PC: \(model.macConnectionDescription). This does not describe the PC’s network adapter.")
-        .accessibilityLabel("This Mac’s connection: \(model.macConnectionDescription)")
-    }
 
-    private func startLatencyTest() {
-        guard let host = model.selectedHost,
-              let address = model.selectedHostRouteAddress else { return }
-        let scope = latencyScope
-        let port = model.nativeServerInfo(for: host).httpPort
-        latencyTest.start(hostID: host.id, address: address) {
-            guard latencyScope == scope else { return nil }
-            if scope.streaming {
-                guard model.activeStreamHostID == host.id, model.streamPhase == .streaming else { return nil }
-                return await model.nativeSession?.networkRoundTripMilliseconds()
-            }
-            switch await HostReachability.measureRTT(host: address, port: port) {
-            case .reachable(let ms): return Double(ms)
-            case .unreachable: return nil
-            }
-        }
-    }
 
 
 }
@@ -771,71 +487,8 @@ enum HostAppTroubleshootingPrompt {
     }
 }
 
-private enum AppListMetrics {
-    static let rowHeight: CGFloat = 39
-    static let dividerHeight: CGFloat = 1
-    static let viewportHeight = (rowHeight + dividerHeight) * 3
-    static var scrollerWidth: CGFloat {
-        NSScroller.scrollerWidth(for: .small, scrollerStyle: .legacy)
-    }
 
-    static func contentHeight(rows: Int) -> CGFloat {
-        CGFloat(rows) * rowHeight + CGFloat(max(0, rows - 1)) * dividerHeight
-    }
-}
 
-/// Keep the common row action in the same place as its label changes.
-private struct AppRowActionLabel: View {
-    let title: String
-
-    var body: some View {
-        ZStack {
-            Text("Resume").hidden().accessibilityHidden(true)
-            Text(title)
-        }
-        .fixedSize()
-    }
-}
-
-/// A normal macOS scrollbar, visible whenever extra app rows exist.
-/// Three-row lists use the regular SwiftUI stack without a scroll view.
-private struct NativeAppListScrollView<Content: View>: NSViewRepresentable {
-    let rowCount: Int
-    @ViewBuilder let content: () -> Content
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.controlActiveState) private var activeState
-
-    private var hostedContent: AnyView {
-        AnyView(content().environment(\.colorScheme, colorScheme)
-            .environment(\.controlActiveState, activeState))
-    }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSScrollView()
-        scroll.drawsBackground = false
-        scroll.borderType = .noBorder
-        scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = false
-        scroll.autohidesScrollers = false
-        // The small native scrollbar sits in the surrounding content margin;
-        // it does not take width from the app rows.
-        scroll.scrollerStyle = .legacy
-        scroll.verticalScroller?.controlSize = .small
-        scroll.verticalScrollElasticity = .none
-        let document = NSHostingView(rootView: hostedContent)
-        document.sizingOptions = []
-        document.autoresizingMask = [.width]
-        scroll.documentView = document
-        return scroll
-    }
-
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let document = scroll.documentView as? NSHostingView<AnyView> else { return }
-        document.rootView = hostedContent
-        document.frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width,
-                                height: AppListMetrics.contentHeight(rows: rowCount))
-    }
-}
 
 /// A readable zero-based scale for the measurements currently in view. Keep
 /// clean tick values without imposing a 10 ms floor on fast connections.
@@ -856,95 +509,7 @@ struct LatencyGraphScale {
     }
 }
 
-/// An opt-in Tailscale-style diagnostic: a quiet result header, blue trace,
-/// and readable millisecond labels on the right. Completed results are frozen.
-private struct NetworkHistoryGraph: View {
-    let test: HostLatencyTest
-    let streaming: Bool
-    private let blue = Color(red: 0.27, green: 0.47, blue: 0.91)
 
-    var body: some View {
-        let now = test.sampledAt
-        let scale = LatencyGraphScale(maximum: test.history.statistics(at: now)?.maximum)
-        let start = max(now.addingTimeInterval(-HostLatencyHistory.duration),
-                        min(now.addingTimeInterval(-10), test.history.readings.first?.capturedAt ?? now))
-        Chart {
-            ForEach(Array(test.history.segments(maxGap: 3.5).enumerated()), id: \.offset) { index, segment in
-                ForEach(Array(segment.enumerated()), id: \.offset) { _, reading in
-                    LineMark(x: .value("Time", reading.capturedAt),
-                             y: .value("Milliseconds", reading.milliseconds),
-                             series: .value("Segment", index))
-                        .foregroundStyle(blue)
-                        .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                        .interpolationMethod(.linear)
-                    PointMark(x: .value("Time", reading.capturedAt),
-                              y: .value("Milliseconds", reading.milliseconds))
-                        .symbol {
-                            Circle()
-                                .fill(Color(nsColor: .textBackgroundColor))
-                                .overlay(Circle().strokeBorder(blue, lineWidth: 1.2))
-                                .frame(width: 4.5, height: 4.5)
-                        }
-                }
-            }
-        }
-        .chartXScale(domain: start...now,
-                     range: .plotDimension(startPadding: 3, endPadding: 3))
-        .chartYScale(domain: 0...scale.upperBound,
-                     range: .plotDimension(startPadding: 8, endPadding: 8))
-        .chartXAxis(.hidden)
-        .chartYAxis {
-            AxisMarks(position: .trailing, values: scale.ticks) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
-                    .foregroundStyle(Color.secondary.opacity(0.28))
-                AxisValueLabel(collisionResolution: .disabled, horizontalSpacing: 8) {
-                    if let ms = value.as(Double.self) {
-                        Text("\(ms.formatted(.number.precision(.fractionLength(0...1)))) ms")
-                            .font(.system(size: 11)).monospacedDigit()
-                            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                            .frame(minWidth: 36, alignment: .trailing)
-                    }
-                }
-            }
-        }
-        .chartLegend(.hidden)
-        .chartPlotStyle { plot in plot.clipped() }
-        .frame(height: 74)
-        .padding(12)
-        .overlay {
-            if test.hasRun && test.history.readings.isEmpty {
-                Text(test.isRunning ? "Waiting for a response…" : "No measurements available")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-        }
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.primary.opacity(0.18), lineWidth: 1))
-        .accessibilityLabel("Latency test history in milliseconds")
-        .accessibilityValue(test.hasRun ? test.latestDescription : "No measurements yet")
-        .help(streaming
-              ? "Network round-trip time from the current stream. Reads the existing transport estimator without extra probes. Excludes game, capture, encoding, decoding, and display delay."
-              : "Measures TCP connection setup time to this server, including DNS if needed. Runs only when started, for up to 30 readings. Stop cancels the test. This is not ICMP ping or end-to-end input latency.")
-    }
-}
-
-/// A small RJ45 socket: the stepped opening and six contacts read as Ethernet
-/// at text size, without depending on a plug-shaped SF Symbol.
-private struct EthernetPortGlyph: Shape {
-    nonisolated func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let outline: [CGPoint] = [CGPoint(x: 2, y: 2), CGPoint(x: 14, y: 2),
-                                  CGPoint(x: 14, y: 10), CGPoint(x: 11, y: 10),
-                                  CGPoint(x: 11, y: 12), CGPoint(x: 5, y: 12),
-                                  CGPoint(x: 5, y: 10), CGPoint(x: 2, y: 10)]
-        path.addLines(outline)
-        path.closeSubpath()
-        for x in stride(from: 4.0, through: 12.0, by: 1.6) {
-            path.move(to: CGPoint(x: x, y: 3.5))
-            path.addLine(to: CGPoint(x: x, y: 6.5))
-        }
-        return path.applying(CGAffineTransform(scaleX: rect.width / 16, y: rect.height / 14)
-            .concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY)))
-    }
-}
 
 /// Discovery is transient and untrusted. Match stable server IDs or exact
 /// saved addresses; a friendly name alone must never hide another user's PC.
@@ -996,21 +561,18 @@ private struct NearbyPlayStationRow: View {
     let console: PlayStationDiscovery.Found
     let selected: Bool
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "playstation.logo")
-                .font(.system(size: 14))
+        HStack(spacing: 9) {
+            HostSystemLogo(kind: .playStation, size: 22)
                 .foregroundStyle(.secondary)
-                .frame(width: SettingsMetrics.sidebarIconSize, height: SettingsMetrics.sidebarIconSize)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 Text(console.name).font(.system(size: 13)).lineLimit(1)
-                Text(console.address).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                Text(console.address).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .frame(minHeight: SettingsMetrics.sidebarRowHeight)
+        .padding(.horizontal, 8)
+        .frame(height: 40)
         .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.primary.opacity(0.13) : .clear))
         .contentShape(Rectangle())
     }
@@ -1020,20 +582,19 @@ private struct NearbyPCRow: View {
     let pc: HostDiscovery.Discovered
     let selected: Bool
     var body: some View {
-        HStack(spacing: 8) {
-            HostSystemGlyph(icon: HostIcon.suggested(for: pc.displayName))
+        HStack(spacing: 9) {
+            HostSystemLogo(kind: HostSystemKind.resolve(isPlayStation: false, ttl: nil, serverName: pc.displayName),
+                           size: 22)
                 .foregroundStyle(.secondary)
-                .frame(width: SettingsMetrics.sidebarIconSize, height: SettingsMetrics.sidebarIconSize)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 Text(pc.displayName).font(.system(size: 13)).lineLimit(1)
-                Text(pc.host).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                Text(pc.host).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .frame(minHeight: SettingsMetrics.sidebarRowHeight)
+        .padding(.horizontal, 8)
+        .frame(height: 40)
         .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.primary.opacity(0.13) : .clear))
         .contentShape(Rectangle())
     }
@@ -1064,7 +625,7 @@ private struct HostRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
-            SpikeStatusDot(status: status)
+            HostStatusDot(status: status)
         }
         .padding(.horizontal, 8)
         .frame(height: 40)
@@ -1074,104 +635,8 @@ private struct HostRow: View {
     }
 }
 
-/// The icon preference is keyed by stable host ID, independently of the
-/// replaceable Host snapshots. AppStorage updates both the row and menu.
-struct HostIdentityIcon: View {
-    let host: Host
-    let size: CGFloat
-    let status: HostStatusIndicator?
-    let statusText: String?
-    @AppStorage private var preference: HostIcon
 
-    init(host: Host, size: CGFloat = SettingsMetrics.sidebarIconSize,
-         status: HostStatusIndicator? = nil, statusText: String? = nil) {
-        self.host = host
-        self.size = size
-        self.status = status
-        self.statusText = statusText
-        _preference = AppStorage(wrappedValue: .automatic, HostIcon.storageKey(for: host.id))
-    }
 
-    var body: some View {
-        let icon = preference.resolved(serverName: host.name)
-        let rgb = icon.backgroundRGB
-        let colour = Color(red: Double((rgb >> 16) & 255) / 255,
-                           green: Double((rgb >> 8) & 255) / 255,
-                           blue: Double(rgb & 255) / 255)
-        Group {
-            if icon == .bazzite {
-                // The colour artwork includes its circular avatar background.
-                Image("HostLogo-bazzite")
-                    .renderingMode(.original)
-                    .resizable().scaledToFit()
-                    .frame(width: size, height: size)
-            } else {
-                Circle()
-                    .fill(icon == .computer ? Color.accentColor.opacity(0.22) : colour)
-                    .frame(width: size, height: size)
-                    .overlay {
-                        HostSystemGlyph(icon: icon, size: size)
-                            .foregroundStyle(icon == .computer ? Color.accentColor : icon == .linux ? .black : .white)
-                    }
-            }
-        }
-            .overlay(alignment: .bottomTrailing) {
-                if let status {
-                    HostConnectionBadge(status: status, size: size >= 48 ? 14 : 12)
-                        .help(statusText ?? "PC status")
-                        .accessibilityHidden(true)
-                }
-            }
-            .help(statusText.map { "\($0) · Right-click for PC options" }
-                  ?? (icon == .computer ? "Server icon · Right-click to choose" : "\(icon.title) icon · Right-click to change"))
-            .accessibilityLabel([icon == .computer ? "Server" : "\(icon.title) server icon", statusText].compactMap { $0 }.joined(separator: ", "))
-    }
-}
-
-struct HostConnectionBadge: View {
-    let status: HostStatusIndicator
-    let size: CGFloat
-
-    private var diameter: CGFloat {
-        size - 4
-    }
-
-    private var color: Color {
-        switch status {
-        case .online: .green
-        case .attention, .offline: .orange
-        case .error: .red
-        case .neutral: .secondary
-        }
-    }
-
-    var body: some View {
-        Circle().fill(color)
-            .frame(width: diameter, height: diameter)
-            .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-1))
-    }
-}
-
-/// Shared OS/distro artwork for paired hosts and transient Bonjour rows.
-/// The caller supplies the foreground style and surrounding presentation.
-private struct HostSystemGlyph: View {
-    let icon: HostIcon
-    var size: CGFloat = SettingsMetrics.sidebarIconSize
-    private var scale: CGFloat { size / SettingsMetrics.sidebarIconSize }
-
-    var body: some View {
-        if let asset = icon.assetName {
-            Image(asset)
-                .renderingMode(icon == .chimeraOS || icon == .bazzite ? .original : .template)
-                .resizable().scaledToFit()
-                .frame(width: 25 * scale, height: 25 * scale)
-        } else {
-            Image(systemName: icon == .macOS ? "apple.logo" : "desktopcomputer")
-                .font(.system(size: (icon == .macOS ? 23 : 18) * scale))
-                .frame(width: 25 * scale, height: 25 * scale)
-        }
-    }
-}
 
 // MARK: - App glyph
 

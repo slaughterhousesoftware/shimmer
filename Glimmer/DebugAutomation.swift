@@ -137,7 +137,7 @@ extension AppModel {
                 if appearance == "light" { NSApp.appearance = NSAppearance(named: .aqua) }
                 if appearance == "dark" { NSApp.appearance = NSAppearance(named: .darkAqua) }
             }
-            let list = panes.split(separator: ",").compactMap { SettingsTab(rawValue: String($0)) }
+            let list = panes.split(separator: ",").compactMap { SettingsTab(persisted: String($0)) }
             log.notice("DEBUG automation: opening Settings on \(list.map(\.rawValue), privacy: .public)")
             for (i, pane) in list.enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5 + Double(i) * 3.0) { [weak self] in

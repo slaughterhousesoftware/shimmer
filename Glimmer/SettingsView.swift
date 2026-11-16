@@ -36,7 +36,7 @@ struct AppShell: View {
         if showsWelcome { return 520 - 32 }
         let ceiling = model.settingsTab.windowHeight
         switch model.settingsTab {
-        case .stream, .playStation, .general:
+        case .general:
             guard let pageHeight, headerHeight > 0 else { return ceiling }
             // The header is measured in window space, but its top 32pt is the
             // title bar this frame's height already excludes.
@@ -92,8 +92,6 @@ struct AppShell: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
             switch model.settingsTab {
             case .computers: ComputersTab(pairingTarget: $pairingTarget)
-            case .stream: StreamTabPage()
-            case .playStation: ComputersTab(pairingTarget: $pairingTarget)
             case .general: GeneralTabPage()
             case .about: AboutPane()
             }
@@ -109,19 +107,6 @@ struct AppShell: View {
         .background(Color(nsColor: showsWelcome ? .windowBackgroundColor : .textBackgroundColor))
         .onChange(of: model.settingsTab) { _, tab in
             if tab != .computers { pairingTarget = nil }
-        }
-    }
-}
-
-/// The Sunshine (GameStream) stream: what a PC is asked for. The gutter
-/// labels ("Resolution:", "Bitrate:") do the grouping a sidebar would.
-/// How any stream is shown on this Mac lives in General; the PS5's own
-/// settings have their own tab.
-private struct StreamTabPage: View {
-    var body: some View {
-        SettingsPageBody {
-            StreamPane()
-            VideoPane()
         }
     }
 }

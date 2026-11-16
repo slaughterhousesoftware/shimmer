@@ -26,7 +26,7 @@ struct PlayStationSettingsPane: View {
                     Text("1280 × 720 (720p)").tag(720)
                 }
                 .labelsHidden()
-                .settingsControl()
+                .settingsPopup()
                 SettingsHelp("The PS5 streams at 1080p at most.")
             }
 
@@ -36,7 +36,7 @@ struct PlayStationSettingsPane: View {
                     Text("30 Hz").tag(30)
                 }
                 .labelsHidden()
-                .settingsControl()
+                .settingsPopup()
             }
 
             SettingsField("Bitrate") {
@@ -62,7 +62,7 @@ struct PlayStationSettingsPane: View {
                     Text("H.264").tag(false)
                 }
                 .labelsHidden()
-                .settingsControl()
+                .settingsPopup()
                 SettingsHelp(settings.hevc ? "Sharper for the same bitrate."
                                            : "Only if HEVC's picture breaks up.")
             }
@@ -80,7 +80,7 @@ struct PlayStationSettingsPane: View {
                     }
                 }
                 .labelsHidden()
-                .settingsControl()
+                .settingsPopup()
                 SettingsHelp(settings.presentation == .lowestLatency
                     ? "Each frame appears the moment it is decoded."
                     : "Frames wait for the display's refresh, evening out network hiccups at a little latency.")
@@ -93,7 +93,7 @@ struct PlayStationSettingsPane: View {
                     }
                 }
                 .labelsHidden()
-                .settingsControl()
+                .settingsPopup()
                 SettingsHelp("Haptic feedback plays the console's haptics on a DualSense, over USB or "
                     + "Bluetooth. Rumble suits other controllers.")
             }

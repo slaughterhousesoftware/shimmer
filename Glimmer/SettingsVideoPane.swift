@@ -39,7 +39,7 @@ struct VideoPane: View {
                         }
                     }
                     .labelsHidden()
-                    .settingsControl()
+                    .settingsPopup()
                 } else {
                     Text("Pair a PC to choose the codec it streams with.")
                         .foregroundStyle(.secondary)

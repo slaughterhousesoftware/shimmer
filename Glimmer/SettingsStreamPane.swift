@@ -109,7 +109,7 @@ struct StreamPane: View {
                     }
                 }
                 .labelsHidden()
-                .settingsControl()
+                .settingsPopup()
                 if resolutionSelection.wrappedValue == .custom {
                     HStack(spacing: 6) {
                         TextField("", value: $model.customWidth, format: .number)
@@ -130,7 +130,7 @@ struct StreamPane: View {
                     }
                 }
                 .labelsHidden()
-                .settingsControl()
+                .settingsPopup()
                 if frameRateSelection.wrappedValue == .custom {
                     HStack(spacing: 6) {
                         TextField("", value: $model.customFPS, format: .number)

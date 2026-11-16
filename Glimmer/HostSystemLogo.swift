@@ -9,17 +9,30 @@
 import SwiftUI
 
 struct HostSystemLogo: View {
-    let host: Host
+    private let fixedKind: HostSystemKind?
+    private let host: Host?
     let size: CGFloat
     @AppStorage private var cachedKind: String
 
+    /// A saved machine: its detected (cached) system.
     init(host: Host, size: CGFloat) {
         self.host = host
+        self.fixedKind = nil
         self.size = size
         _cachedKind = AppStorage(wrappedValue: "", HostSystemKind.storageKey(for: host.id))
     }
 
+    /// A machine not added yet (nearby): a kind settled by the caller.
+    init(kind: HostSystemKind, size: CGFloat) {
+        self.host = nil
+        self.fixedKind = kind
+        self.size = size
+        _cachedKind = AppStorage(wrappedValue: "", "glimmer.hostSystem.-")
+    }
+
     private var kind: HostSystemKind {
+        if let fixedKind { return fixedKind }
+        guard let host else { return .linux }
         if host.isPlayStation { return .playStation }
         return HostSystemKind(rawValue: cachedKind)
             ?? HostSystemKind.resolve(isPlayStation: false, ttl: nil, serverName: host.name)
@@ -35,7 +48,6 @@ struct HostSystemLogo: View {
             }
         }
         .frame(width: size, height: size)
-        .foregroundStyle(.primary)
         .accessibilityLabel(Self.name(of: kind))
     }
 
@@ -50,5 +62,15 @@ struct HostSystemLogo: View {
         case .mac: "Mac"
         case .playStation: "PlayStation"
         }
+    }
+}
+
+/// A machine's reachability, as a small dot beside its name.
+struct HostStatusDot: View {
+    let status: HostStatusIndicator
+    var body: some View {
+        Circle()
+            .fill(status == .online ? Color.green : status == .error ? .red : status == .neutral ? .secondary : .orange)
+            .frame(width: 7, height: 7)
     }
 }

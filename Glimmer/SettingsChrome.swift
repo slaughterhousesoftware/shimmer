@@ -33,19 +33,24 @@ struct SettingsHeaderBackground: View {
 /// The pages the settings view can show. Raw values are persisted as the
 /// remembered tab, so leave them alone when renaming a title.
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case computers, stream, playStation, general, about
+    case computers, general, about
 
     var id: String { rawValue }
+
+    /// A remembered tab. The Sunshine ("stream") and PlayStation tabs became
+    /// each machine's page on Servers.
+    init?(persisted raw: String) {
+        switch raw {
+        case "stream", "playStation": self = .computers
+        default: self.init(rawValue: raw)
+        }
+    }
 
     var title: String {
         switch self {
         // The enum case stays `computers` (the --debug-open-settings rawValue
         // and existing references); only the shown name changed to "Servers".
         case .computers: return "Servers"
-        // `stream` keeps its raw value (the remembered tab); it is the
-        // Sunshine/GameStream settings now that the PS5 has its own tab.
-        case .stream: return "Sunshine"
-        case .playStation: return "PlayStation"
         case .general: return "General"
         case .about: return "About"
         }
@@ -57,10 +62,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         // from the "display"/"desktopcomputer" glyph the host rows and menu bar
         // already use for a machine.
         case .computers: return "server.rack"
-        // A screen with a play badge: the video you watch, not the Wi-Fi-looking
-        // radio waves. The sliders stay with the app-level General page.
-        case .stream: return "sun.max"
-        case .playStation: return "playstation.logo"
         case .general: return "slider.horizontal.3"
         case .about: return "info.circle"
         }
@@ -77,8 +78,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .computers: return 700 - 32
         // Allow room for the descriptions and CLI row. Unusual expanded
         // controls and diagnostics can still scroll within the page.
-        case .stream: return 640 - 32
-        case .playStation: return 760 - 32
         case .general: return 744 - 32
         case .about: return 540 - 32
         }
@@ -100,7 +99,7 @@ struct SettingsTabBar: View {
     var body: some View {
         HStack(spacing: 2) {
             Spacer(minLength: 0)
-            ForEach(SettingsTab.allCases.filter { $0 != .stream && $0 != .playStation }) { tab in
+            ForEach(SettingsTab.allCases) { tab in
                 Button {
                     selection = tab
                 } label: {
@@ -233,6 +232,14 @@ extension View {
         padding(.top, 3)
     }
 
+    /// A popup menu in the settings column. macOS popups size to their
+    /// longest item and don't stretch, so they line up on their LEFT edge
+    /// (the settings column) and stay ragged on the right, as in macOS's own
+    /// settings.
+    func settingsPopup() -> some View {
+        settingsControl()
+    }
+
     /// The same flush-left rule for a control that should grow to a ceiling
     /// rather than sit in a fixed box.
     func settingsControl(maxWidth: CGFloat) -> some View {
@@ -361,17 +368,21 @@ struct SettingsPageBody<Content: View>: View {
 /// tick on each, up to `maxMbps`. (Bazzite's had 26 ticks; across a 260pt
 /// control they land on fractional pixels and look unevenly spaced.)
 struct BitrateSlider: View {
-    static let stopsMbps = [5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300]
+    nonisolated static let stopsMbps = [5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300]
     let mbps: Int
     let maxMbps: Int
     let set: (Int) -> Void
 
+    /// The snap point nearest `mbps` among those up to `maxMbps`.
+    nonisolated static func nearestStopIndex(mbps: Int, maxMbps: Int) -> Int {
+        let stops = stopsMbps.filter { $0 <= maxMbps }
+        return stops.enumerated().min(by: { abs($0.element - mbps) < abs($1.element - mbps) })?.offset ?? 0
+    }
+
     var body: some View {
         let stops = Self.stopsMbps.filter { $0 <= maxMbps }
         Slider(value: Binding(
-            get: {
-                Double(stops.enumerated().min(by: { abs($0.element - mbps) < abs($1.element - mbps) })?.offset ?? 0)
-            },
+            get: { Double(Self.nearestStopIndex(mbps: mbps, maxMbps: maxMbps)) },
             set: { set(stops[min(stops.count - 1, max(0, Int($0.rounded())))]) }),
                in: 0...Double(max(stops.count - 1, 1)), step: 1)
     }

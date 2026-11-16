@@ -32,10 +32,3 @@ enum DebugMockups {
 
 import SwiftUI
 
-struct SpikeStatusDot: View {
-    let status: HostStatusIndicator
-    var body: some View {
-        Circle().fill(status == .online ? Color.green : status == .neutral ? .secondary : .orange)
-            .frame(width: 7, height: 7)
-    }
-}

@@ -329,6 +329,7 @@
 		D20000F3 /* DatagramSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000F2 /* DatagramSourceTests.swift */; };
 		A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000320000000000000 /* PictureInPictureTests.swift */; };
 		2A02904E377F70311AAC2ED3 /* HostStreamSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DEC2D587EB8640BADDA86CF /* HostStreamSettingsTests.swift */; };
+		418D914910601BEDAA0D2826 /* SettingsLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE62D1764B6F64BACB3E0FF /* SettingsLayoutTests.swift */; };
 		04E8A4290A1BD1B880E3C63D /* HostSystemKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9E6EBA85D12CAA81EEDBB9 /* HostSystemKindTests.swift */; };
 		255FD45F4A364608975415AA /* PlayStationSettingsPerConsoleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 818A7D2DC99B28949CAAE877 /* PlayStationSettingsPerConsoleTests.swift */; };
 		71F9D0F9B22B3659EF407CFE /* ControllerFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543FD190D081183C172632CC /* ControllerFocusTests.swift */; };
@@ -708,6 +709,7 @@
 		D20000F2 /* DatagramSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatagramSourceTests.swift; sourceTree = "<group>"; };
 		A1C0DE000320000000000000 /* PictureInPictureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PictureInPictureTests.swift"; sourceTree = "<group>"; };
 		5DEC2D587EB8640BADDA86CF /* HostStreamSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HostStreamSettingsTests.swift"; sourceTree = "<group>"; };
+		AAE62D1764B6F64BACB3E0FF /* SettingsLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsLayoutTests.swift"; sourceTree = "<group>"; };
 		0A9E6EBA85D12CAA81EEDBB9 /* HostSystemKindTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HostSystemKindTests.swift"; sourceTree = "<group>"; };
 		818A7D2DC99B28949CAAE877 /* PlayStationSettingsPerConsoleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayStationSettingsPerConsoleTests.swift"; sourceTree = "<group>"; };
 		543FD190D081183C172632CC /* ControllerFocusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ControllerFocusTests.swift"; sourceTree = "<group>"; };
@@ -1143,6 +1145,7 @@
 				D20000F2 /* DatagramSourceTests.swift */,
 				A1C0DE000320000000000000 /* PictureInPictureTests.swift */,
 				5DEC2D587EB8640BADDA86CF /* HostStreamSettingsTests.swift */,
+				AAE62D1764B6F64BACB3E0FF /* SettingsLayoutTests.swift */,
 				0A9E6EBA85D12CAA81EEDBB9 /* HostSystemKindTests.swift */,
 				818A7D2DC99B28949CAAE877 /* PlayStationSettingsPerConsoleTests.swift */,
 				543FD190D081183C172632CC /* ControllerFocusTests.swift */,
@@ -1617,6 +1620,7 @@
 				D20000F3 /* DatagramSourceTests.swift in Sources */,
 				A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */,
 				2A02904E377F70311AAC2ED3 /* HostStreamSettingsTests.swift in Sources */,
+				418D914910601BEDAA0D2826 /* SettingsLayoutTests.swift in Sources */,
 				04E8A4290A1BD1B880E3C63D /* HostSystemKindTests.swift in Sources */,
 				255FD45F4A364608975415AA /* PlayStationSettingsPerConsoleTests.swift in Sources */,
 				71F9D0F9B22B3659EF407CFE /* ControllerFocusTests.swift in Sources */,
