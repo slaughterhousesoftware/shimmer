@@ -460,6 +460,7 @@ extension VideoDecoder {
         // already in hand) and the depacketizer's reference state is untouched.
         if let renderer = displayLayer?.sampleBufferRenderer {
             renderer.flush()
+            flushMirror()
             OSSignposter.render.emitEvent("DiscontinuityFlush", "trigger=param_rebuild")
             TelemetryCounters.shared.discontinuityFlushTotal.increment()
         }

@@ -111,10 +111,12 @@ final class PictureInPictureStage {
         return true
     }
 
-    /// The next stream's window is built: make the layer ready for its frames.
-    /// Keeps the held picture on screen until they arrive.
+    /// A new stream is about to feed the layer: start its timeline over. The
+    /// layer outlives streams, and frames stamped earlier than the last
+    /// stream's are never shown otherwise (measured: PS5 then Bazzite froze
+    /// the PiP on the PS5's last frame, 2026-11-16). Keeps whatever picture is
+    /// up (a held PiP's) until the new frames arrive.
     func prepareForNextStream() {
-        guard isHolding else { return }
         source.layer.sampleBufferRenderer.flush(removingDisplayedImage: false, completionHandler: nil)
     }
 

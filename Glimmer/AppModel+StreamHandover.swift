@@ -139,13 +139,9 @@ extension AppModel {
         outgoing.window?.handsOffToLauncher = false
 
         // 3-4. The new stream's frames replace the old picture in place.
-        if handedOff {
-            stage.prepareForNextStream()
-            decoder.setMirrorLayer(stage.source.layer)
-            _ = window.adoptHeldPictureInPicture()
-        } else {
-            decoder.setMirrorLayer(window.pipLayer)
-        }
+        stage.prepareForNextStream()
+        decoder.setMirrorLayer(stage.source.layer)
+        if handedOff { _ = window.adoptHeldPictureInPicture() }
 
         // 5. Pad, controller feedback, sound.
         if let oldInput = outgoing.input { input.inheritBackgroundControllerFlag(from: oldInput) }

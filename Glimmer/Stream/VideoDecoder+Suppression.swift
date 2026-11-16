@@ -143,6 +143,7 @@ extension VideoDecoder {
                 displayLayer?.sampleBufferRenderer.status == .failed
             if gateWasEngaged && !rendererFailed {
                 displayLayer?.sampleBufferRenderer.flush()
+                flushMirror()
             } else {
                 recoverPresentPath(reason: "present_resync")
             }

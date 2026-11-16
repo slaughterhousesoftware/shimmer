@@ -92,6 +92,16 @@ extension VideoDecoder {
         mirrorLock.lock(); _mirrorLayer = layer; mirrorLock.unlock()
     }
 
+    /// The main layer was flushed (a format change, a present-path recovery,
+    /// a decode-gate resume): the PiP layer starts over with it, or frames
+    /// stamped before its last one would never show there. Under the mirror
+    /// lock, so no in-flight frame lands after the flush.
+    nonisolated func flushMirror() {
+        mirrorLock.lock()
+        _mirrorLayer?.sampleBufferRenderer.flush(removingDisplayedImage: false, completionHandler: nil)
+        mirrorLock.unlock()
+    }
+
     /// PiP up (or starting): frames go to the PiP layer only.
     public func setMirrorExclusive(_ exclusive: Bool) {
         mirrorLock.lock(); _mirrorExclusive = exclusive; mirrorLock.unlock()
@@ -233,8 +243,9 @@ extension VideoDecoder {
             "PresentPathRecover",
             "reason=\(reason, privacy: .public) failed=\(failed, privacy: .public)")
 
-        // 1. Flush whatever renderer we currently have.
+        // 1. Flush whatever renderer we currently have (and the PiP layer).
         renderer?.flush()
+        flushMirror()
 
         // 2. If the renderer hard-failed, a flush won't clear it - swap in a
         // fresh layer. The hook re-points us at the new layer + reconfigures

@@ -51,6 +51,8 @@ final class AgentControl: NSObject {
         case cancelConnect = "cancel-connect"
         /// params: host = part of the PC's name. As the menu bar's Switch PC.
         case switchPC = "switch-pc"
+        /// As the menu bar's Picture in Picture.
+        case pictureInPicture = "picture-in-picture"
     }
 
     private weak var model: AppModel?
@@ -174,6 +176,13 @@ final class AgentControl: NSObject {
             }
             model.switchHost(to: host)
             finish(id: id, name: name, result: "switching to \(host.displayName)")
+        case .pictureInPicture:
+            guard let model, model.isStreaming else {
+                finish(id: id, name: name, result: "nothing is streaming")
+                return
+            }
+            model.enterPictureInPicture()
+            finish(id: id, name: name, result: "ok")
         case .cancelConnect:
             if case .connecting = model?.streamPhase {
                 model?.cancelConnect()
