@@ -249,15 +249,18 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // PS5.debugIdrOnFec restores the IDR-and-wait, PS5.debugReorderUs the
         // reorder hold (chiaki's was 16000), PS5.debugDropPermille drops that
         // many per mille of video packets to exercise loss on a clean LAN.
+        // PS5.debugTakionVersion 12 streams on chiaki's old Takion v12 instead
+        // of negotiating v20 (Sony's app and PXPlay's), for A/B runs.
         let defaults = UserDefaults.standard
         info.enable_idr_on_fec_failure = defaults.bool(forKey: "PS5.debugIdrOnFec")
         let reorderUs = defaults.integer(forKey: "PS5.debugReorderUs")
         let holdUs = reorderUs > 0 ? reorderUs : 4000
         let dropPermille = max(0, min(500, defaults.integer(forKey: "PS5.debugDropPermille")))
-        shimmer_set_takion_knobs(Int32(holdUs), Int32(dropPermille))
-        if dropPermille > 0 || reorderUs > 0 || info.enable_idr_on_fec_failure {
+        let takionVersion = defaults.integer(forKey: "PS5.debugTakionVersion") == 12 ? 12 : 20
+        shimmer_set_takion_knobs(Int32(holdUs), Int32(dropPermille), Int32(takionVersion))
+        if dropPermille > 0 || reorderUs > 0 || info.enable_idr_on_fec_failure || takionVersion != 20 {
             Diag.notice("PS5 debug: drop \(dropPermille)‰ of video packets, reorder hold \(holdUs) us, "
-                + "IDR on FEC failure \(info.enable_idr_on_fec_failure)", Self.logCategory)
+                + "IDR on FEC failure \(info.enable_idr_on_fec_failure), Takion \(takionVersion)", Self.logCategory)
         }
         info.packet_loss_max = options.holdBitrate ? 0 : 0.05
         Diag.notice("PS5: \(options.height)p\(options.fps) \(options.codec == .h265HDR ? "HDR" : "SDR"), "
@@ -332,6 +335,15 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             quitMessage = nil
             quitInUse = false
             quitTransient = false
+        }
+        // Shimmer allocates the session from the headers it compiled against;
+        // libchiaki's patches change its layout, so a stale header would
+        // corrupt memory. Refuse rather than stream on a mismatch.
+        guard MemoryLayout<ChiakiSession>.size == chiaki_shimmer_session_size() else {
+            Diag.error("PS5: ChiakiSession is \(MemoryLayout<ChiakiSession>.size) bytes here, "
+                + "\(chiaki_shimmer_session_size()) in libchiaki - rebuild (scripts/build-libchiaki.sh)", Self.logCategory)
+            events.stageFailed("PS5 session", code: -1)
+            throw StreamError.sessionFailed(-1)
         }
         let session = UnsafeMutablePointer<ChiakiSession>.allocate(capacity: 1)
         session.initialize(to: ChiakiSession())

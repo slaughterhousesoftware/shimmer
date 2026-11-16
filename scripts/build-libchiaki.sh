@@ -53,6 +53,22 @@ for f in $PATCHED.new/**/*(.N); do
 done
 rm -rf $PATCHED && mv $PATCHED.new $PATCHED
 
+# Public headers: the whole of lib/include/chiaki, with the patched copies on
+# top, in $OUT/include/chiaki - the first include path of this build, the app
+# (Glimmer/StreamLib.xcconfig) and ps5ctl. All of them, not just the patched
+# ones: chiaki's headers include each other with quotes, which resolves next
+# to the including file first, so a lone patched takion.h beside pristine
+# session.h would never be seen. Patches change struct layouts (ChiakiTakion,
+# ChiakiSession), so every compiler of this library must see the same ones.
+for h in $CHIAKI/lib/include/chiaki/**/*.h; do
+  rel=${h#$CHIAKI/lib/include/}
+  [[ $rel == chiaki/config.h ]] && continue # generated below from config.h.in
+  src=$h
+  [[ -f $PATCHED/lib/include/$rel ]] && src=$PATCHED/lib/include/$rel
+  mkdir -p $OUT/include/${rel:h}
+  cmp -s $src $OUT/include/$rel 2>/dev/null || cp $src $OUT/include/$rel
+done
+
 # config.h (cmakedefine01 -> 0/1)
 sed -e 's/#cmakedefine01 CHIAKI_LIB_ENABLE_OPUS/#define CHIAKI_LIB_ENABLE_OPUS 1/' \
     -e 's/#cmakedefine01 CHIAKI_LIB_ENABLE_PI_DECODER/#define CHIAKI_LIB_ENABLE_PI_DECODER 0/' \
@@ -103,6 +119,8 @@ for i in {1..${#FILES}}; do
   [[ -f $PATCHED/$rel ]] && FILES[$i]=$PATCHED/$rel
 done
 
+# Any public header changing (a patch, config.h) rebuilds everything.
+NEWEST_HEADER=($OUT/include/chiaki/**/*.h(om[1]))
 OBJS=()
 pids=()
 for f in $FILES; do
@@ -110,7 +128,7 @@ for f in $FILES; do
   OBJS+=($o)
   # .src records which copy (pristine or patched) built the object: a file
   # that gains or loses a patch must rebuild even if its mtime is older.
-  if [[ ! -f $o || $f -nt $o || $OUT/include/chiaki/config.h -nt $o || "$(cat $o.src 2>/dev/null)" != $f ]]; then
+  if [[ ! -f $o || $f -nt $o || $NEWEST_HEADER -nt $o || "$(cat $o.src 2>/dev/null)" != $f ]]; then
     print -r -- $f > $o.src
     clang $CFLAGS -c $f -o $o &
     pids+=($!)

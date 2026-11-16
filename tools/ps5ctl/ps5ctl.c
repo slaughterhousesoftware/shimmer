@@ -41,6 +41,7 @@
 
 // Shimmer's libchiaki research hook (third_party/chiaki-ng-patches/0002).
 extern int chiaki_shimmer_reorder_timeout_us;  // patch 0001 (default 4000)
+extern int chiaki_shimmer_takion_version;       // patch 0002 (default 20; 12 = no negotiation)
 ChiakiErrorCode chiaki_shimmer_ctrl_send(ChiakiSession *session, uint16_t type, const uint8_t *payload, size_t payload_size);
 
 // Keychain account name the PSN items are stored under (any label you chose).
@@ -808,10 +809,11 @@ static int cmd_stream(int argc, char **argv)
 			if(now_s() - last >= 1.0)
 			{
 				long f = atomic_load(&st.frames);
-				fprintf(stderr, "t=%4.1fs fps=%ld total=%ld lost=%ld MB=%.1f rtt=%.1fms audio=%ld gaps>30ms=%ld >60ms=%ld max=%.0fms\n", t, f - last_frames, f,
+				fprintf(stderr, "t=%4.1fs fps=%ld total=%ld lost=%ld MB=%.1f rtt=%.1fms audio=%ld gaps>30ms=%ld >60ms=%ld max=%.0fms takion=%u jitter=%.2fms\n", t, f - last_frames, f,
 					atomic_load(&st.lost), atomic_load(&st.bytes) / 1e6, session.rtt_us / 1000.0,
 					atomic_load(&st.audio_frames), atomic_load(&st.audio_gaps_over_30ms), atomic_load(&st.audio_gaps_over_60ms),
-					atomic_load(&st.audio_max_gap_us) / 1000.0);
+					atomic_load(&st.audio_max_gap_us) / 1000.0,
+					(unsigned)session.stream_connection.takion.version, session.stream_connection.takion.ext_rx_jitter_us / 1000.0);
 				atomic_store(&st.audio_max_gap_us, 0);
 				last_frames = f;
 				last = now_s();
@@ -1069,6 +1071,8 @@ int main(int argc, char **argv)
 		g_verbose = true;
 	if(getenv("PS5CTL_REORDER_US"))
 		chiaki_shimmer_reorder_timeout_us = atoi(getenv("PS5CTL_REORDER_US"));
+	if(getenv("PS5CTL_TAKION"))
+		chiaki_shimmer_takion_version = atoi(getenv("PS5CTL_TAKION"));
 	chiaki_log_init(&g_log, CHIAKI_LOG_ALL, log_cb, NULL);
 	if(chiaki_lib_init() != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "chiaki_lib_init failed\n"); return 1; }
 	if(argc < 2)

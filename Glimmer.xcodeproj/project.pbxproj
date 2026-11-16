@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FE0BB9C295D1D62E89857967 /* TakionV20Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E410E6F836476FBAD72F8B /* TakionV20Tests.swift */; };
 		4C3EA4677DA945B9101733E9 /* PlayStationSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8E5EC44462661C8CA935C5B /* PlayStationSettingsPane.swift */; };
 		4787E229082FA3FBBCE22DD4 /* PlayStationSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BBB64CDFF8C661021B989D7 /* PlayStationSettings.swift */; };
 		5254A6A12DDB56CCE73A2E3D /* DualSenseBluetoothHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6E429195D70138724BDC5E /* DualSenseBluetoothHaptics.swift */; };
@@ -359,6 +360,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B7E410E6F836476FBAD72F8B /* TakionV20Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakionV20Tests.swift; sourceTree = "<group>"; };
 		F8E5EC44462661C8CA935C5B /* PlayStationSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationSettingsPane.swift; sourceTree = "<group>"; };
 		6BBB64CDFF8C661021B989D7 /* PlayStationSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationSettings.swift; sourceTree = "<group>"; };
 		FF6E429195D70138724BDC5E /* DualSenseBluetoothHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/DualSenseBluetoothHaptics.swift; sourceTree = "<group>"; };
@@ -1037,6 +1039,7 @@
 		D2000016 /* GlimmerTests */ = {
 			isa = PBXGroup;
 			children = (
+				B7E410E6F836476FBAD72F8B /* TakionV20Tests.swift */,
 				A25C9B34B062B47C6A38BE6C /* DualSenseFeedbackTests.swift */,
 				CDF776067011D566A9B013D2 /* PlayStationBackendTests.swift */,
 				D2000020 /* EnetWireTests.swift */,
@@ -1490,6 +1493,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FE0BB9C295D1D62E89857967 /* TakionV20Tests.swift in Sources */,
 				C7B38447FF55B77D3057A417 /* DualSenseFeedbackTests.swift in Sources */,
 				106BC6DC964BBD0ACFEBC345 /* PlayStationBackendTests.swift in Sources */,
 				D2000021 /* EnetWireTests.swift in Sources */,
