@@ -178,8 +178,9 @@ final class AppModel {
             // when the key had never been written (the first cut) meant a stale
             // manual number from months ago snapped back instead.
             if !bitrateAuto {
-                manualBitrateMbps = BitrateScale.stepsMbps[
-                    BitrateScale.nearestIndex(toMbps: recommendedBitrateMbpsNow)]
+                manualBitrateMbps = BitrateSlider.stopsMbps[
+                    BitrateSlider.nearestStopIndex(mbps: recommendedBitrateMbpsNow,
+                                                   maxMbps: BitrateSlider.stopsMbps.last ?? 300)]
             }
             persistQualitySettings()
             saveSelectedHostStreamSettings()

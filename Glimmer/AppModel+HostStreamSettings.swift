@@ -53,6 +53,15 @@ extension AppModel {
         }
     }
 
+    /// A stream is starting on `host`: make it the selected PC, so the live
+    /// settings the stream config reads are its own (the user may have
+    /// clicked another PC while this one's status was being checked).
+    func selectForStream(_ host: Host) {
+        guard !host.isPlayStation, selectedHost?.id != host.id,
+              let known = hosts.first(where: { $0.id == host.id }) else { return }
+        selectHost(known)
+    }
+
     /// `hostID`'s settings, whether or not it is the selected PC.
     func streamSettings(for hostID: String) -> HostStreamSettings {
         if selectedHost?.id == hostID { return currentHostStreamSettings() }

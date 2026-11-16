@@ -326,6 +326,9 @@ struct ComputersTab: View {
                             }
                         }
                         .padding(.trailing, 20)
+                        // Each machine's page has its own view state: a value
+                        // half-typed on one PC must not commit into the next.
+                        .id(host.id)
                     }
                     .padding(.top, 24)
                     .padding(.bottom, 16)

@@ -126,6 +126,7 @@ extension AppModel {
             return
         }
         Diag.notice("Starting stream → \(host.displayName, privacy: .private) · \(app.name)", "Stream")
+        selectForStream(host)
         streamPhase = .connecting(stage: "Connecting to \(host.displayName)…")
         nativeStreamError = nil
         nativeHDRActive = false
