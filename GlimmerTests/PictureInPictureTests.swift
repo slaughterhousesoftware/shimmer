@@ -106,6 +106,13 @@ struct PictureInPictureTests {
         #expect(abs(hi.x - host.width) < 0.001 && abs(hi.y - host.height) < 0.001)
     }
 
+    @Test func returnTargetIsTheWindowsPicture() {
+        // A 16:9 stream in a 16:10 full-screen window: letterboxed, centred.
+        let r = StreamWindowGeometry.aspectFit(CGSize(width: 1920, height: 1080),
+                                               in: CGRect(x: 0, y: 0, width: 1728, height: 1080))
+        #expect(r == CGRect(x: 0, y: 54, width: 1728, height: 972))
+    }
+
     @Test func sourceSitsAtTheStreamsResolutionAndStaysOnScreen() {
         let screen = CGRect(x: 0, y: 0, width: 2560, height: 1440)
         // 1080p on a 2x screen: 960x540 points, centred where asked.

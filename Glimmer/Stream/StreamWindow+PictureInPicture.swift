@@ -122,6 +122,13 @@ extension StreamWindow {
         return true
     }
 
+    /// Where the stream window shows its picture, in screen coordinates: the
+    /// stream's aspect fitted into the window's content area.
+    func pipReturnTarget() -> NSRect {
+        let content = window.contentRect(forFrameRect: window.frame)
+        return StreamWindowGeometry.aspectFit(streamPixelSize, in: content)
+    }
+
     func pipSourceFrame(centeredOn center: CGPoint) -> NSRect {
         let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? window.screen ?? NSScreen.main
         return PiPSource.nativeFrame(pixelSize: streamPixelSize, backingScale: screen?.backingScaleFactor ?? 2,
@@ -243,9 +250,14 @@ extension StreamWindow {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
             MainActor.assumeIsolated { self?.pipReturnInFlight = false }
         }
-        // AVKit's fly-back lands on the source: move it (same size - a resize
-        // would refit mid-animation) to where the window returns.
-        pipSource.place(at: pipSourceFrame(centeredOn: CGPoint(x: window.frame.midX, y: window.frame.midY)))
+        // The window takes the frames again NOW, so it is live - not a frozen
+        // last frame - when the PiP lands on it. (didStop repeats this; it is
+        // idempotent.)
+        onPictureInPictureChanged?(false)
+        // AVKit's fly-back ends on the source layer's rect: put the source
+        // exactly over the window's picture, so the PiP flies into the window
+        // it is returning to and hands over to it in place.
+        pipSource.place(at: pipReturnTarget())
         if displayMode == .window {
             // Activation is dropped while the PiP panel is alive and only
             // sticks once re-requested after it is gone, and Stage Manager

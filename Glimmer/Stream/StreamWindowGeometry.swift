@@ -50,4 +50,14 @@ enum StreamWindowGeometry {
         }
         return CGSize(width: minimumContentWidth, height: minimumContentWidth * aspect.height / aspect.width)
     }
+
+    /// `size`'s aspect, as large as fits in `rect`, centred (`.resizeAspect`).
+    /// A degenerate size returns `rect`.
+    static func aspectFit(_ size: CGSize, in rect: CGRect) -> CGRect {
+        guard size.width > 0, size.height > 0, rect.width > 0, rect.height > 0 else { return rect }
+        let scale = min(rect.width / size.width, rect.height / size.height)
+        let fitted = CGSize(width: size.width * scale, height: size.height * scale)
+        return CGRect(x: rect.midX - fitted.width / 2, y: rect.midY - fitted.height / 2,
+                      width: fitted.width, height: fitted.height)
+    }
 }
