@@ -23,14 +23,12 @@ private struct HostContextMenu: ViewModifier {
     @State private var showRename = false
     @State private var draftName = ""
     @State private var codecPref: HostCodecPreference
-    @AppStorage private var hostIcon: HostIcon
 
     init(host: Host, showsButton: Bool = false, onRename: (() -> Void)? = nil) {
         self.host = host
         self.showsButton = showsButton
         self.onRename = onRename
         _codecPref = State(initialValue: HostCodecPreference.load(for: host.id))
-        _hostIcon = AppStorage(wrappedValue: .automatic, HostIcon.storageKey(for: host.id))
     }
 
     @ViewBuilder
@@ -44,15 +42,6 @@ private struct HostContextMenu: ViewModifier {
                     showRename = true
                 }
             }
-        Picker(selection: $hostIcon) {
-            ForEach(HostIcon.allCases) { icon in
-                Text(icon.title).tag(icon)
-                if icon == .computer || icon == .macOS { Divider() }
-            }
-        } label: {
-            Label("Server icon", systemImage: "paintpalette")
-        }
-        .pickerStyle(.menu)
         // Per-host codec cap. Automatic negotiates AV1 → HEVC → H.264
         // against what this host's encoder supports, so the override
         // exists only for the host whose preferred codec misbehaves -

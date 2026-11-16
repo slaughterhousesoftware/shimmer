@@ -32,51 +32,6 @@ enum DebugMockups {
 
 import SwiftUI
 
-/// Spike: the system a PC runs, as one of four plain logos.
-enum SpikeSystemKind {
-    case linux, windows, mac, playStation
-
-    static func of(_ host: Host) -> Self {
-        if host.isPlayStation { return .playStation }
-        switch HostIcon.suggested(for: host.name) {
-        case .windows: return .windows
-        case .macOS: return .mac
-        default: return .linux
-        }
-    }
-}
-
-struct SpikeSystemLogo: View {
-    let host: Host
-    let size: CGFloat
-    private var coloured: Bool { AppModel.debugKnob("icons") == "color" }
-
-    var body: some View {
-        let kind = SpikeSystemKind.of(host)
-        Group {
-            switch kind {
-            case .playStation:
-                Image(systemName: "playstation.logo").resizable().scaledToFit()
-                    .foregroundStyle(coloured ? Color(red: 0, green: 0.44, blue: 0.82) : .primary)
-                    .frame(width: size * 0.92, height: size * 0.92)
-            case .mac:
-                Image(systemName: "apple.logo").resizable().scaledToFit()
-                    .foregroundStyle(.primary)
-                    .frame(width: size * 0.78, height: size * 0.78)
-            case .windows:
-                Image("HostLogo-windows").renderingMode(.template).resizable().scaledToFit()
-                    .foregroundStyle(coloured ? Color(red: 0, green: 0.47, blue: 0.83) : .primary)
-                    .frame(width: size * 0.74, height: size * 0.74)
-            case .linux:
-                Image("HostLogo-linux").renderingMode(.template).resizable().scaledToFit()
-                    .foregroundStyle(.primary)
-                    .frame(width: size * 0.9, height: size * 0.9)
-            }
-        }
-        .frame(width: size, height: size)
-    }
-}
-
 struct SpikeStatusDot: View {
     let status: HostStatusIndicator
     var body: some View {

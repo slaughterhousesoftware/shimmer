@@ -210,6 +210,9 @@ struct ComputersTab: View {
                             .disabled(model.pairingInFlight)
                             .accessibilityLabel("\(host.displayName), \(connectionStatusText(for: host)), \(model.dialAddress(for: host))")
                             .hostContextMenu(host)
+                            .task(id: host.id) {
+                                _ = await HostSystemKind.detect(host: host, address: model.dialAddress(for: host))
+                            }
                         }
                         }
                     }
@@ -458,7 +461,7 @@ struct ComputersTab: View {
     private func hostIdentity(for host: Host) -> some View {
         let address = model.selectedHostRouteAddress ?? model.dialAddress(for: host)
         return VStack(spacing: 6) {
-            SpikeSystemLogo(host: host, size: 56)
+            HostSystemLogo(host: host, size: 56)
                 .padding(.bottom, 4)
             VStack(spacing: 2) {
                 Group {
@@ -1049,7 +1052,7 @@ private struct HostRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            SpikeSystemLogo(host: host, size: 22)
+            HostSystemLogo(host: host, size: 22)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(host.displayName)

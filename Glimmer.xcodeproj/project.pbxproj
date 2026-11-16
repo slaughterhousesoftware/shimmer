@@ -38,6 +38,7 @@
 		19940302E36CBF17A0F62CF6 /* PlayStationConsole.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA77D762D610FFAE7FCD70C /* PlayStationConsole.swift */; };
 		CE1000000000000000000102 /* HostIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000101 /* HostIcon.swift */; };
 		F6FB722F4AA55B37AE4FEF07 /* HostStreamSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4917C6C3B98327258B22AC8C /* HostStreamSettings.swift */; };
+		D2AC29E37ED979E0C8FE6B89 /* HostSystemKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83756D58A7C3644346941403 /* HostSystemKind.swift */; };
 		CE1000000000000000000202 /* HostIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000201 /* HostIconTests.swift */; };
 		CE1000000000000000000302 /* HostIconNotices in Resources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000301 /* HostIconNotices */; };
 		040BDEEE8B8E58AC0375BF3A /* StreamingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 448F2B492E4B38A0CFF51260 /* StreamingState.swift */; };
@@ -50,6 +51,7 @@
 		A10000001 /* GlimmerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000011 /* GlimmerApp.swift */; };
 		A10000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000012 /* ContentView.swift */; };
 		A1C0DE911000000000000000 /* LibraryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE912000000000000000 /* LibraryWindow.swift */; };
+		6A8477792708C56D0EACC892 /* HostSystemLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A528F2D92AE73743215939 /* HostSystemLogo.swift */; };
 		A10000003 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000013 /* AppModel.swift */; };
 		A1C0DE901000000000000000 /* AppArtworkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE902000000000000000 /* AppArtworkStore.swift */; };
 		A10000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000014 /* Assets.xcassets */; };
@@ -327,6 +329,7 @@
 		D20000F3 /* DatagramSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000F2 /* DatagramSourceTests.swift */; };
 		A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000320000000000000 /* PictureInPictureTests.swift */; };
 		2A02904E377F70311AAC2ED3 /* HostStreamSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DEC2D587EB8640BADDA86CF /* HostStreamSettingsTests.swift */; };
+		04E8A4290A1BD1B880E3C63D /* HostSystemKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9E6EBA85D12CAA81EEDBB9 /* HostSystemKindTests.swift */; };
 		255FD45F4A364608975415AA /* PlayStationSettingsPerConsoleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 818A7D2DC99B28949CAAE877 /* PlayStationSettingsPerConsoleTests.swift */; };
 		71F9D0F9B22B3659EF407CFE /* ControllerFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543FD190D081183C172632CC /* ControllerFocusTests.swift */; };
 		A1C0DEAV1SEQ100000000000 /* AV1SequenceHeaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEAV1SEQ200000000000 /* AV1SequenceHeaderTests.swift */; };
@@ -408,6 +411,7 @@
 		7CA77D762D610FFAE7FCD70C /* PlayStationConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationConsole.swift; sourceTree = "<group>"; };
 		CE1000000000000000000101 /* HostIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostIcon.swift; sourceTree = "<group>"; };
 		4917C6C3B98327258B22AC8C /* HostStreamSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HostStreamSettings.swift"; sourceTree = "<group>"; };
+		83756D58A7C3644346941403 /* HostSystemKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HostSystemKind.swift"; sourceTree = "<group>"; };
 		CE1000000000000000000201 /* HostIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostIconTests.swift; sourceTree = "<group>"; };
 		CE1000000000000000000301 /* HostIconNotices */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HostIconNotices; path = "docs/assets/host-icons"; sourceTree = SOURCE_ROOT; };
 		064F5F39A59E54E022FEE74E /* FuzzTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FuzzTests.swift; sourceTree = "<group>"; };
@@ -425,6 +429,7 @@
 		A10000011 /* GlimmerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlimmerApp.swift; sourceTree = "<group>"; };
 		A10000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A1C0DE912000000000000000 /* LibraryWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryWindow.swift"; sourceTree = "<group>"; };
+		C5A528F2D92AE73743215939 /* HostSystemLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HostSystemLogo.swift"; sourceTree = "<group>"; };
 		A10000013 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A1C0DE902000000000000000 /* AppArtworkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppArtworkStore.swift"; sourceTree = "<group>"; };
 		A10000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -703,6 +708,7 @@
 		D20000F2 /* DatagramSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatagramSourceTests.swift; sourceTree = "<group>"; };
 		A1C0DE000320000000000000 /* PictureInPictureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PictureInPictureTests.swift"; sourceTree = "<group>"; };
 		5DEC2D587EB8640BADDA86CF /* HostStreamSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HostStreamSettingsTests.swift"; sourceTree = "<group>"; };
+		0A9E6EBA85D12CAA81EEDBB9 /* HostSystemKindTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HostSystemKindTests.swift"; sourceTree = "<group>"; };
 		818A7D2DC99B28949CAAE877 /* PlayStationSettingsPerConsoleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayStationSettingsPerConsoleTests.swift"; sourceTree = "<group>"; };
 		543FD190D081183C172632CC /* ControllerFocusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ControllerFocusTests.swift"; sourceTree = "<group>"; };
 		A1C0DEAV1SEQ200000000000 /* AV1SequenceHeaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AV1SequenceHeaderTests.swift; sourceTree = "<group>"; };
@@ -770,6 +776,7 @@
 				A1B2C3D4E5F6000100000C01 /* HostCodecPreference.swift */,
 				CE1000000000000000000101 /* HostIcon.swift */,
 				4917C6C3B98327258B22AC8C /* HostStreamSettings.swift */,
+				83756D58A7C3644346941403 /* HostSystemKind.swift */,
 				DEC0DE840000000000000002 /* StreamDisplayMode.swift */,
 				A1C0DEKAWPOL200000000000 /* KeepAwakePolicy.swift */,
 				A1C0DE782000000000000000 /* StreamChoices.swift */,
@@ -832,6 +839,7 @@
 				A1009002 /* UpdaterController.swift */,
 				A10000012 /* ContentView.swift */,
 				A1C0DE912000000000000000 /* LibraryWindow.swift */,
+				C5A528F2D92AE73743215939 /* HostSystemLogo.swift */,
 				A10000017 /* SettingsView.swift */,
 				A1C0DE922000000000000000 /* SettingsChrome.swift */,
 				A1C0DE822000000000000000 /* SettingsVideoPane.swift */,
@@ -1135,6 +1143,7 @@
 				D20000F2 /* DatagramSourceTests.swift */,
 				A1C0DE000320000000000000 /* PictureInPictureTests.swift */,
 				5DEC2D587EB8640BADDA86CF /* HostStreamSettingsTests.swift */,
+				0A9E6EBA85D12CAA81EEDBB9 /* HostSystemKindTests.swift */,
 				818A7D2DC99B28949CAAE877 /* PlayStationSettingsPerConsoleTests.swift */,
 				543FD190D081183C172632CC /* ControllerFocusTests.swift */,
 				A1C0DEAV1SEQ200000000000 /* AV1SequenceHeaderTests.swift */,
@@ -1312,6 +1321,7 @@
 				A1009001 /* UpdaterController.swift in Sources */,
 				A10000002 /* ContentView.swift in Sources */,
 				A1C0DE911000000000000000 /* LibraryWindow.swift in Sources */,
+				6A8477792708C56D0EACC892 /* HostSystemLogo.swift in Sources */,
 				A10000005 /* SettingsView.swift in Sources */,
 				A1C0DE921000000000000000 /* SettingsChrome.swift in Sources */,
 				A1C0DE821000000000000000 /* SettingsVideoPane.swift in Sources */,
@@ -1535,6 +1545,7 @@
 				A1B2C3D4E5F6000200000C01 /* HostCodecPreference.swift in Sources */,
 				CE1000000000000000000102 /* HostIcon.swift in Sources */,
 				F6FB722F4AA55B37AE4FEF07 /* HostStreamSettings.swift in Sources */,
+				D2AC29E37ED979E0C8FE6B89 /* HostSystemKind.swift in Sources */,
 				82EEF25A701FD81C0CDC8240 /* HostsStore.swift in Sources */,
 				B4F0AC710000000000000001 /* AppModel+HostActivity.swift in Sources */,
 				BC8B3FD0322A256049C1CAF8 /* QualityCalculator.swift in Sources */,
@@ -1606,6 +1617,7 @@
 				D20000F3 /* DatagramSourceTests.swift in Sources */,
 				A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */,
 				2A02904E377F70311AAC2ED3 /* HostStreamSettingsTests.swift in Sources */,
+				04E8A4290A1BD1B880E3C63D /* HostSystemKindTests.swift in Sources */,
 				255FD45F4A364608975415AA /* PlayStationSettingsPerConsoleTests.swift in Sources */,
 				71F9D0F9B22B3659EF407CFE /* ControllerFocusTests.swift in Sources */,
 				A1C0DEAV1SEQ100000000000 /* AV1SequenceHeaderTests.swift in Sources */,
