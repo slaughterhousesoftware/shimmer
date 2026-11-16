@@ -305,19 +305,3 @@ struct PlayStationSettingsTests {
         #expect(defaults.object(forKey: "PS5.bitrateMbps") as? Int == 100)
     }
 }
-
-struct FrameUpscalerSizingTests {
-    @Test func fitsTheScreenRectWithinTheCap() {
-        let cap4K = (width: 3840, height: 2160)
-        // 1080p into a 3024x1964 panel: the 16:9 fit is 3024x1700.
-        let full = FrameUpscaler.outputSize(frame: (1920, 1080), screen: (3024, 1964), cap: cap4K)
-        #expect(full?.width == 3024 && full?.height == 1700)
-        // Capped at 1440p.
-        let capped = FrameUpscaler.outputSize(frame: (1920, 1080), screen: (3024, 1964), cap: (2560, 1440))
-        #expect(capped?.width == 2560 && capped?.height == 1440)
-        // A PiP-sized rect: smaller than the frame, so it passes through.
-        #expect(FrameUpscaler.outputSize(frame: (1920, 1080), screen: (960, 540), cap: cap4K) == nil)
-        // Barely larger: not worth a pass.
-        #expect(FrameUpscaler.outputSize(frame: (1920, 1080), screen: (2000, 1125), cap: cap4K) == nil)
-    }
-}

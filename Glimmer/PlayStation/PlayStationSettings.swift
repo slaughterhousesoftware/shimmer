@@ -49,27 +49,6 @@ final class PlayStationSettings {
         }
     }
 
-    enum Upscaling: String, CaseIterable, Identifiable, Sendable {
-        case off, upTo1440p, upTo4K
-
-        var id: String { rawValue }
-        var displayName: String {
-            switch self {
-            case .off: return "Off"
-            case .upTo1440p: return "Up to 1440p"
-            case .upTo4K: return "Up to 4K"
-            }
-        }
-        /// The largest output allowed, or nil when off.
-        var cap: (width: Int, height: Int)? {
-            switch self {
-            case .off: return nil
-            case .upTo1440p: return (2560, 1440)
-            case .upTo4K: return (3840, 2160)
-            }
-        }
-    }
-
     /// The console's range for a bitrate set by hand (PXPlay's).
     static let bitrateRangeMbps = 2...100
     /// The console's own 1080p preset.
@@ -88,7 +67,6 @@ final class PlayStationSettings {
     var hdr: Bool = false { didSet { save(hdr, "hdr") } }
     var hevc: Bool = true { didSet { save(hevc, "hevc") } }
     var presentation: Presentation = .lowestLatency { didSet { save(presentation.rawValue, "presentation") } }
-    var upscaling: Upscaling = .off { didSet { save(upscaling.rawValue, "upscaling") } }
     var haptics: HapticsMode = .actuators { didSet { save(haptics.rawValue, "haptics") } }
     var adaptiveTriggers: Bool = true { didSet { save(adaptiveTriggers, "adaptiveTriggers") } }
     var lightBar: Bool = true { didSet { save(lightBar, "lightBar") } }
@@ -110,7 +88,6 @@ final class PlayStationSettings {
         if let v = defaults.object(forKey: Self.key("hevc")) as? Bool { hevc = v }
         if let v = defaults.string(forKey: Self.key("presentation")).flatMap(Presentation.init) { presentation = v }
         if let v = defaults.string(forKey: Self.key("haptics")).flatMap(HapticsMode.init) { haptics = v }
-        if let v = defaults.string(forKey: Self.key("upscaling")).flatMap(Upscaling.init) { upscaling = v }
         if let v = defaults.object(forKey: Self.key("adaptiveTriggers")) as? Bool { adaptiveTriggers = v }
         if let v = defaults.object(forKey: Self.key("lightBar")) as? Bool { lightBar = v }
         if let v = defaults.object(forKey: Self.key("gameModeBoost")) as? Bool { gameModeBoost = v }
@@ -128,7 +105,7 @@ final class PlayStationSettings {
     /// main actor).
     var snapshot: Snapshot {
         Snapshot(height: height, fps: fps, bitrateKbps: bitrateAuto ? nil : bitrateMbps * 1000, hdr: hdr,
-                 hevc: hevc, presentsDirect: presentation == .lowestLatency, upscaling: upscaling, haptics: haptics,
+                 hevc: hevc, presentsDirect: presentation == .lowestLatency, haptics: haptics,
                  adaptiveTriggers: adaptiveTriggers, lightBar: lightBar, gameModeBoost: gameModeBoost,
                  restWhenStreamEnds: restWhenStreamEnds)
     }
@@ -141,7 +118,6 @@ final class PlayStationSettings {
         var hdr = false
         var hevc = true
         var presentsDirect = true
-        var upscaling: Upscaling = .off
         var haptics: HapticsMode = .actuators
         var adaptiveTriggers = true
         var lightBar = true

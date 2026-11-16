@@ -493,12 +493,6 @@ public final class VideoDecoder {
     /// shows the newest frame the same way. Set before the first frame.
     nonisolated(unsafe) var presentsDirect = false
 
-    /// MetalFX super-resolution for a stream smaller than its on-screen size
-    /// (FrameUpscaler). Set before the first frame; nil = off.
-    nonisolated(unsafe) var upscaler: FrameUpscaler? {
-        didSet { if upscaler != nil { DispatchQueue.main.async { [weak self] in self?.trackUpscalerScreenSize() } } }
-    }
-
     /// The view whose screen the pacer's CADisplayLink binds to, remembered from
     /// `startPacing` so the present-watchdog's give-up → re-enable path can
     /// rebuild a fresh pacer onto the same screen WITHOUT the watchdog reaching
