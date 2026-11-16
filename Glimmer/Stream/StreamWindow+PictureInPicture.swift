@@ -266,7 +266,12 @@ extension StreamWindow {
             // leaves those alone), and takes its normal shape - key, on the
             // active app's own stage - once activation is real.
             if savedShapeBeforePiP == nil { savedShapeBeforePiP = (window.level, window.collectionBehavior) }
-            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .transient, .ignoresCycle]
+            // NOT on every space: such a window still can't show in another
+            // app's full-screen space, and because it counts as "here" macOS
+            // never switches to the desktop where it does show - the PiP
+            // landed mid-screen on nothing (2026-11-16, T3 Code full screen).
+            // On its own desktop, activation takes the user there.
+            window.collectionBehavior = [.transient, .ignoresCycle]
             window.level = .floating
             window.alphaValue = 1
             window.orderFrontRegardless()
@@ -317,6 +322,8 @@ extension StreamWindow {
         guard !didClose else { return }
         if NSApp.isActive || attempt >= 60 {
             PiPTrace.log("awaitActivation done attempt=\(attempt)", window)
+            Diag.info("PiP return: app \(NSApp.isActive ? "active" : "NOT active") after \(attempt * 50) ms; "
+                + "window on the active space=\(window.isOnActiveSpace)", "Stream.PiP")
             presentReturnedWindow()
             return
         }
