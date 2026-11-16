@@ -464,6 +464,14 @@ extension TelemetryRenderer {
         addStage("decode_p", histograms.decodeP)
         // IDR/RFI round-trip distribution (signal: IDR-RTT).
         addStage("idr_round_trip", histograms.idrRoundTrip)
+        // Inter-present spread, low tail included: the frame that comes too
+        // soon is as visible as the one that comes too late.
+        if let stage = snap.pipelinePresentCadence {
+            if let v = histogramQuantile(0.05, stage: stage), v.isFinite {
+                fields.append("\"cadence_present_p05_ms\":\(jsonNumber(v))")
+            }
+            addStage("cadence_present", stage)
+        }
         return fields
     }
 

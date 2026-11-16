@@ -43,6 +43,14 @@
 #import <chiaki/controller.h>
 #import <chiaki/orientation.h>
 #import <chiaki/opusencoder.h>
+// Shimmer's libchiaki patch (third_party/chiaki-ng-patches/0001): the AV
+// reorder hold and debug video-packet loss injection, set before a session.
+extern int chiaki_shimmer_reorder_timeout_us;
+extern int chiaki_shimmer_drop_permille;
+static inline void shimmer_set_takion_knobs(int reorder_timeout_us, int drop_permille) {
+    chiaki_shimmer_reorder_timeout_us = reorder_timeout_us;
+    chiaki_shimmer_drop_permille = drop_permille;
+}
 #import <chiaki/audioreceiver.h>
 #import <chiaki/base64.h>
 

@@ -229,7 +229,20 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // the corrupt-frame report; the console repairs its references), as
         // PXPlay does. Asking for an IDR instead dropped every frame until it
         // came - a visible freeze. The decoder still asks when it must.
-        info.enable_idr_on_fec_failure = false
+        // Debug A/B knobs (defaults keys, all off/new by default):
+        // PS5.debugIdrOnFec restores the IDR-and-wait, PS5.debugReorderUs the
+        // reorder hold (chiaki's was 16000), PS5.debugDropPermille drops that
+        // many per mille of video packets to exercise loss on a clean LAN.
+        let defaults = UserDefaults.standard
+        info.enable_idr_on_fec_failure = defaults.bool(forKey: "PS5.debugIdrOnFec")
+        let reorderUs = defaults.integer(forKey: "PS5.debugReorderUs")
+        let holdUs = reorderUs > 0 ? reorderUs : 4000
+        let dropPermille = max(0, min(500, defaults.integer(forKey: "PS5.debugDropPermille")))
+        shimmer_set_takion_knobs(Int32(holdUs), Int32(dropPermille))
+        if dropPermille > 0 || reorderUs > 0 || info.enable_idr_on_fec_failure {
+            Diag.notice("PS5 debug: drop \(dropPermille)‰ of video packets, reorder hold \(holdUs) us, "
+                + "IDR on FEC failure \(info.enable_idr_on_fec_failure)", Self.logCategory)
+        }
         info.packet_loss_max = options.holdBitrate ? 0 : 0.05
         Diag.notice("PS5: \(options.height)p\(options.fps) \(options.codec == .h265HDR ? "HDR" : "SDR"), "
             + (options.bitrateKbps.map { "\($0 / 1000) Mbps\(options.holdBitrate ? " (held)" : "")" } ?? "preset bitrate"),
@@ -555,6 +568,15 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
         frameNumber &+= 1
         let nowUs = UInt64(DispatchTime.now().uptimeNanoseconds / 1000)
+        // 90 kHz capture-style clock from arrival time; never 0.
+        let rtpTimestamp = UInt32(truncatingIfNeeded: nowUs * 9 / 100) | 1
+        // Latency telemetry (opt-in): a PS5 frame's arrival is its receive and
+        // assemble stage, so arrival-to-present is measured as on Sunshine.
+        if let tracker = FrameTimingTracker.shared {
+            tracker.recordAssembled(rtpTimestamp: rtpTimestamp, frameIndex: frameNumber,
+                                    receiveNanos: nowUs * 1000, assembleNanos: nowUs * 1000,
+                                    frameBytes: Int32(data.count), isIDR: isIDR)
+        }
         let unit = DecodeUnit(
             frameNumber: frameNumber,
             frameType: isIDR ? VideoDepacketizer.FRAME_TYPE_IDR : 0,
@@ -563,8 +585,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             receiveTimeUs: nowUs,
             enqueueTimeUs: nowUs,
             presentationTimeUs: nowUs,
-            // 90 kHz capture-style clock from arrival time; never 0.
-            rtpTimestamp: UInt32(truncatingIfNeeded: nowUs * 9 / 100) | 1,
+            rtpTimestamp: rtpTimestamp,
             hdrActive: options.codec == .h265HDR,
             colorspace: 0,
             buffers: buffers)

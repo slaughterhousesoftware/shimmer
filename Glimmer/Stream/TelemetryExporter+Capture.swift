@@ -248,6 +248,7 @@ extension TelemetryExporter {
         snap.pipelineReceiveCadence = FrameTimingTracker.shared?.receiveCadence.snapshotValue()
         snap.pipelineAssembleCadence = FrameTimingTracker.shared?.assembleCadence.snapshotValue()
         snap.pipelineOutputCadence = FrameTimingTracker.shared?.outputCadence.snapshotValue()
+        snap.pipelinePresentCadence = FrameTimingTracker.shared?.presentCadence.snapshotValue()
         snap.cruiseVelocityMove = FrameTimingTracker.shared?.cruiseVelocityMove.snapshotValue()
         snap.cruiseVelocityDrag = FrameTimingTracker.shared?.cruiseVelocityDrag.snapshotValue()
         snap.cruiseGainMove = FrameTimingTracker.shared?.cruiseGainMove.snapshotValue()

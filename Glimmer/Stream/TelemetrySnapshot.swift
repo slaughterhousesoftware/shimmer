@@ -109,6 +109,7 @@ struct TelemetrySnapshot: Sendable {
     var pipelineReceiveCadence: LatencyHistogramSnapshot.Stage?
     var pipelineAssembleCadence: LatencyHistogramSnapshot.Stage?
     var pipelineOutputCadence: LatencyHistogramSnapshot.Stage?
+    var pipelinePresentCadence: LatencyHistogramSnapshot.Stage?
     /// CRUISE forensics: batch velocity (counts/sec) + applied gain, split
     /// move vs drag. Standalone stages; units are not ms.
     var cruiseVelocityMove: LatencyHistogramSnapshot.Stage?

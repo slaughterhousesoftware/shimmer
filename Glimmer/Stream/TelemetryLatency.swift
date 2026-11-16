@@ -128,6 +128,10 @@ final class FrameTimingTracker: @unchecked Sendable {
     let receiveCadence = LatencyHistograms.Stage(bounds: FrameTimingTracker.cadenceBoundsMs)
     let assembleCadence = LatencyHistograms.Stage(bounds: FrameTimingTracker.cadenceBoundsMs)
     let outputCadence = LatencyHistograms.Stage(bounds: FrameTimingTracker.cadenceBoundsMs)
+    /// Inter-present: consecutive renderer enqueues. With the pacer these sit
+    /// on the vsync grid; presenting direct they follow arrival. Its spread is
+    /// how unevenly frames reach the screen, whichever path ran.
+    let presentCadence = LatencyHistograms.Stage(bounds: FrameTimingTracker.cadenceBoundsMs)
 
     /// CRUISE forensics (units are counts/sec and gain multipliers, NOT ms -
     /// the Stage bucketing is unit-agnostic). Velocity distribution split MOVE
@@ -166,6 +170,7 @@ final class FrameTimingTracker: @unchecked Sendable {
     private var lastReceiveNanos: UInt64 = 0
     private var lastAssembleNanos: UInt64 = 0
     private var lastOutputNanos: UInt64 = 0
+    private var lastPresentNanos: UInt64 = 0
     /// Cadence deltas above this are a content gap (idle desktop, scene load),
     /// not delivery cadence - skipped so they can't pollute the histogram sum.
     private static let cadenceGapCutoffNanos: UInt64 = 1_000_000_000
@@ -361,8 +366,11 @@ final class FrameTimingTracker: @unchecked Sendable {
         let presentNanos = DispatchTime.now().uptimeNanoseconds
 
         os_unfair_lock_lock(mapLock)
+        let prevPresent = lastPresentNanos
+        lastPresentNanos = presentNanos
         guard let timing = inFlight.removeValue(forKey: rtpTimestamp) else {
             os_unfair_lock_unlock(mapLock)
+            observeCadence(presentCadence, prev: prevPresent, now: presentNanos)
             return
         }
         // Drop the key from the insertion order too (linear, but the array is
@@ -371,6 +379,7 @@ final class FrameTimingTracker: @unchecked Sendable {
             insertionOrder.remove(at: idx)
         }
         os_unfair_lock_unlock(mapLock)
+        observeCadence(presentCadence, prev: prevPresent, now: presentNanos)
 
         // Compute the five sub-stage deltas in ms. A stage timestamp of 0 means
         // the frame skipped that stage (shouldn't happen for a presented frame,
