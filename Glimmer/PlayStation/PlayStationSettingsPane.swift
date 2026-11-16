@@ -9,7 +9,7 @@
 import SwiftUI
 
 struct PlayStationSettingsPane: View {
-    @Bindable private var settings = PlayStationSettings.shared
+    @Bindable var settings: PlayStationSettings
 
     private var bitrate: Binding<Double> {
         // While automatic the thumb rests on the console's preset, matching

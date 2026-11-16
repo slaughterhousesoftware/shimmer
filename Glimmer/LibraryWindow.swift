@@ -340,7 +340,7 @@ struct ComputersTab: View {
                         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
                             streamRow(for: host)
                             if host.isPlayStation {
-                                PlayStationSettingsPane()
+                                PlayStationSettingsPane(settings: .forConsole(host.id))
                             } else {
                                 StreamPane()
                                 VideoPane()

@@ -187,7 +187,7 @@ extension AppModel {
             // The console sends a fixed preset (1080p/720p at 60/30, SDR); size
             // the window, pacer, receipt and stats for that, not for the
             // Sunshine settings.
-            let ps = playStationStreamOptions()
+            let ps = playStationStreamOptions(for: host)
             cfg.width = Int(ps.width)
             cfg.height = Int(ps.height)
             cfg.fps = ps.fps

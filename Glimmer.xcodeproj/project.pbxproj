@@ -327,6 +327,7 @@
 		D20000F3 /* DatagramSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000F2 /* DatagramSourceTests.swift */; };
 		A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000320000000000000 /* PictureInPictureTests.swift */; };
 		2A02904E377F70311AAC2ED3 /* HostStreamSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DEC2D587EB8640BADDA86CF /* HostStreamSettingsTests.swift */; };
+		255FD45F4A364608975415AA /* PlayStationSettingsPerConsoleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 818A7D2DC99B28949CAAE877 /* PlayStationSettingsPerConsoleTests.swift */; };
 		71F9D0F9B22B3659EF407CFE /* ControllerFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543FD190D081183C172632CC /* ControllerFocusTests.swift */; };
 		A1C0DEAV1SEQ100000000000 /* AV1SequenceHeaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEAV1SEQ200000000000 /* AV1SequenceHeaderTests.swift */; };
 		A1C0DEAUDCEL100000000000 /* AudioCushionCeilingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEAUDCEL200000000000 /* AudioCushionCeilingTests.swift */; };
@@ -702,6 +703,7 @@
 		D20000F2 /* DatagramSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatagramSourceTests.swift; sourceTree = "<group>"; };
 		A1C0DE000320000000000000 /* PictureInPictureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PictureInPictureTests.swift"; sourceTree = "<group>"; };
 		5DEC2D587EB8640BADDA86CF /* HostStreamSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HostStreamSettingsTests.swift"; sourceTree = "<group>"; };
+		818A7D2DC99B28949CAAE877 /* PlayStationSettingsPerConsoleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayStationSettingsPerConsoleTests.swift"; sourceTree = "<group>"; };
 		543FD190D081183C172632CC /* ControllerFocusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ControllerFocusTests.swift"; sourceTree = "<group>"; };
 		A1C0DEAV1SEQ200000000000 /* AV1SequenceHeaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AV1SequenceHeaderTests.swift; sourceTree = "<group>"; };
 		A1C0DEAUDCEL200000000000 /* AudioCushionCeilingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioCushionCeilingTests.swift"; sourceTree = "<group>"; };
@@ -1133,6 +1135,7 @@
 				D20000F2 /* DatagramSourceTests.swift */,
 				A1C0DE000320000000000000 /* PictureInPictureTests.swift */,
 				5DEC2D587EB8640BADDA86CF /* HostStreamSettingsTests.swift */,
+				818A7D2DC99B28949CAAE877 /* PlayStationSettingsPerConsoleTests.swift */,
 				543FD190D081183C172632CC /* ControllerFocusTests.swift */,
 				A1C0DEAV1SEQ200000000000 /* AV1SequenceHeaderTests.swift */,
 				A1C0DEAUDCEL200000000000 /* AudioCushionCeilingTests.swift */,
@@ -1603,6 +1606,7 @@
 				D20000F3 /* DatagramSourceTests.swift in Sources */,
 				A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */,
 				2A02904E377F70311AAC2ED3 /* HostStreamSettingsTests.swift in Sources */,
+				255FD45F4A364608975415AA /* PlayStationSettingsPerConsoleTests.swift in Sources */,
 				71F9D0F9B22B3659EF407CFE /* ControllerFocusTests.swift in Sources */,
 				A1C0DEAV1SEQ100000000000 /* AV1SequenceHeaderTests.swift in Sources */,
 				A1C0DEAUDCEL100000000000 /* AudioCushionCeilingTests.swift in Sources */,

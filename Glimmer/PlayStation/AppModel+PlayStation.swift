@@ -51,8 +51,8 @@ extension AppModel {
     /// Bitrate: automatic keeps the console's preset (15 Mbps at 1080p) and
     /// lets it adapt; one set by hand is sent as is (2-100 Mbps) and held.
     /// HDR only with HEVC, and only when this display can show it.
-    func playStationStreamOptions() -> PlayStationStreamOptions {
-        let s = PlayStationSettings.shared.snapshot
+    func playStationStreamOptions(for host: Host) -> PlayStationStreamOptions {
+        let s = PlayStationSettings.forConsole(host.id).snapshot
         var options = PlayStationStreamOptions()
         options.settings = s
         options.resolution = s.height > 720 ? .p1080 : .p720
@@ -146,7 +146,7 @@ extension AppModel {
     /// other host the GameStream engine.
     func makeStreamingBackend(for host: Host) -> StreamingBackend {
         if host.isPlayStation, let console = playStationConsole(for: host) {
-            return PlayStationBackend(console: console, options: playStationStreamOptions())
+            return PlayStationBackend(console: console, options: playStationStreamOptions(for: host))
         }
         return NativeBackend()
     }

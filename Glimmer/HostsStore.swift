@@ -172,6 +172,7 @@ extension AppModel {
     /// the selected PC's own settings go live.
     private func settleStreamSettingsAfterLoad() {
         migrateStreamSettingsToHosts(hosts)
+        PlayStationSettings.migrateGlobalToConsoles(hosts.filter(\.isPlayStation).map(\.id))
         if let host = selectedHost { applyStreamSettings(forSelected: host) }
     }
 

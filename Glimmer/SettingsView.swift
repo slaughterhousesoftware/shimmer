@@ -93,7 +93,7 @@ struct AppShell: View {
             switch model.settingsTab {
             case .computers: ComputersTab(pairingTarget: $pairingTarget)
             case .stream: StreamTabPage()
-            case .playStation: PlayStationTabPage()
+            case .playStation: ComputersTab(pairingTarget: $pairingTarget)
             case .general: GeneralTabPage()
             case .about: AboutPane()
             }
@@ -138,11 +138,3 @@ private struct GeneralTabPage: View {
     }
 }
 
-/// The PS5's own settings (PlayStationSettings).
-private struct PlayStationTabPage: View {
-    var body: some View {
-        SettingsPageBody {
-            PlayStationSettingsPane()
-        }
-    }
-}

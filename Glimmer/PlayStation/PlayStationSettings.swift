@@ -4,8 +4,10 @@
 //  The PS5's own stream settings, apart from the Sunshine ones: a PS5 stream
 //  is a different kind of stream (fixed 720p/1080p presets, 30/60 fps, its
 //  own bitrate range, the DualSense's haptics and triggers), so it gets its
-//  own Settings tab instead of borrowing numbers meant for a PC.
-//  Persisted under "PS5." keys.
+//  own settings instead of borrowing numbers meant for a PC. Each console
+//  has its own (`forConsole`), persisted under "PS5.<host id>." keys; the
+//  bare "PS5." keys are the pre-per-console values, copied once to every
+//  console registered then (`migrateGlobalToConsoles`).
 //
 
 import Foundation
@@ -15,7 +17,35 @@ import Observation
 @Observable
 final class PlayStationSettings {
 
-    static let shared = PlayStationSettings()
+    /// One console's settings - the same instance every time, so the
+    /// settings page and the stream it starts agree.
+    static func forConsole(_ hostID: String) -> PlayStationSettings {
+        if let known = byConsole[hostID] { return known }
+        let made = PlayStationSettings(hostID: hostID)
+        byConsole[hostID] = made
+        return made
+    }
+    private static var byConsole: [String: PlayStationSettings] = [:]
+
+    static let settingNames = ["height", "fps", "bitrateAuto", "bitrateMbps", "hdr", "hevc", "presentation",
+                               "haptics", "adaptiveTriggers", "lightBar", "restWhenStreamEnds"]
+
+    /// Once: consoles registered before per-console settings keep what they
+    /// had (the bare "PS5." values). A console registered later starts from
+    /// the defaults.
+    static func migrateGlobalToConsoles(_ hostIDs: [String], defaults: UserDefaults = .standard) {
+        let flag = "PS5.perConsoleMigrated"
+        guard !defaults.bool(forKey: flag) else { return }
+        defaults.set(true, forKey: flag)
+        for id in hostIDs {
+            for name in settingNames {
+                let consoleKey = key(name, hostID: id)
+                if defaults.object(forKey: consoleKey) == nil, let value = defaults.object(forKey: key(name)) {
+                    defaults.set(value, forKey: consoleKey)
+                }
+            }
+        }
+    }
 
     enum HapticsMode: String, CaseIterable, Identifiable, Sendable {
         /// The console's haptics on the DualSense's actuators (USB or Bluetooth).
@@ -74,29 +104,35 @@ final class PlayStationSettings {
 
     @ObservationIgnored private var loading = false
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let hostID: String?
 
-    init(defaults: UserDefaults = .standard) {
+    /// `hostID` nil: the bare pre-per-console keys.
+    init(hostID: String? = nil, defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.hostID = hostID
         loading = true
         defer { loading = false }
-        if let v = defaults.object(forKey: Self.key("height")) as? Int { height = v == 720 ? 720 : 1080 }
-        if let v = defaults.object(forKey: Self.key("fps")) as? Int { fps = v == 30 ? 30 : 60 }
-        if let v = defaults.object(forKey: Self.key("bitrateAuto")) as? Bool { bitrateAuto = v }
-        if let v = defaults.object(forKey: Self.key("bitrateMbps")) as? Int { bitrateMbps = v }
-        if let v = defaults.object(forKey: Self.key("hdr")) as? Bool { hdr = v }
-        if let v = defaults.object(forKey: Self.key("hevc")) as? Bool { hevc = v }
-        if let v = defaults.string(forKey: Self.key("presentation")).flatMap(Presentation.init) { presentation = v }
-        if let v = defaults.string(forKey: Self.key("haptics")).flatMap(HapticsMode.init) { haptics = v }
-        if let v = defaults.object(forKey: Self.key("adaptiveTriggers")) as? Bool { adaptiveTriggers = v }
-        if let v = defaults.object(forKey: Self.key("lightBar")) as? Bool { lightBar = v }
-        if let v = defaults.object(forKey: Self.key("restWhenStreamEnds")) as? Bool { restWhenStreamEnds = v }
+        if let v = defaults.object(forKey: Self.key(hostID: hostID, "height")) as? Int { height = v == 720 ? 720 : 1080 }
+        if let v = defaults.object(forKey: Self.key(hostID: hostID, "fps")) as? Int { fps = v == 30 ? 30 : 60 }
+        if let v = defaults.object(forKey: Self.key(hostID: hostID, "bitrateAuto")) as? Bool { bitrateAuto = v }
+        if let v = defaults.object(forKey: Self.key(hostID: hostID, "bitrateMbps")) as? Int { bitrateMbps = v }
+        if let v = defaults.object(forKey: Self.key(hostID: hostID, "hdr")) as? Bool { hdr = v }
+        if let v = defaults.object(forKey: Self.key(hostID: hostID, "hevc")) as? Bool { hevc = v }
+        if let v = defaults.string(forKey: Self.key(hostID: hostID, "presentation")).flatMap(Presentation.init) { presentation = v }
+        if let v = defaults.string(forKey: Self.key(hostID: hostID, "haptics")).flatMap(HapticsMode.init) { haptics = v }
+        if let v = defaults.object(forKey: Self.key(hostID: hostID, "adaptiveTriggers")) as? Bool { adaptiveTriggers = v }
+        if let v = defaults.object(forKey: Self.key(hostID: hostID, "lightBar")) as? Bool { lightBar = v }
+        if let v = defaults.object(forKey: Self.key(hostID: hostID, "restWhenStreamEnds")) as? Bool { restWhenStreamEnds = v }
     }
 
-    static func key(_ name: String) -> String { "PS5.\(name)" }
+    static func key(_ name: String, hostID: String? = nil) -> String {
+        hostID.map { "PS5.\($0).\(name)" } ?? "PS5.\(name)"
+    }
+    static func key(hostID: String?, _ name: String) -> String { key(name, hostID: hostID) }
 
     private func save(_ value: Any, _ name: String) {
         guard !loading else { return }
-        defaults.set(value, forKey: Self.key(name))
+        defaults.set(value, forKey: Self.key(name, hostID: hostID))
     }
 
     /// What a session needs, read once at connect (the backend runs off the
