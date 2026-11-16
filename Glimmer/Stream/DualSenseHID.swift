@@ -355,6 +355,7 @@ final class DualSenseHID: @unchecked Sendable {
     /// DualSenseHID+Decode.swift; this half owns the lock, the change edge,
     /// and the main-queue hop to `onChange`.
     private func decode(reportID: UInt32, report: UnsafeMutablePointer<UInt8>, length: CFIndex) {
+        noteTriggerStatus(report: report, length: length)
         guard let decoded = Self.decodeInputReport(
             reportID: reportID, bytes: UnsafeBufferPointer(start: report, count: length)) else { return }
 
@@ -397,7 +398,11 @@ final class DualSenseHID: @unchecked Sendable {
         if wantRight { outputState.rightTrigger = Self.triggerBlock(mode: typeRight, params: right) }
         let changed = before != (outputState.leftTrigger, outputState.rightTrigger)
         triggerUpdates += 1
-        if changed { triggerChanges += 1; triggersDirty = true }
+        if changed {
+            triggerChanges += 1
+            triggersDirty = true
+            if triggerRequestedAt == 0 { triggerRequestedAt = DispatchTime.now().uptimeNanoseconds }
+        }
         lock.unlock()
         // The PS5 repeats the same effect many times a second. Writing it again
         // restarts the pad's effect (a vibrating trigger stutters) and, over
@@ -479,12 +484,45 @@ final class DualSenseHID: @unchecked Sendable {
     var triggerChanges = 0
     /// The trigger blocks changed since they were last written (`lock`).
     var triggersDirty = false
+    /// Trigger latency breadcrumbs (`lock`): when the oldest unapplied change
+    /// arrived, when its write finished, and the pad's own trigger-status
+    /// bytes (USB input report 0x01, bytes 42/43/48: the effect it is running).
+    var triggerRequestedAt: UInt64 = 0
+    var triggerStatus: UInt32 = 0
+    var triggerWriteMs: [Double] = []
+    var triggerApplyMs: [Double] = []
 
-    /// "<updates> trigger effects (<changes> changes)", then reset.
+    /// "<updates> trigger effects (<changes> changes), written in .., applied in ..", then reset.
     func takeTriggerStats() -> String {
         lock.lock(); defer { lock.unlock() }
-        defer { triggerUpdates = 0; triggerChanges = 0 }
-        return "\(triggerUpdates) trigger effects (\(triggerChanges) changes)"
+        defer {
+            triggerUpdates = 0; triggerChanges = 0
+            triggerWriteMs.removeAll(); triggerApplyMs.removeAll()
+        }
+        func q(_ v: [Double]) -> String {
+            guard !v.isEmpty else { return "-" }
+            let s = v.sorted()
+            return String(format: "p50 %.1f p99 %.1f ms (%d)", s[s.count / 2], s[min(s.count - 1, s.count * 99 / 100)], s.count)
+        }
+        return "\(triggerUpdates) trigger effects (\(triggerChanges) changes), written \(q(triggerWriteMs)), "
+            + "applied on the pad \(q(triggerApplyMs))"
+    }
+
+    /// The pad's trigger-status bytes changed: close out the pending change's
+    /// apply latency (USB report 0x01; a change older than 250 ms is assumed
+    /// to have produced no status change and is dropped).
+    func noteTriggerStatus(report: UnsafeMutablePointer<UInt8>, length: CFIndex) {
+        guard length > 48, report[0] == 0x01 else { return }
+        let status = UInt32(report[42]) | UInt32(report[43]) << 8 | UInt32(report[48]) << 16
+        let now = DispatchTime.now().uptimeNanoseconds
+        lock.lock(); defer { lock.unlock() }
+        if triggerRequestedAt != 0, now &- triggerRequestedAt > 250_000_000 { triggerRequestedAt = 0 }
+        guard status != triggerStatus else { return }
+        triggerStatus = status
+        if triggerRequestedAt != 0, triggerApplyMs.count < 10_000 {
+            triggerApplyMs.append(Double(now &- triggerRequestedAt) / 1e6)
+            triggerRequestedAt = 0
+        }
     }
 
     func scheduleWrite() {
@@ -520,8 +558,13 @@ final class DualSenseHID: @unchecked Sendable {
         triggersDirty = false
         lock.unlock()
         let ok = writeToAll { Self.effectsState($0, triggers: triggers) }
-        if triggers, !ok {
-            lock.lock(); triggersDirty = true; lock.unlock()
+        if triggers {
+            lock.lock()
+            if !ok { triggersDirty = true }
+            if ok, triggerRequestedAt != 0, triggerWriteMs.count < 10_000 {
+                triggerWriteMs.append(Double(DispatchTime.now().uptimeNanoseconds &- triggerRequestedAt) / 1e6)
+            }
+            lock.unlock()
         }
     }
 

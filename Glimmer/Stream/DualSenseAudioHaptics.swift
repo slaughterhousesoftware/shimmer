@@ -48,7 +48,9 @@ struct HapticsBuffer {
     private var readIndex = 0
     private(set) var queued = 0
 
-    // Upsampler and low-pass state.
+    // Upsampler: a polyphase FIR when the output is a whole multiple of 3 kHz
+    // (48 kHz: x16), else linear interpolation + low-pass.
+    private var polyphase: PolyphaseUpsampler?
     private let step: Double
     private var phase = 0.0
     private var previous: (Float, Float) = (0, 0)
@@ -73,6 +75,10 @@ struct HapticsBuffer {
         step = Self.sourceRate / outputRate
         lowPassLeft = Biquad(lowPassAt: 1200, sampleRate: outputRate)
         lowPassRight = Biquad(lowPassAt: 1200, sampleRate: outputRate)
+        let factor = outputRate / Self.sourceRate
+        if factor > 1, factor == factor.rounded(), factor <= 32 {
+            polyphase = PolyphaseUpsampler(factor: Int(factor))
+        }
     }
 
     mutating func setTarget(ms: Double) {
@@ -83,7 +89,16 @@ struct HapticsBuffer {
     mutating func push(_ pcm: UnsafeRawBufferPointer) {
         if !playing, waitingSince == nil { waitingSince = renderedFrames }
         let samples = pcm.count / 4
-        for i in 0..<samples {
+        if var upsampler = polyphase {
+            polyphase = nil                       // uniquely owned while it runs: no copy-on-write
+            for i in 0..<samples {
+                let l = Float(pcm.loadUnaligned(fromByteOffset: i * 4, as: Int16.self)) / 32768
+                let r = Float(pcm.loadUnaligned(fromByteOffset: i * 4 + 2, as: Int16.self)) / 32768
+                upsampler.push(l, r) { ol, or in appendRaw(ol, or) }
+            }
+            polyphase = upsampler
+        }
+        for i in 0..<(polyphase == nil ? samples : 0) {
             let l = Float(pcm.loadUnaligned(fromByteOffset: i * 4, as: Int16.self)) / 32768
             let r = Float(pcm.loadUnaligned(fromByteOffset: i * 4 + 2, as: Int16.self)) / 32768
             while phase < 1 {
@@ -100,6 +115,19 @@ struct HapticsBuffer {
             readIndex = (readIndex + drop) % left.count
             queued -= drop
         }
+    }
+
+    /// A frame already band-limited by the polyphase filter.
+    private mutating func appendRaw(_ l: Float, _ r: Float) {
+        let capacity = left.count
+        if queued == capacity {
+            readIndex = (readIndex + 1) % capacity
+            queued -= 1
+        }
+        let at = (readIndex + queued) % capacity
+        left[at] = l
+        right[at] = r
+        queued += 1
     }
 
     private mutating func append(_ l: Float, _ r: Float) {
@@ -174,6 +202,69 @@ struct ArrivalJitter {
     /// The haptics buffer that rides out this jitter: p95 + 5 ms, 15-100 ms.
     var hapticsTargetMs: Double? {
         percentile(0.95).map { min(100, max(15, $0 + 5)) }
+    }
+}
+
+/// 3 kHz -> 3 kHz x `factor` upsampling with a polyphase FIR: a Kaiser-
+/// windowed sinc low-pass at 1.5 kHz (the source's Nyquist), 12 taps per
+/// phase. Replaces linear interpolation + a 1.2 kHz biquad, which together
+/// lost ~5 dB at 1 kHz and ~8 dB at 1.4 kHz - the crisp top of the
+/// console's haptics. Flat to ~1.1 kHz, images below -40 dB; delay 6 source
+/// samples (2 ms).
+struct PolyphaseUpsampler {
+    static let tapsPerPhase = 12
+    let factor: Int
+    /// coefficients[p][k]: phase p, tap k (applied to the k-th newest input).
+    private let coefficients: [[Float]]
+    private var historyLeft: [Float]
+    private var historyRight: [Float]
+    private var head = 0
+
+    init(factor: Int) {
+        self.factor = factor
+        let taps = factor * Self.tapsPerPhase
+        let cutoff = 0.5 / Double(factor)            // the source Nyquist, as a fraction of the output rate
+        let beta = 6.0
+        func besselI0(_ x: Double) -> Double {
+            var sum = 1.0, term = 1.0, k = 1.0
+            while term > 1e-12 * sum { term *= (x / (2 * k)) * (x / (2 * k)); sum += term; k += 1 }
+            return sum
+        }
+        let mid = Double(taps - 1) / 2
+        var prototype = [Double](repeating: 0, count: taps)
+        for n in 0..<taps {
+            let t = Double(n) - mid
+            let sinc = t == 0 ? 2 * cutoff : sin(2 * .pi * cutoff * t) / (.pi * t)
+            let r = t / (mid + 0.5)
+            let window = besselI0(beta * (1 - r * r).squareRoot()) / besselI0(beta)
+            prototype[n] = sinc * window
+        }
+        // Each phase sums to 1: unity gain at DC, no ripple between phases.
+        var phases = [[Float]](repeating: [Float](repeating: 0, count: Self.tapsPerPhase), count: factor)
+        for p in 0..<factor {
+            let sum = (0..<Self.tapsPerPhase).reduce(0.0) { $0 + prototype[p + $1 * factor] }
+            for k in 0..<Self.tapsPerPhase { phases[p][k] = Float(prototype[p + k * factor] / sum) }
+        }
+        coefficients = phases
+        historyLeft = [Float](repeating: 0, count: Self.tapsPerPhase)
+        historyRight = [Float](repeating: 0, count: Self.tapsPerPhase)
+    }
+
+    /// One source frame in, `factor` output frames out.
+    mutating func push(_ l: Float, _ r: Float, emit: (Float, Float) -> Void) {
+        head = (head + Self.tapsPerPhase - 1) % Self.tapsPerPhase
+        historyLeft[head] = l
+        historyRight[head] = r
+        for p in 0..<factor {
+            var ol: Float = 0, or: Float = 0
+            let c = coefficients[p]
+            for k in 0..<Self.tapsPerPhase {
+                let i = (head + k) % Self.tapsPerPhase
+                ol += c[k] * historyLeft[i]
+                or += c[k] * historyRight[i]
+            }
+            emit(ol, or)
+        }
     }
 }
 
@@ -297,12 +388,34 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
     }
 
     /// Point `engine`'s output at `device`; the 4+-channel format to render in.
+    /// The pad's audio device defaults to a 512-frame I/O buffer: 10.7 ms of
+    /// haptics latency before the ~2 ms the device itself adds (measured on
+    /// Kevin's MacBook, 2026-11-15; the device allows 15-4096). The render
+    /// work is a copy, so a 64-frame (1.3 ms) buffer costs nothing. The setting
+    /// is the pad's own audio device's, which nothing else plays to.
+    static let ioBufferFrames: UInt32 = 64
+
+    private static func setSmallIOBuffer(on device: AudioDeviceID) {
+        var range = AudioValueRange()
+        var size = UInt32(MemoryLayout<AudioValueRange>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyBufferFrameSizeRange,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &range) == noErr else { return }
+        var frames = UInt32(min(range.mMaximum, max(range.mMinimum, Double(ioBufferFrames))))
+        address.mSelector = kAudioDevicePropertyBufferFrameSize
+        let rc = AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &frames)
+        Diag.info("PS5: DualSense haptics I/O buffer \(frames) frames\(rc == noErr ? "" : " - refused (\(rc))")",
+                  "PlayStation")
+    }
+
     private static func bind(_ engine: AVAudioEngine, to device: AudioDeviceID) -> AVAudioFormat? {
         var device = device
         guard let unit = engine.outputNode.audioUnit,
               AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
                                    &device, UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr
         else { return nil }
+        setSmallIOBuffer(on: device)
         let hardware = engine.outputNode.outputFormat(forBus: 0)
         guard hardware.channelCount >= 4, hardware.sampleRate > 0,
               let layout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | hardware.channelCount)

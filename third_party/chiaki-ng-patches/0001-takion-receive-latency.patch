@@ -1,5 +1,5 @@
---- a/lib/src/takion.c	2026-11-15 19:08:18
-+++ b/lib/src/takion.c	2026-11-15 19:08:18
+--- a/lib/src/takion.c	2026-11-15 19:52:38
++++ b/lib/src/takion.c	2026-11-15 19:52:38
 @@ -18,6 +18,7 @@
  #include <TargetConditionals.h>
  #if TARGET_OS_OSX
@@ -8,7 +8,7 @@
  #endif
  #endif
  
-@@ -44,10 +45,26 @@
+@@ -44,10 +45,33 @@
  
  #define TAKION_REORDER_QUEUE_SIZE_EXP 4 // => 16 entries
  #define TAKION_AV_VIDEO_REORDER_QUEUE_SIZE_EXP 6 // => 64 entries
@@ -25,6 +25,13 @@
 +int chiaki_shimmer_reorder_timeout_us = 4000;
 +int chiaki_shimmer_drop_permille = 0;
 +
++// Shimmer: audio sub-stream census. Each non-video AV packet carries one tag
++// byte (0x02 = haptics, the rest go to the game audio decoder). Counting the
++// tags seen shows whether the console sends any other audio stream - the
++// controller speaker, say - that would otherwise be decoded as game audio.
++static uint64_t shimmer_audio_tag_counts[256];
++static uint64_t shimmer_audio_tag_last_log_us;
++
  #define TAKION_POSTPONE_PACKETS_SIZE 32
  
 +// Shimmer: the kernel receive buffer, apart from the window advertised to the
@@ -36,7 +43,7 @@
  #define TAKION_MESSAGE_HEADER_SIZE 0x10
  
  #define TAKION_PACKET_BASE_TYPE_MASK 0xf
-@@ -188,6 +205,22 @@
+@@ -188,6 +212,22 @@
  static ChiakiErrorCode takion_recv_message_cookie_ack(ChiakiTakion *takion);
  static void takion_handle_packet_av(ChiakiTakion *takion, uint8_t base_type, uint8_t *buf, size_t buf_size);
  static ChiakiErrorCode takion_read_extra_sock_messages(ChiakiTakion *takion);
@@ -59,7 +66,7 @@
  
  CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, ChiakiTakionConnectInfo *info, chiaki_socket_t *sock)
  {
-@@ -261,8 +294,7 @@
+@@ -261,8 +301,7 @@
  			CHIAKI_LOGE(takion->log, "Takion had problem reading extra messages from socket using PSN Connection with error: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
  			goto error_sock;
  		}
@@ -69,7 +76,7 @@
  		if(r < 0)
  		{
  			CHIAKI_LOGE(takion->log, "Takion failed to setsockopt SO_RCVBUF: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
-@@ -349,8 +381,7 @@
+@@ -349,8 +388,7 @@
  			ret = CHIAKI_ERR_NETWORK;
  			goto error_pipe;
  		}
@@ -79,7 +86,7 @@
  		if(r < 0)
  		{
  			CHIAKI_LOGE(takion->log, "Takion failed to setsockopt SO_RCVBUF: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
-@@ -1098,6 +1129,11 @@
+@@ -1098,6 +1136,11 @@
  {
  	ChiakiTakion *takion = user;
  	chiaki_thread_set_affinity(CHIAKI_THREAD_NAME_TAKION);
@@ -91,7 +98,7 @@
  
  	takion->video_queue_initialized = false;
  	takion->video_queue_head_wait_start_us = 0;
-@@ -1677,6 +1713,12 @@
+@@ -1677,6 +1720,12 @@
  	// buf ownership is taken by this function (freed on error or transferred to queue entry).
  	assert(base_type == TAKION_PACKET_TYPE_VIDEO || base_type == TAKION_PACKET_TYPE_AUDIO);
  	if((takion->disable_audio_video & CHIAKI_VIDEO_DISABLED) && (base_type == TAKION_PACKET_TYPE_VIDEO))
@@ -104,3 +111,32 @@
  	{
  		free(buf);
  		return;
+@@ -1699,6 +1748,20 @@
+ 	bool is_video = (base_type == TAKION_PACKET_TYPE_VIDEO);
+ 	if(!is_video)
+ 	{
++		uint64_t now_us = chiaki_time_now_monotonic_us();
++		if(now_us - shimmer_audio_tag_last_log_us > 10000000)
++		{
++			shimmer_audio_tag_last_log_us = now_us;
++			char line[256] = { 0 };
++			size_t used = 0;
++			for(int t = 0; t < 256 && used < sizeof(line) - 24; t++)
++				if(shimmer_audio_tag_counts[t])
++					used += snprintf(line + used, sizeof(line) - used, " 0x%02x:%llu", t, (unsigned long long)shimmer_audio_tag_counts[t]);
++			CHIAKI_LOGI(takion->log, "Takion audio tags:%s", line);
++		}
++	}
++	if(!is_video)
++	{
+ 		if(takion->cb)
+ 		{
+ 			ChiakiTakionEvent event = { 0 };
+@@ -1837,6 +1900,7 @@
+ 	if(v12 && !packet->is_video)
+ 	{
+ 		packet->is_haptics = *av == 0x02;
++		shimmer_audio_tag_counts[*av]++;
+ 		av += 1;
+ 		av_size -= 1;
+ 	}

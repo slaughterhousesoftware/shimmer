@@ -1,0 +1,88 @@
+#!/bin/zsh
+# PS5 streaming benchmark: reruns the measurements behind the 2026-11-15 PS5
+# work on the Mac that runs Shimmer, and checks them against thresholds, so a
+# change can be judged by numbers instead of feel.
+#
+#   scripts/ps5-bench [ssh-target]      (default: the MacBook, 100.105.38.59)
+#
+# Needs: Shimmer installed and NOT running there, a registered PS5 named
+# "PS5…" awake, and - for the Bluetooth checks - a DualSense on Bluetooth.
+# Runs three 25 s test streams (lowest-latency presentation; clean, and with
+# 0.3% injected video packet loss under new vs old loss handling - a game's
+# frames run ~190 packets with one parity packet, so 2% loss defeats any
+# client's FEC) and the Bluetooth
+# input/output rates with Game Mode off and on. Every defaults key it sets is
+# restored. Exit status 1 if a threshold fails.
+set -euo pipefail
+HOST=${1:-kevinpatel@100.105.38.59}
+ROOT=${0:A:h:h}
+BENCH=$ROOT/tools/ps5-bench
+OUT=$(mktemp -d)
+for tool in btrate hidrate; do swiftc -O $BENCH/$tool.swift -o $OUT/$tool 2>/dev/null; done
+scp -q $OUT/btrate $OUT/hidrate $BENCH/analyze.py $HOST:/tmp/
+RESULT=$(ssh -o BatchMode=yes $HOST 'zsh -s' <<'REMOTE'
+set -u
+D=com.kevinbpatel.shimmer
+APP=/Applications/Shimmer.app
+pgrep -x Shimmer >/dev/null && { echo "Shimmer is running - quit it first"; exit 2; }
+keys=(telemetryEnabled PS5.presentation PS5.debugReorderUs PS5.debugIdrOnFec PS5.debugDropPermille)
+typeset -A saved
+for k in $keys; do saved[$k]=$(defaults read $D $k 2>/dev/null || echo __unset__); done
+restore() {
+  for k in $keys; do
+    if [[ ${saved[$k]} == __unset__ ]]; then defaults delete $D $k 2>/dev/null; else defaults write $D $k "${saved[$k]}"; fi
+  done
+  /Applications/Xcode.app/Contents/Developer/usr/bin/gamepolicyctl game-mode set auto >/dev/null 2>&1 || true
+  rm -f /tmp/btrate /tmp/hidrate /tmp/analyze.py
+}
+trap restore EXIT
+defaults write $D telemetryEnabled -bool YES
+defaults write $D PS5.presentation -string lowestLatency
+run() {   # name reorderUs idrOnFec dropPermille
+  defaults write $D PS5.debugReorderUs -int $2
+  defaults write $D PS5.debugIdrOnFec -bool $3
+  defaults write $D PS5.debugDropPermille -int $4
+  (cd /tmp && $APP/Contents/Resources/shimmerctl test-stream --host PS5 --seconds 25 >/dev/null 2>&1 || true)
+  f=$(ls -t ~/Library/Logs/Shimmer/telemetry-frames-*.ndjson | head -1)
+  echo "$1 $(python3 /tmp/analyze.py $f)"
+  sleep 8
+}
+run clean        4000  NO  0
+run loss03_new   4000  NO  3
+run loss03_old  16000  YES 3
+G=/Applications/Xcode.app/Contents/Developer/usr/bin/gamepolicyctl
+if [[ -x $G ]] && /tmp/hidrate 1 >/dev/null 2>&1; then
+  for mode in off on; do
+    $G game-mode set $mode >/dev/null; sleep 3
+    echo "bt_gamemode_$mode $(/tmp/hidrate 5) | $(/tmp/btrate 1 5)"
+  done
+else
+  echo "bt_skipped no Bluetooth DualSense (or no Xcode gamepolicyctl)"
+fi
+REMOTE
+)
+print -r -- "$RESULT"
+# Thresholds (what the 2026-11-15 changes achieved on the M5 MacBook, wired).
+print -r -- "$RESULT" | python3 -c '
+import json, re, sys
+ok = True
+def check(name, cond, detail):
+    global ok
+    print(("PASS " if cond else "FAIL ") + name + ": " + detail)
+    ok = ok and cond
+for line in sys.stdin:
+    name, _, rest = line.strip().partition(" ")
+    if name in ("clean", "loss03_new") and rest.startswith("{"):
+        r = json.loads(rest)
+        if name == "clean":
+            check("clean stream latency", (r["e2e_p99_ms"] or 99) < 5, "arrival-to-present p99 %s ms (< 5)" % r["e2e_p99_ms"])
+            check("clean stream smoothness", r["gaps_over_33ms"] == 0, "%d gaps over 33 ms (0)" % r["gaps_over_33ms"])
+        else:
+            check("0.3%% loss, worst stall", (r["gap_max_ms"] or 999) < 100, "%s ms (< 100)" % r["gap_max_ms"])
+            check("0.3%% loss, stalls", r["gaps_over_33ms"] <= 20, "%d gaps over 33 ms (<= 20)" % r["gaps_over_33ms"])
+    if name == "bt_gamemode_on":
+        i = re.search(r"input reports/s (\d+)", rest); o = re.search(r"([\d.]+) reports/s, latency", rest)
+        check("Bluetooth input with Game Mode", bool(i) and int(i.group(1)) >= 115, (i.group(1) if i else "?") + " reports/s (>= 115)")
+        check("Bluetooth output with Game Mode", bool(o) and float(o.group(1)) >= 55, (o.group(1) if o else "?") + " reports/s (>= 55, haptics need 47)")
+sys.exit(0 if ok else 1)
+'

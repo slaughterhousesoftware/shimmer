@@ -164,7 +164,7 @@ struct HapticsBufferTests {
         #expect(!b.playing)
         let out = render(&b, 960)                          // 40 ms: has waited 30, plays
         #expect(out.prefix(480).allSatisfy { $0 == 0 })   // exactly 30 ms after it arrived
-        #expect(out[520] > 0.05)                           // (rising from 0 through the low-pass)
+        #expect(out[700] > 0.05)                           // (rising through the filter: 2 ms delay)
         render(&b, 64)
         #expect(b.runs == 1)                               // then ran out,
         #expect(b.cutRuns == 1)                            // mid-signal: a constant never decays
@@ -303,5 +303,50 @@ struct PlayStationSettingsTests {
         #expect(b.snapshot.bitrateKbps == 100_000)
         #expect(b.haptics == .rumble && !b.snapshot.presentsDirect)
         #expect(defaults.object(forKey: "PS5.bitrateMbps") as? Int == 100)
+    }
+}
+
+struct PolyphaseUpsamplerTests {
+    /// Amplitude of `hz` in a 48 kHz signal, by correlation.
+    private func amplitude(_ signal: [Float], hz: Double) -> Double {
+        var re = 0.0, im = 0.0
+        for (n, v) in signal.enumerated() {
+            let w = 2 * Double.pi * hz * Double(n) / 48_000
+            re += Double(v) * cos(w); im += Double(v) * sin(w)
+        }
+        return 2 * (re * re + im * im).squareRoot() / Double(signal.count)
+    }
+
+    private func upsample(sineAt hz: Double, seconds: Double = 1) -> [Float] {
+        var up = PolyphaseUpsampler(factor: 16)
+        var out: [Float] = []
+        for n in 0..<Int(3000 * seconds) {
+            let v = Float(0.5 * sin(2 * .pi * hz * Double(n) / 3000))
+            up.push(v, v) { l, _ in out.append(l) }
+        }
+        return Array(out.dropFirst(480))   // past the filter's start-up
+    }
+
+    @Test func unityAtDC() {
+        var up = PolyphaseUpsampler(factor: 16)
+        var last: Float = 0
+        for _ in 0..<40 { up.push(0.5, 0.5) { l, _ in last = l } }
+        #expect(abs(last - 0.5) < 0.001)
+    }
+
+    @Test func keepsTheTopOfTheBand() {
+        // 1 kHz comes through within 1 dB (linear + biquad lost ~5 dB there).
+        let a = amplitude(upsample(sineAt: 1000), hz: 1000)
+        #expect(a > 0.5 * 0.89 && a < 0.5 * 1.12)
+        // Its image at 3 kHz - 1 kHz = 2 kHz is at least 26 dB down.
+        let image = amplitude(upsample(sineAt: 1000), hz: 2000)
+        #expect(image < 0.5 * 0.05)
+    }
+
+    @Test func bufferUsesItAtFortyEightKilohertz() {
+        var b = HapticsBuffer(outputRate: 48_000, targetMs: 0)
+        let frame = [Int16](repeating: 8000, count: 60)   // 30 stereo samples
+        frame.withUnsafeBytes { b.push($0) }
+        #expect(b.queued == 480)
     }
 }
