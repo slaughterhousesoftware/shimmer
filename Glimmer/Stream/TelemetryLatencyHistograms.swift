@@ -78,14 +78,13 @@ final class LatencyHistograms: @unchecked Sendable {
         /// estimator (carried on the snapshot) so they stay consistent.
         let bounds: [Double]
 
-        private let lock = os_unfair_lock_t.allocate(capacity: 1)
+        private let lock = makeUnfairLock()
         private var bucketCounts: [UInt64]
         private var sumMs: Double = 0
         private var totalCount: UInt64 = 0
 
         init(bounds: [Double] = Stage.boundsMs) {
             self.bounds = bounds
-            lock.initialize(to: os_unfair_lock_s())
             bucketCounts = [UInt64](repeating: 0, count: bounds.count)
         }
         deinit { lock.deallocate() }

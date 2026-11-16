@@ -73,9 +73,8 @@ extension TelemetryCounters {
 /// three-file join to recover it. Always-live like the counters; self-locked
 /// (the `P2State` idiom) so the control path never touches another gauge's lock.
 final class RumbleActivity: @unchecked Sendable {
-    private let lock = os_unfair_lock_t.allocate(capacity: 1)
+    private let lock = makeUnfairLock()
     private var lastRumbleNanos: UInt64 = 0
-    init() { lock.initialize(to: os_unfair_lock_s()) }
     deinit { lock.deallocate() }
 
     /// Stamp a host-rumble receipt (called next to `rumbleEventTotal`).

@@ -102,6 +102,18 @@ extension AppModel {
     }
 
     func runDebugAutomationIfRequested() {
+        // `--debug-cycle=<host>:<sec>[,<host>:<sec>...]`: a stress loop for
+        // stream start/stop - stream each host for up to <sec> (randomised
+        // down to half), end it, wait a random 0.3-4 s, go on to the next,
+        // `--debug-cycle-count` rounds (default 50). `--debug-cycle-hide=1`
+        // also hides the app for 3 s mid-stream on half the streams. Every
+        // step logs a `CYCLE` line, so a crash report lines up with the step.
+        if let spec = Self.debugKnob("cycle") {
+            runDebugCycle(spec: spec,
+                          rounds: Self.debugKnob("cycle-count").flatMap(Int.init) ?? 50,
+                          hide: Self.debugKnob("cycle-hide") != nil)
+            return
+        }
         // `--debug-awdl-park=<seconds>@<host address>`: run the Wi-Fi lag-spike
         // parker exactly as a stream would (route check, park, watch), then
         // restore - for testing it without a live session.
@@ -215,6 +227,76 @@ extension AppModel {
             self.armDebugPiPAndQuit(pipAfter: pipAfter, returnAfter: returnAfter, closeAfter: closeAfter,
                                     againAfter: againAfter, quitAfter: quitAfter)
         }
+    }
+
+    private func runDebugCycle(spec: String, rounds: Int, hide: Bool) {
+        let steps: [(match: String, seconds: Double)] = spec.split(separator: ",").compactMap { part in
+            let kv = part.split(separator: ":", maxSplits: 1)
+            guard kv.count == 2, let seconds = Double(kv[1]) else { return nil }
+            return (String(kv[0]), seconds)
+        }
+        guard !steps.isEmpty, rounds > 0 else { return }
+        Diag.notice("CYCLE armed: \(steps.count) step(s) x \(rounds) rounds, hide \(hide)", "Debug")
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            for round in 1...rounds {
+                for (index, step) in steps.enumerated() {
+                    guard let self else { return }
+                    guard let host = self.debugHost(matching: step.match) else {
+                        Diag.error("CYCLE: no host matching \(step.match)", "Debug")
+                        return
+                    }
+                    Diag.notice("CYCLE \(round)/\(rounds) step \(index): start \(host.displayName)", "Debug")
+                    self.selectHost(host)
+                    self.streamDefaultApp()
+                    let live = await self.debugWait(seconds: 45) { phase in
+                        if case .streaming = phase { return true }
+                        if case .error = phase { return true }
+                        return false
+                    }
+                    let phase = self.streamPhase
+                    if live, case .streaming = phase {
+                        let dwell = step.seconds * Double.random(in: 0.5...1.0)
+                        if hide, Bool.random() {
+                            try? await Task.sleep(for: .seconds(dwell / 2))
+                            Diag.notice("CYCLE hide", "Debug")
+                            NSApp.hide(nil)
+                            try? await Task.sleep(for: .seconds(3))
+                            NSApp.unhide(nil)
+                            Diag.notice("CYCLE unhide", "Debug")
+                            try? await Task.sleep(for: .seconds(dwell / 2))
+                        } else {
+                            try? await Task.sleep(for: .seconds(dwell))
+                        }
+                        Diag.notice("CYCLE \(round)/\(rounds) step \(index): stop", "Debug")
+                        self.endStream()
+                    } else {
+                        Diag.notice("CYCLE \(round)/\(rounds) step \(index): not live (\(String(describing: phase))) - cancelling", "Debug")
+                        self.cancelConnect()
+                    }
+                    _ = await self.debugWait(seconds: 30) { phase in
+                        switch phase {
+                        case .idle, .error: return true
+                        default: return false
+                        }
+                    }
+                    let gap: Double = [0.3, 1.0, 2.0, 4.0].randomElement() ?? 2
+                    Diag.notice("CYCLE \(round)/\(rounds) step \(index): idle, next in \(gap) s", "Debug")
+                    try? await Task.sleep(for: .seconds(gap))
+                }
+            }
+            Diag.notice("CYCLE done: \(rounds) rounds", "Debug")
+        }
+    }
+
+    /// Poll the stream phase every 100 ms until `done` says so; false on timeout.
+    private func debugWait(seconds: Double, until done: (StreamPhase) -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if done(streamPhase) { return true }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return false
     }
 
     /// Poll for the stream to go live, then schedule the PiP + return + quit

@@ -217,7 +217,7 @@ final class FrameTimingTracker: @unchecked Sendable {
     /// the cumulative `observe()` calls are skipped.
     /// (Module-internal, not private: the consume-once input-to-photon gate in
     /// TelemetryLatency+Composites.swift rides this same present-path lock.)
-    let warmupLock = os_unfair_lock_t.allocate(capacity: 1)
+    let warmupLock = makeUnfairLock()
     private var firstPresentNanos: UInt64 = 0
     /// Grace (ns) after the first present during which onset frames are excluded
     /// from histogram ingestion. ~1.25s - covers encoder ramp + link onset, short
@@ -258,7 +258,7 @@ final class FrameTimingTracker: @unchecked Sendable {
     }
 
     /// The bounded map, keyed by rtpTimestamp. Guarded by `mapLock`.
-    private let mapLock = os_unfair_lock_t.allocate(capacity: 1)
+    private let mapLock = makeUnfairLock()
     private var inFlight: [UInt32: Timing] = [:]
     /// Insertion order of the keys, so eviction drops the STALEST in-flight frame
     /// (a dropped / never-presented frame) when the map exceeds its bound.
@@ -272,8 +272,6 @@ final class FrameTimingTracker: @unchecked Sendable {
 
     private init(sessionId: String) {
         self.sessionId = sessionId
-        mapLock.initialize(to: os_unfair_lock_s())
-        warmupLock.initialize(to: os_unfair_lock_s())
     }
     deinit { mapLock.deallocate(); warmupLock.deallocate() }
 

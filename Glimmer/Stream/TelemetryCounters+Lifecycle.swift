@@ -16,27 +16,9 @@ import os
 
 extension TelemetryCounters {
 
-    /// Allocate + initialize every `os_unfair_lock` backing the gauge storage.
-    /// Module-internal (not private) so the class's `init()` in
-    /// TelemetryCounters.swift still runs it across the file split.
-    func initializeGaugeLocks() {
-        jitterLock.initialize(to: os_unfair_lock_s())
-        inputLock.initialize(to: os_unfair_lock_s())
-        rttLock.initialize(to: os_unfair_lock_s())
-        vtSessionCreateLock.initialize(to: os_unfair_lock_s())
-        cruiseMaxGainLock.initialize(to: os_unfair_lock_s())
-        gapLock.initialize(to: os_unfair_lock_s())
-        decodeStateLock.initialize(to: os_unfair_lock_s())
-        fecHealthLock.initialize(to: os_unfair_lock_s())
-        audioStateLock.initialize(to: os_unfair_lock_s())
-        audioFirstPacketLock.initialize(to: os_unfair_lock_s())
-        presentSuppressedLock.initialize(to: os_unfair_lock_s())
-        decodeGatedLock.initialize(to: os_unfair_lock_s())
-        pacerTickRealtimeLock.initialize(to: os_unfair_lock_s())
-    }
-
-    /// Release every gauge lock. Paired with `initializeGaugeLocks()`;
-    /// module-internal for the same reason - the class's `deinit` calls it.
+    /// Release every gauge lock (each made by `makeUnfairLock()`, which
+    /// allocates and initializes in one step). Module-internal so the class's
+    /// `deinit` in TelemetryCounters.swift reaches it across the file split.
     func deallocateGaugeLocks() {
         jitterLock.deallocate(); inputLock.deallocate()
         rttLock.deallocate(); vtSessionCreateLock.deallocate()

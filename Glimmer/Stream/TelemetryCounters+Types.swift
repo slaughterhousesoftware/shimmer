@@ -23,9 +23,8 @@ extension TelemetryCounters {
     /// existing AtomicCounter style; the few inc/read sites are not a tight inner
     /// loop (per loss event / per frame, never per packet on the hot path).
     final class Counter: @unchecked Sendable {
-        private let lock = os_unfair_lock_t.allocate(capacity: 1)
+        private let lock = makeUnfairLock()
         private var total: UInt64 = 0
-        init() { lock.initialize(to: os_unfair_lock_s()) }
         deinit { lock.deallocate() }
         func increment(by amount: UInt64 = 1) {
             os_unfair_lock_lock(lock); total &+= amount; os_unfair_lock_unlock(lock)

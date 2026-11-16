@@ -259,9 +259,8 @@ final class CtrlIgnoredPerType: @unchecked Sendable {
     /// that a hostile/buggy host spraying fresh type words can't grow the map.
     static let maxTrackedTypes = 16
 
-    private let lock = os_unfair_lock_t.allocate(capacity: 1)
+    private let lock = makeUnfairLock()
     private var counts: [UInt16: UInt64] = [:]
-    init() { lock.initialize(to: os_unfair_lock_s()) }
     deinit { lock.deallocate() }
 
     func increment(type: UInt16) {

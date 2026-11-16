@@ -313,11 +313,10 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
 
     /// Lock + buffer shared with the render block (which must not capture self).
     private final class Shared: @unchecked Sendable {
-        let lock = os_unfair_lock_t.allocate(capacity: 1)
+        let lock = makeUnfairLock()
         var buffer: HapticsBuffer
         init(_ buffer: HapticsBuffer) {
             self.buffer = buffer
-            lock.initialize(to: os_unfair_lock_s())
         }
         deinit { lock.deallocate() }
         func with<T>(_ body: (inout HapticsBuffer) -> T) -> T {

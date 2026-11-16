@@ -100,7 +100,7 @@ final class AudioVideoSkewStore: @unchecked Sendable {
     /// ramps tens of ms/s), so only a one-tick artifact clears it.
     static let outlierJumpMs: Double = 250
 
-    private let lock = os_unfair_lock_t.allocate(capacity: 1)
+    private let lock = makeUnfairLock()
     private var videoLastRtp: UInt32 = 0
     private var videoNoteNanos: UInt64 = 0
     private var audioLastRtp: UInt32 = 0
@@ -161,7 +161,6 @@ final class AudioVideoSkewStore: @unchecked Sendable {
     private var skewEwmaMs: Double = 0
     private var skewEwmaSeeded = false
 
-    init() { lock.initialize(to: os_unfair_lock_s()) }
     deinit { lock.deallocate() }
 
     /// VIDEO half: the RTP timestamp of the frame that just reached the

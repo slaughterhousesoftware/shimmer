@@ -124,7 +124,7 @@ final class DisconnectReasonCounters: @unchecked Sendable {
 final class ConnectTimingTelemetry: @unchecked Sendable {
     static let shared = ConnectTimingTelemetry()
 
-    private let lock = os_unfair_lock_t.allocate(capacity: 1)
+    private let lock = makeUnfairLock()
     /// Wall-clock reference of the user's click; 0 = no click anchored.
     private var clickReference: Double = 0
     /// Wall-clock reference of connect-start (for the launch-path leg); 0 = unset.
@@ -139,7 +139,6 @@ final class ConnectTimingTelemetry: @unchecked Sendable {
     private var launchBusyPollCountValue: Double = 0
     private var launchMsValue: Double = 0
     private var buildMsValue: Double = 0
-    init() { lock.initialize(to: os_unfair_lock_s()) }
     deinit { lock.deallocate() }
 
     /// Anchor the click instant. Called from `AppModel.stream()` at the
@@ -229,9 +228,8 @@ final class ConnectTimingTelemetry: @unchecked Sendable {
 final class InputDeliverStamp: @unchecked Sendable {
     static let shared = InputDeliverStamp()
     private static let maxSlots = 16  // matches Enet.maxGamepads
-    private let lock = os_unfair_lock_t.allocate(capacity: 1)
+    private let lock = makeUnfairLock()
     private var stamps = [UInt64](repeating: 0, count: maxSlots)
-    init() { lock.initialize(to: os_unfair_lock_s()) }
     deinit { lock.deallocate() }
 
     /// Stamp the handler-entry instant for `slot` (monotonic ns). First write wins
@@ -330,8 +328,7 @@ extension TelemetryCounters {
     /// single `os_unfair_lock` guards every field; last-writer-wins is correct for
     /// 1Hz-sampled gauges, and the rare lifecycle/recovery writers never contend.
     final class P2State: @unchecked Sendable {
-        private let lock = os_unfair_lock_t.allocate(capacity: 1)
-        init() { lock.initialize(to: os_unfair_lock_s()) }
+        private let lock = makeUnfairLock()
         deinit { lock.deallocate() }
 
         // ---- Handshake timeline (monotonic stage instants, ns) ----

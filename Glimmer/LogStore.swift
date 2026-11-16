@@ -291,7 +291,7 @@ final class SessionLogFileSink: @unchecked Sendable {
     private var fileHandle: FileHandle?
     private var flushTimer: DispatchSourceTimer?
 
-    private let bufferLock = os_unfair_lock_t.allocate(capacity: 1)
+    private let bufferLock = makeUnfairLock()
     private var pending: [String] = []
     private var droppedOverflow = false
 
@@ -309,7 +309,6 @@ final class SessionLogFileSink: @unchecked Sendable {
     }()
 
     private init() {
-        bufferLock.initialize(to: os_unfair_lock_s())
         // Resolved once per sink (== per session): debug opt-in for deep-dive
         // sessions, INFO+ otherwise. Same defaults domain as `telemetryEnabled`.
         minimumLevel = UserDefaults.standard.bool(forKey: "diagFileLogDebug") ? .debug : .info

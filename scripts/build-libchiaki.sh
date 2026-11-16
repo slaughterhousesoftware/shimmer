@@ -105,6 +105,10 @@ CFLAGS=(-O2 -g -arch arm64 -mmacosx-version-min=$MIN_MACOS -std=gnu11
   -Wno-unused-function -Wno-unused-variable -Wno-deprecated-declarations
   -Wno-incompatible-pointer-types-discards-qualifiers -Wno-int-conversion)
 
+# Extra flags for an instrumented copy, e.g.
+#   SHIMMER_LIBCHIAKI_CFLAGS=-fsanitize=address scripts/build-libchiaki.sh lan build.noindex/libchiaki/lan-asan
+CFLAGS+=(${=SHIMMER_LIBCHIAKI_CFLAGS:-})
+
 if [[ $MODE == psn ]]; then
   CURL=$(brew --prefix curl)
   CFLAGS+=(-I$CURL/include -I$(brew --prefix json-c)/include -I$(brew --prefix libevent)/include -I$(brew --prefix miniupnpc)/include)

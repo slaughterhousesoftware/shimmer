@@ -148,12 +148,11 @@ final class AudioTtfContext: @unchecked Sendable {
         var startup: String?
     }
 
-    private let lock = os_unfair_lock_t.allocate(capacity: 1)
+    private let lock = makeUnfairLock()
     private var record: Record?
     /// Wall-clock stamp (`timeIntervalSinceReferenceDate`) of the previous
     /// stream's end; 0 = no stream has ended this process run.
     private var lastStreamEndReference: Double = 0
-    init() { lock.initialize(to: os_unfair_lock_s()) }
     deinit { lock.deallocate() }
 
     /// Stamp the stream-end instant. Called from session teardown (the source
@@ -223,11 +222,10 @@ final class AudioCushionTelemetry: @unchecked Sendable {
         let fromMemory: Bool
     }
 
-    private let lock = os_unfair_lock_t.allocate(capacity: 1)
+    private let lock = makeUnfairLock()
     private var seedValue: Seed?
     private var floorMsValue: Double = 0
     private var seedMsValue: Double = 0
-    init() { lock.initialize(to: os_unfair_lock_s()) }
     deinit { lock.deallocate() }
 
     func latchSeed(_ seed: Seed) {

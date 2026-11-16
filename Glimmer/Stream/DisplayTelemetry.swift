@@ -88,7 +88,7 @@ final class DisplayTelemetry: @unchecked Sendable {
     /// EDR-headroom accumulators over the window SINCE THE LAST snapshot read
     /// (min/avg/max), so the exporter publishes the trend rather than one
     /// instantaneous value. Reset on read. Guarded by `lock`.
-    private let lock = os_unfair_lock_t.allocate(capacity: 1)
+    private let lock = makeUnfairLock()
     private var edrSum: Double = 0
     private var edrSamples: UInt64 = 0
     private var edrMin: Double = .nan
@@ -103,7 +103,6 @@ final class DisplayTelemetry: @unchecked Sendable {
 
     init(probe: @escaping @MainActor @Sendable () -> DisplayProbe?) {
         self.probe = probe
-        lock.initialize(to: os_unfair_lock_s())
     }
     deinit { lock.deallocate() }
 

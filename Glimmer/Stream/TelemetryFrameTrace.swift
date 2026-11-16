@@ -66,11 +66,10 @@ final class FrameTraceWriter: @unchecked Sendable {
     /// Pending lines + their lock. The lock is taken ONLY on the telemetry path
     /// (which is off by default) - never on the proven decode/pace path when the
     /// gate is off, because the tracker that calls `append` doesn't exist then.
-    private let bufferLock = os_unfair_lock_t.allocate(capacity: 1)
+    private let bufferLock = makeUnfairLock()
     private var pending: [String] = []
     private var droppedOverflow = false
 
-    init() { bufferLock.initialize(to: os_unfair_lock_s()) }
     deinit { bufferLock.deallocate() }
 
     /// Open the trace file + arm the flush timer. Mirrors the exporter's NDJSON

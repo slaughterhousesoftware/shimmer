@@ -42,25 +42,34 @@ final class AWDLGuard {
     private let parker = AWDLParker()
 
     private init() {
-        refreshPermission()
+        // No subprocess here: `sudo -n -l` blocked in waitUntilExit(), which
+        // spins the main run loop - inside the dispatch_once that builds
+        // `shared`, so any queued main-thread work touching AWDLGuard.shared
+        // trapped ("BUG IN CLIENT OF LIBDISPATCH: trying to lock recursively"),
+        // and the first stream start stalled the UI on sudo. The rule file's
+        // presence is the instant answer; sudo confirms it off the main thread.
+        permissionInstalled = FileManager.default.fileExists(atPath: Self.sudoersPath)
+        Task { await refreshPermission() }
     }
 
-    func refreshPermission() {
-        permissionInstalled = AWDLParker.canToggleWithoutPassword()
+    /// Ask sudo (off the main thread) whether the rule works without a password.
+    func refreshPermission() async {
+        let ok = await Task.detached(priority: .utility) { AWDLParker.canToggleWithoutPassword() }.value
+        permissionInstalled = ok
     }
 
     /// The Settings toggle. Turning it on the first time installs the rule
     /// (one macOS admin prompt); declining the prompt leaves it off.
     func setEnabled(_ on: Bool) {
         guard on else { enabled = false; return }
-        refreshPermission()
-        if permissionInstalled { enabled = true; return }
         installing = true
         lastError = nil
         Task {
+            await refreshPermission()
+            if permissionInstalled { installing = false; enabled = true; return }
             let result = await Self.installPermission()
             installing = false
-            refreshPermission()
+            await refreshPermission()
             if permissionInstalled {
                 enabled = true
                 Diag.notice("Wi-Fi lag-spike reduction set up", "AWDL")
@@ -273,8 +282,9 @@ final class AWDLParker: @unchecked Sendable {
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
         guard (try? process.run()) != nil else { return nil }
-        process.waitUntilExit()
+        // Read to EOF first (a full pipe would block the child), then reap.
         let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
         return text.split(separator: "\n")
             .first { $0.contains("interface:") }?
             .split(separator: ":").last?
@@ -291,8 +301,13 @@ final class AWDLParker: @unchecked Sendable {
         process.arguments = args
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        // terminationHandler + semaphore rather than waitUntilExit(), which
+        // spins the calling thread's run loop and runs whatever else is queued
+        // there in the middle of this call.
+        let done = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in done.signal() }
         guard (try? process.run()) != nil else { return -1 }
-        process.waitUntilExit()
+        done.wait()
         return process.terminationStatus
     }
 }

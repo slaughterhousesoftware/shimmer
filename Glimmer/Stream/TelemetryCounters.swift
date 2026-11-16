@@ -415,7 +415,7 @@ final class TelemetryCounters: @unchecked Sendable {
     // when off.
     // Module-internal (not private) so the input accessors in
     // TelemetryCounters+InputActivity.swift can reach these.
-    let inputLock = os_unfair_lock_t.allocate(capacity: 1)
+    let inputLock = makeUnfairLock()
     /// `DispatchTime.now().uptimeNanoseconds` of the most recent input event, or
     /// 0 if none yet. Read by the exporter to compute time-since-last-input.
     var lastInputNanosValue: UInt64 = 0
@@ -427,7 +427,7 @@ final class TelemetryCounters: @unchecked Sendable {
     /// Live smoothed recv-jitter gauge (ms), written by the RTP receive path.
     /// A plain Double behind an unfair lock - last-writer-wins is fine for a
     /// gauge sampled at 1Hz against a multi-kHz writer.
-    let jitterLock = os_unfair_lock_t.allocate(capacity: 1)
+    let jitterLock = makeUnfairLock()
     var recvJitterMsValue: Double = 0
 
     /// Live smoothed network RTT gauge (ms), refreshed once per ~1Hz telemetry
@@ -441,7 +441,7 @@ final class TelemetryCounters: @unchecked Sendable {
     /// rather than guessing). The lock is on the telemetry path only - when the
     /// gate is off the tracker that reads it doesn't exist, so the present hot
     /// path never touches it.
-    let rttLock = os_unfair_lock_t.allocate(capacity: 1)
+    let rttLock = makeUnfairLock()
     var rttMsValue: Double = 0
 
     /// LATEST VTDecompressionSessionCreate wall-clock cost (ms). HW decoder
@@ -449,7 +449,7 @@ final class TelemetryCounters: @unchecked Sendable {
     /// first-frame leg - this surfaces that one-shot startup cost. Stamped by the
     /// decode queue at each create (rare); read at 1Hz by the exporter. A plain
     /// Double behind an unfair lock, last-writer-wins like the other gauges.
-    let vtSessionCreateLock = os_unfair_lock_t.allocate(capacity: 1)
+    let vtSessionCreateLock = makeUnfairLock()
     var vtSessionCreateMsValue: Double = 0
 
     // Module-internal (not private) so the gauge accessor in
@@ -459,7 +459,7 @@ final class TelemetryCounters: @unchecked Sendable {
     /// session (1.0 = never boosted). Read with the resolution-derived gMax it
     /// tops out at, this proves whether real flicks ever cross vFull. A plain
     /// Double behind an unfair lock; `noteCruiseGain` keeps the running max.
-    let cruiseMaxGainLock = os_unfair_lock_t.allocate(capacity: 1)
+    let cruiseMaxGainLock = makeUnfairLock()
     var cruiseMaxGainValue: Double = 1.0
 
     /// PRESENT-SUPPRESSION gauge (0/1): true while presentation is deliberately
@@ -470,7 +470,7 @@ final class TelemetryCounters: @unchecked Sendable {
     /// `suppressedDropTotal` counts under, and the "silent transition" the
     /// os.Logger-only edges used to hide from the NDJSON). A plain Bool behind an
     /// unfair lock - same last-writer-wins discipline as the other gauges.
-    let presentSuppressedLock = os_unfair_lock_t.allocate(capacity: 1)
+    let presentSuppressedLock = makeUnfairLock()
     var presentSuppressedValue = false
 
     /// DECODE-GATE gauge (0/1): true while the decode gate is engaged (the
@@ -480,7 +480,7 @@ final class TelemetryCounters: @unchecked Sendable {
     /// so a zero-decode span self-labels as gated (vs wedged) on the same row
     /// that carries `presentSuppressedValue`. Same last-writer-wins discipline
     /// as the suppression gauge it extends.
-    let decodeGatedLock = os_unfair_lock_t.allocate(capacity: 1)
+    let decodeGatedLock = makeUnfairLock()
     var decodeGatedValue = false
 
     /// PACER-TICK REALTIME gauge (0/1): 1 once `thread_policy_set` confirmed the
@@ -489,30 +489,30 @@ final class TelemetryCounters: @unchecked Sendable {
     /// tick-thread start by PacerTickThread (never per frame) and read at 1Hz by
     /// the exporter - the one-query "are we getting RT priority" yes/no the
     /// `tick_miss_*` split is read against. Last-writer-wins behind its own lock.
-    let pacerTickRealtimeLock = os_unfair_lock_t.allocate(capacity: 1)
+    let pacerTickRealtimeLock = makeUnfairLock()
     var pacerTickRealtimeValue = false
 
     /// Live inter-packet-gap distribution (microseconds) for the microburst
     /// detector, written once per ~2s receive-metrics window and read at 1Hz; the
     /// `PacketGapSnapshot` type + rationale are in TelemetryCounters+Types.swift.
-    let gapLock = os_unfair_lock_t.allocate(capacity: 1)
+    let gapLock = makeUnfairLock()
     var packetGapValue: PacketGapSnapshot?
 
     // Live DECODE-side STATE gauge storage; the `DecodeState` value type +
     // its doc live with the accessors in TelemetryCounters+Gauges.swift
     // (moved there to keep this file under the length budget - pure move).
     // Module-internal (not private) so those accessors can reach these.
-    let decodeStateLock = os_unfair_lock_t.allocate(capacity: 1)
+    let decodeStateLock = makeUnfairLock()
     var decodeStateValue: DecodeState?
 
     // Live FEC-HEALTH gauge storage (reorder-hold + headroom axes + per-frame
     // parity headroom); the `FecHealthSnapshot` value type + accessors live in
     // TelemetryCounters+Gauges.swift. Module-internal so those accessors reach it.
-    let fecHealthLock = os_unfair_lock_t.allocate(capacity: 1)
+    let fecHealthLock = makeUnfairLock()
     var fecHealthValue: FecHealthSnapshot?
     // Live REORDER-DISPLACEMENT gauge storage (session max ms/packets + the
     // live hold); value type + accessors in TelemetryCounters+Gauges.swift.
-    let reorderDispLock = os_unfair_lock_t.allocate(capacity: 1)
+    let reorderDispLock = makeUnfairLock()
     var reorderDispValue: ReorderDisplacementSnapshot?
 
     /// Host-RUMBLE receipt stamp (the last 0x010b receipt instant) - the detach-
@@ -527,7 +527,7 @@ final class TelemetryCounters: @unchecked Sendable {
     /// TelemetryCounters+Types.swift. Module-internal (not private) so the audio
     /// accessors in TelemetryCounters+AudioGauges.swift reach these (and the
     /// min-window field below).
-    let audioStateLock = os_unfair_lock_t.allocate(capacity: 1)
+    let audioStateLock = makeUnfairLock()
     var audioStateValue: AudioState?
     /// Windowed MINIMUM buffer fill (ms) accumulated by the audio playout path
     /// between exporter reads. The audio path lowers this via `noteAudioBufferFill`
@@ -546,7 +546,7 @@ final class TelemetryCounters: @unchecked Sendable {
     /// to the first decoded audio packet. The known ~5-7s-on-lossy-link cold-start
     /// metric - surfaced here as a one-shot gauge so a dashboard/report shows it
     /// per session. Written once by the audio receive path; 0 = not yet measured.
-    let audioFirstPacketLock = os_unfair_lock_t.allocate(capacity: 1)
+    let audioFirstPacketLock = makeUnfairLock()
     var audioFirstPacketMsValue: Double = 0
 
     /// P2 SESSION-LIFECYCLE state (handshake timeline + disconnect reason + IDR
@@ -581,7 +581,6 @@ final class TelemetryCounters: @unchecked Sendable {
     /// recv-thread boundary, so it lives here behind the measured value's lock.
     var audioStreamStartNanosValue: UInt64 = 0
 
-    init() { initializeGaugeLocks() }
     deinit { deallocateGaugeLocks() }
 
     // The rest of this type lives in same-module extension files (pure moves, to
