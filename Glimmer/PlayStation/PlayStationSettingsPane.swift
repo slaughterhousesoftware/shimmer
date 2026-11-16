@@ -20,7 +20,7 @@ struct PlayStationSettingsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
-            SettingsField("Video") {
+            SettingsField("Display mode") {
                 HStack(spacing: 8) {
                     CompactPopup(selection: $settings.height, [("1920 × 1080", 1080), ("1280 × 720", 720)])
                     .accessibilityLabel("Resolution")
