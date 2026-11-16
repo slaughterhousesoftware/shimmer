@@ -1,0 +1,42 @@
+--- a/lib/src/ctrl.c	2026-11-15 20:58:07
++++ b/lib/src/ctrl.c	2026-11-15 20:58:07
+@@ -896,16 +896,37 @@
+ 			chiaki_log_hexdump(ctrl->session->log, CHIAKI_LOG_WARNING, payload, payload_size);
+ 			break;
+ 	}
++}
++
++/* Shimmer: research hook - send any ctrl message (ps5ctl's `ctrl` command). */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_shimmer_ctrl_send(ChiakiSession *session, uint16_t type, const uint8_t *payload, size_t payload_size)
++{
++	return ctrl_message_send(&session->ctrl, type, payload, payload_size);
+ }
+ 
++/* Shimmer: research override of the DualSense capability messages, as hex in
++ * SHIMMER_DS_ENABLE (3 bytes, type 0x13) and SHIMMER_DS_CONNECT (16 bytes, type 0x11). */
++static void shimmer_hex_override(const char *env, uint8_t *buf, size_t len)
++{
++	const char *h = getenv(env);
++	if(!h) return;
++	for(size_t i = 0; i < len && h[2 * i] && h[2 * i + 1]; i++)
++	{
++		unsigned v;
++		if(sscanf(h + 2 * i, "%2x", &v) == 1) buf[i] = (uint8_t)v;
++	}
++}
++
+ CHIAKI_EXPORT void ctrl_enable_features(ChiakiCtrl *ctrl)
+ {
+ 	if(ctrl->session->connect_info.enable_dualsense)
+ 	{
+ 		CHIAKI_LOGI(ctrl->session->log, "Enabling DualSense features");
+-		const uint8_t enable[3] = { 0x00, 0x40, 0x00 };
++		uint8_t enable[3] = { 0x00, 0x40, 0x00 };
++		shimmer_hex_override("SHIMMER_DS_ENABLE", enable, sizeof(enable));
+ 		ctrl_message_send(ctrl, CTRL_MESSAGE_TYPE_ENABLE_DUALSENSE_FEATURES, enable, 3);
+-		const uint8_t connect[0x10] = { 0xa0, 0xab, 0x51, 0xbd, 0xd1, 0x7e, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00 };
++		uint8_t connect[0x10] = { 0xa0, 0xab, 0x51, 0xbd, 0xd1, 0x7e, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00 };
++		shimmer_hex_override("SHIMMER_DS_CONNECT", connect, sizeof(connect));
+ 		ctrl_message_send(ctrl, 0x11, connect, 0x10);
+ 	}
+ 	if(ctrl->session->connect_info.enable_keyboard)

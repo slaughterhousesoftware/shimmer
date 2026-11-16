@@ -39,6 +39,9 @@
 #include <time.h>
 #include <unistd.h>
 
+// Shimmer's libchiaki research hook (third_party/chiaki-ng-patches/0002).
+ChiakiErrorCode chiaki_shimmer_ctrl_send(ChiakiSession *session, uint16_t type, const uint8_t *payload, size_t payload_size);
+
 // Keychain account name the PSN items are stored under (any label you chose).
 static const char *psn_user(void)
 {
@@ -967,6 +970,22 @@ static int cmd_drive(int argc, char **argv)
 			chiaki_session_toggle_microphone(&session, live);
 			if(st.events_out) { fprintf(st.events_out, "%.6f mic %s\n", now_s(), live ? "on" : "off"); fflush(st.events_out); }
 			printf("ok mic %s\n", live ? "on" : "off");
+		}
+		else if(!strcmp(cmd, "ctrl") && n >= 2)
+		{
+			// ctrl TYPEHEX PAYLOADHEX: send a raw ctrl message (research)
+			char hex[400] = {0};
+			sscanf(line, "%*s %*s %399s", hex);
+			unsigned type = (unsigned)strtoul(arg, NULL, 16);
+			uint8_t payload[200];
+			size_t len = 0;
+			for(; len < sizeof(payload) && hex[2 * len] && hex[2 * len + 1]; len++)
+			{
+				unsigned v; sscanf(hex + 2 * len, "%2x", &v); payload[len] = (uint8_t)v;
+			}
+			ChiakiErrorCode e = chiaki_shimmer_ctrl_send(&session, (uint16_t)type, payload, len);
+			if(st.events_out) { fprintf(st.events_out, "%.6f ctrl %x %s\n", now_s(), type, hex); fflush(st.events_out); }
+			printf("ok ctrl %x len %zu err %d\n", type, len, (int)e);
 		}
 		else if(!strcmp(cmd, "mark") && n >= 2)
 		{

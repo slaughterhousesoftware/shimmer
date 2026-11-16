@@ -79,7 +79,7 @@ FILES+=($CHIAKI/third-party/gf-complete/src/{gf,gf_wgen,gf_w4,gf_w8,gf_w16,gf_w3
 FILES+=($CHIAKI/third-party/jerasure/src/{galois,jerasure,reed_sol,cauchy,liberation}.c)
 
 CFLAGS=(-O2 -g -arch arm64 -mmacosx-version-min=$MIN_MACOS -std=gnu11
-  -I$OUT/include -I$CHIAKI/lib/include -I$OUT/gen -I$CHIAKI/third-party/nanopb
+  -I$OUT/include -I$CHIAKI/lib/include -I$CHIAKI/lib/src -I$OUT/gen -I$CHIAKI/third-party/nanopb
   -I$CHIAKI/third-party/gf-complete/include -I$CHIAKI/third-party/jerasure/include
   -I$OPENSSL/include -I$OPUS/include -DPB_C99_STATIC_ASSERT
   -Wno-unused-function -Wno-unused-variable -Wno-deprecated-declarations

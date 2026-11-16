@@ -1,0 +1,39 @@
+--- a/lib/src/launchspec.c	2026-11-15 21:09:54
++++ b/lib/src/launchspec.c	2026-11-15 21:09:54
+@@ -5,6 +5,8 @@
+ #include <chiaki/base64.h>
+ 
+ #include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
+ 
+ static const char launchspec_fmt[] =
+ 	"{"
+@@ -91,5 +93,27 @@
+ 			extras[0], extras[1], extras[2], handshake_key_b64);
+ 	if(written < 0 || written >= buf_size)
+ 		return -1;
++	/* Shimmer: research hook - SHIMMER_LS_SUBST="old=>new;old2=>new2" edits the
++	 * launch spec text before it is sent. */
++	const char *subst = getenv("SHIMMER_LS_SUBST");
++	if(subst)
++	{
++		char rules[1024];
++		snprintf(rules, sizeof(rules), "%s", subst);
++		for(char *rule = strtok(rules, ";"); rule; rule = strtok(NULL, ";"))
++		{
++			char *arrow = strstr(rule, "=>");
++			if(!arrow) continue;
++			*arrow = 0;
++			const char *from = rule, *to = arrow + 2;
++			char *hit = strstr(buf, from);
++			if(!hit) continue;
++			size_t from_len = strlen(from), to_len = strlen(to), tail = strlen(hit + from_len);
++			if((size_t)(hit - buf) + to_len + tail + 1 > buf_size) continue;
++			memmove(hit + to_len, hit + from_len, tail + 1);
++			memcpy(hit, to, to_len);
++		}
++		written = (int)strlen(buf);
++	}
+ 	return written;
+ }
