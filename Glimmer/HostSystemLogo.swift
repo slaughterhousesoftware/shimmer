@@ -143,14 +143,38 @@ struct HostAvatar: View {
             }
         }
         .frame(width: size, height: size)
-        .overlay(alignment: .bottomTrailing) {
+        // Tailscale's status dot (measured off its Settings window at 2x): a
+        // 10 pt dot centred 10 pt right of and below a 36 pt avatar's centre,
+        // set into a 1.5 pt gap cut out of the avatar - whatever is behind the
+        // row (the selection plate, the sidebar) shows through, no drawn ring.
+        .mask {
+            if status != nil {
+                ZStack {
+                    Rectangle()
+                    Circle()
+                        .frame(width: badge + 3, height: badge + 3)
+                        .position(x: size / 2 + badgeOffset, y: size / 2 + badgeOffset)
+                        .blendMode(.destinationOut)
+                }
+                .compositingGroup()
+            } else {
+                Rectangle()
+            }
+        }
+        .overlay {
             if let status {
-                HostConnectionBadge(status: status, size: size >= 48 ? 14 : 12)
+                Circle()
+                    .fill(HostConnectionBadge.colour(for: status))
+                    .frame(width: badge, height: badge)
+                    .position(x: size / 2 + badgeOffset, y: size / 2 + badgeOffset)
             }
         }
         .help(statusText ?? host.displayName)
         .accessibilityLabel([Self.name(of: mark), statusText].compactMap { $0 }.joined(separator: ", "))
     }
+
+    private var badge: CGFloat { size * 10 / 36 }
+    private var badgeOffset: CGFloat { size * 10 / 36 }
 
     private static func name(of mark: Mark) -> String {
         switch mark {
@@ -165,15 +189,14 @@ struct HostAvatar: View {
     }
 }
 
-/// A machine's status on its avatar's corner, ringed in the window colour.
-struct HostConnectionBadge: View {
-    let status: HostStatusIndicator
-    let size: CGFloat
-
-    var body: some View {
-        Circle()
-            .fill(status == .online ? Color.green : status == .error ? .red : status == .neutral ? .secondary : .orange)
-            .frame(width: size - 4, height: size - 4)
-            .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-1))
+/// Status colours for a machine's avatar dot.
+enum HostConnectionBadge {
+    static func colour(for status: HostStatusIndicator) -> Color {
+        switch status {
+        case .online: .green
+        case .attention, .offline: .orange
+        case .error: .red
+        case .neutral: .secondary
+        }
     }
 }

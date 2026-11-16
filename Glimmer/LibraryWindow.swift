@@ -170,11 +170,11 @@ struct ComputersTab: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    // One unlabelled list, as Tailscale lists accounts: PCs,
+                    // then consoles.
                     ForEach([false, true], id: \.self) { consoles in
                         let group = model.hosts.filter { $0.isPlayStation == consoles }
                         if !group.isEmpty {
-                        sidebarHeading(consoles ? "Consoles" : "PCs")
-                            .padding(.top, consoles ? 8 : 0)
                         ForEach(group) { host in
                             Button {
                                 guard !model.pairingInFlight else { return }
@@ -223,7 +223,7 @@ struct ComputersTab: View {
                     }
                 }
                 .padding(.horizontal, 6)
-                .padding(.top, 8)
+                .padding(.top, 10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -676,10 +676,10 @@ private struct HostRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 Text(host.displayName)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                 Text(address)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -688,9 +688,11 @@ private struct HostRow: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .frame(minHeight: SettingsMetrics.sidebarRowHeight)
+        // Tailscale's selected account: a flat grey plate (68,68,68 on its
+        // dark sidebar) - the unemphasised selection colour.
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(selected ? Color.primary.opacity(0.13) : Color.clear))
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(selected ? Color(nsColor: .unemphasizedSelectedContentBackgroundColor) : Color.clear))
     }
 }
 
