@@ -574,8 +574,10 @@ extension StreamWindow {
         // plain path orders it out.
         // Not before the first frame: with no video size AVKit's PiP view lays
         // out at NaN and AppKit traps. The window just hides instead.
+        // The PiP source goes on screen first: AVKit only calls PiP possible
+        // for a layer it can mirror. Placed over the window, before it hides.
         let usePiP = !awaitingFirstFrameFadeIn
-            && autoPictureInPictureProvider() && pictureInPicture.isPossible
+            && autoPictureInPictureProvider() && preparePiPSource()
         hideStreamWindow(forPictureInPicture: usePiP)
         if usePiP {
             startPictureInPictureNow()

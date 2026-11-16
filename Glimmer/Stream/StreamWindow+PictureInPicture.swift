@@ -72,12 +72,7 @@ extension StreamWindow {
             log.notice("Picture in Picture requested before the first frame - ignored")
             return
         }
-        // The source goes on screen where AVKit's opening animation should
-        // start: over the stream window, or where the PiP window last was for
-        // a stream that never showed its window.
-        pipSource.show(at: pipStartFrame())
-        guard pictureInPicture.isPossible else {
-            pipSource.hide()
+        guard preparePiPSource() else {
             log.notice("Picture in Picture requested but not possible (another app may own it)")
             if pipStartIsLaunch { showWindowAfterFailedPiPLaunch("Picture in Picture isn't possible right now") }
             return
@@ -85,7 +80,6 @@ extension StreamWindow {
         // Any resign-debounce teardown in flight is superseded by this
         // explicit hide (same token discipline as the becomeKey observer).
         resignGeneration &+= 1
-        pipSourceMode = true
         if !isBackgrounded { hideStreamWindow(forPictureInPicture: true) }
         startPictureInPictureNow()
         publishPresentSuppression()
@@ -112,6 +106,22 @@ extension StreamWindow {
         return pipSourceFrame(centeredOn: center)
     }
 
+    /// Every PiP entry starts here: the source on screen (AVKit mirrors only
+    /// an on-screen layer, and `isPossible` reflects that), where the opening
+    /// animation should grow from. False - and the source off screen again -
+    /// when AVKit can't start PiP now.
+    @discardableResult
+    func preparePiPSource() -> Bool {
+        if !pipSource.isOnScreen { pipSource.show(at: pipStartFrame()) }
+        pipSourceMode = true
+        guard pictureInPicture.isPossible else {
+            pipSource.hide()
+            pipSourceMode = false
+            return false
+        }
+        return true
+    }
+
     func pipSourceFrame(centeredOn center: CGPoint) -> NSRect {
         let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? window.screen ?? NSScreen.main
         return PiPSource.nativeFrame(pixelSize: streamPixelSize, backingScale: screen?.backingScaleFactor ?? 2,
@@ -123,10 +133,8 @@ extension StreamWindow {
     /// backstop clears it if AVKit never answers.
     func startPictureInPictureNow() {
         guard !isPictureInPictureActive, !pictureInPicturePending else { return }
-        guard pictureInPicture.isPossible else {
+        guard preparePiPSource() else {
             log.notice("Picture in Picture not possible - staying hidden")
-            pipSource.hide()
-            pipSourceMode = false
             return
         }
         pictureInPicturePending = true
