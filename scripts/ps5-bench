@@ -3,7 +3,7 @@
 # work on the Mac that runs Shimmer, and checks them against thresholds, so a
 # change can be judged by numbers instead of feel.
 #
-#   scripts/ps5-bench [ssh-target]      (default: the MacBook, 100.105.38.59)
+#   scripts/ps5-bench [ssh-target]      (default: the MacBook on the LAN, 192.168.50.62)
 #
 # Needs: Shimmer installed and NOT running there, a registered PS5 named
 # "PS5…" awake, and - for the Bluetooth checks - a DualSense on Bluetooth.
@@ -14,7 +14,7 @@
 # input/output rates with Game Mode off and on. Every defaults key it sets is
 # restored. Exit status 1 if a threshold fails.
 set -euo pipefail
-HOST=${1:-kevinpatel@100.105.38.59}
+HOST=${1:-kevinpatel@192.168.50.62}
 ROOT=${0:A:h:h}
 BENCH=$ROOT/tools/ps5-bench
 OUT=$(mktemp -d)
@@ -38,7 +38,8 @@ restore() {
 trap restore EXIT
 defaults write $D telemetryEnabled -bool YES
 defaults write $D PS5.presentation -string lowestLatency
-run() {   # name reorderUs idrOnFec dropPermille
+run() {   # name reorderUs idrOnFec dropPermille [presentation]
+  defaults write $D PS5.presentation -string ${5:-lowestLatency}
   defaults write $D PS5.debugReorderUs -int $2
   defaults write $D PS5.debugIdrOnFec -bool $3
   defaults write $D PS5.debugDropPermille -int $4
@@ -48,6 +49,7 @@ run() {   # name reorderUs idrOnFec dropPermille
   sleep 8
 }
 run clean        4000  NO  0
+run clean_smooth 4000  NO  0 smooth
 run loss03_new   4000  NO  3
 run loss03_old  16000  YES 3
 G=/Applications/Xcode.app/Contents/Developer/usr/bin/gamepolicyctl
@@ -72,6 +74,9 @@ def check(name, cond, detail):
     ok = ok and cond
 for line in sys.stdin:
     name, _, rest = line.strip().partition(" ")
+    if name == "clean_smooth" and rest.startswith("{"):
+        r = json.loads(rest)
+        check("smooth presentation cadence", r["off_cadence_pct"] < 2, "%s%% frames off the 60 Hz cadence (< 2)" % r["off_cadence_pct"])
     if name in ("clean", "loss03_new") and rest.startswith("{"):
         r = json.loads(rest)
         if name == "clean":

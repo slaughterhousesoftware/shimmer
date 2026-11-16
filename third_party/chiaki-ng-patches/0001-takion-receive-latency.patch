@@ -124,7 +124,7 @@
 +			for(int t = 0; t < 256 && used < sizeof(line) - 24; t++)
 +				if(shimmer_audio_tag_counts[t])
 +					used += snprintf(line + used, sizeof(line) - used, " 0x%02x:%llu", t, (unsigned long long)shimmer_audio_tag_counts[t]);
-+			CHIAKI_LOGI(takion->log, "Takion audio tags:%s", line);
++			CHIAKI_LOGV(takion->log, "Takion audio tags:%s", line);
 +		}
 +	}
 +	if(!is_video)

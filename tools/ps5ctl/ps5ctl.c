@@ -40,6 +40,7 @@
 #include <unistd.h>
 
 // Shimmer's libchiaki research hook (third_party/chiaki-ng-patches/0002).
+extern int chiaki_shimmer_reorder_timeout_us;  // patch 0001 (default 4000)
 ChiakiErrorCode chiaki_shimmer_ctrl_send(ChiakiSession *session, uint16_t type, const uint8_t *payload, size_t payload_size);
 
 // Keychain account name the PSN items are stored under (any label you chose).
@@ -1066,6 +1067,8 @@ int main(int argc, char **argv)
 {
 	if(getenv("PS5CTL_VERBOSE"))
 		g_verbose = true;
+	if(getenv("PS5CTL_REORDER_US"))
+		chiaki_shimmer_reorder_timeout_us = atoi(getenv("PS5CTL_REORDER_US"));
 	chiaki_log_init(&g_log, CHIAKI_LOG_ALL, log_cb, NULL);
 	if(chiaki_lib_init() != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "chiaki_lib_init failed\n"); return 1; }
 	if(argc < 2)

@@ -35,9 +35,13 @@ mkdir -p $OUT/obj $OUT/gen $OUT/include/chiaki
 # applied to copies under $OUT/patched, so the submodule stays pristine; a
 # patched file compiles from there. Unchanged copies keep their mtime, so an
 # unrelated build doesn't recompile them.
+# research/*.patch (raw ctrl messages, launch-spec edits) is for ps5ctl only:
+# applied in the psn build, never in the app's.
 PATCHED=$OUT/patched
 rm -rf $PATCHED.new && mkdir -p $PATCHED.new
-for p in $ROOT/third_party/chiaki-ng-patches/*.patch(N); do
+PATCHES=($ROOT/third_party/chiaki-ng-patches/*.patch(N))
+[[ $MODE == psn ]] && PATCHES+=($ROOT/third_party/chiaki-ng-patches/research/*.patch(N))
+for p in $PATCHES; do
   for rel in ${(f)"$(sed -n 's|^+++ b/\([^[:space:]]*\).*|\1|p' $p)"}; do
     [[ -f $PATCHED.new/$rel ]] || { mkdir -p $PATCHED.new/${rel:h}; cp $CHIAKI/$rel $PATCHED.new/$rel; }
   done
@@ -104,7 +108,10 @@ pids=()
 for f in $FILES; do
   o=$OUT/obj/${${f:t}%.c}.o
   OBJS+=($o)
-  if [[ ! -f $o || $f -nt $o || $OUT/include/chiaki/config.h -nt $o ]]; then
+  # .src records which copy (pristine or patched) built the object: a file
+  # that gains or loses a patch must rebuild even if its mtime is older.
+  if [[ ! -f $o || $f -nt $o || $OUT/include/chiaki/config.h -nt $o || "$(cat $o.src 2>/dev/null)" != $f ]]; then
+    print -r -- $f > $o.src
     clang $CFLAGS -c $f -o $o &
     pids+=($!)
     (( ${#pids} >= 10 )) && { wait $pids[1]; pids=(${pids[2,-1]}); }

@@ -309,7 +309,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         events.connectionStarted()
     }
 
-    static let inUseAttempts = 4
+    /// ~15 s: the console holds a quit session ~10 s (measured with ps5ctl).
+    static let inUseAttempts = 6
 
     enum SessionOutcome { case connected, inUse, failed }
 
