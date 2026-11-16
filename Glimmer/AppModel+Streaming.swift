@@ -692,6 +692,7 @@ extension AppModel {
     /// hold that timed out) cancels the switch.
     func heldPictureInPictureEnded(restore: Bool) {
         nativeStreamPictureInPicture = false
+        if !isStreaming { nativeStreamBackgrounded = false }
         if var next = pendingHostSwitch {
             // The old stream is still closing.
             if restore {
@@ -718,6 +719,8 @@ extension AppModel {
         StreamWindow.switchingHosts = false
         guard selectedHost?.id == next.hostID, Date().timeIntervalSince(next.requestedAt) < 30 else {
             PictureInPictureStage.shared.endHold(restoreRequested: false, notify: false)
+            nativeStreamBackgrounded = false
+            nativeStreamPictureInPicture = false
             return
         }
         if next.inPictureInPicture {

@@ -103,7 +103,9 @@ final class PictureInPictureStage {
                 self.endHold(restoreRequested: false)
             }
         }
-        Diag.info("PiP switch: holding the last frame while the next stream connects", "Stream.PiP")
+        let held = displayedPictureSignature()
+        Diag.info("PiP switch: holding the last frame while the next stream connects - showing \(held, privacy: .public)",
+                  "Stream.PiP")
         return true
     }
 
@@ -124,6 +126,16 @@ final class PictureInPictureStage {
         heldKeepAlive = nil
         heldControllerBackgroundFlag = nil
         Diag.info("PiP switch: the new stream took over Picture in Picture", "Stream.PiP")
+        for delay in [0.5, 1.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let shown = self.displayedPictureSignature()
+                    Diag.info("PiP switch: +\(delay) s after takeover the PiP shows \(shown, privacy: .public)",
+                              "Stream.PiP")
+                }
+            }
+        }
         return inherited
     }
 
@@ -148,6 +160,32 @@ final class PictureInPictureStage {
         fitter.detach()
         source.hide()
         source.layer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
+    }
+
+    /// What the PiP layer is displaying, as "WxH fmt luma~N": enough to tell
+    /// one stream's picture from another's in the log. (The renderer's own
+    /// report can lag for 10-bit HDR frames; SDR is exact.)
+    func displayedPictureSignature() -> String {
+        guard let buffer = source.layer.sampleBufferRenderer.displayedPixelBuffer() else { return "nothing" }
+        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+        let format = CVPixelBufferGetPixelFormatType(buffer)
+        let fourCC = String(bytes: [24, 16, 8, 0].map { UInt8((format >> $0) & 0xFF) }, encoding: .ascii) ?? "\(format)"
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let planar = CVPixelBufferIsPlanar(buffer)
+        guard let base = planar ? CVPixelBufferGetBaseAddressOfPlane(buffer, 0) : CVPixelBufferGetBaseAddress(buffer)
+        else { return "\(width)x\(height) \(fourCC)" }
+        let rowBytes = planar ? CVPixelBufferGetBytesPerRowOfPlane(buffer, 0) : CVPixelBufferGetBytesPerRow(buffer)
+        let bytes = base.assumingMemoryBound(to: UInt8.self)
+        // A 16x9 grid of samples from the first plane (luma, or BGRA bytes).
+        var sum = 0, count = 0
+        for gy in 1...9 { for gx in 1...16 {
+            let y = height * gy / 10, x = width * gx / 17
+            let bytesPerSample = planar ? (rowBytes / max(width, 1) >= 2 ? 2 : 1) : 4
+            sum += Int(bytes[y * rowBytes + x * bytesPerSample + (bytesPerSample == 2 ? 1 : 0)])
+            count += 1
+        } }
+        return "\(width)x\(height) \(fourCC) luma~\(sum / max(count, 1))"
     }
 
     /// While holding, PiP's own controls answer to the stage.

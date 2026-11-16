@@ -62,6 +62,8 @@ public final class StreamPictureInPicture: NSObject {
     /// which is why the owner defers that particular stop instead of relying
     /// on this; the watchdog is the backstop for whatever else AVKit drops.
     private var stopWatchdog: DispatchWorkItem?
+    /// Set by `reset()`: if AVKit ignores the stop, rebuild the controller.
+    private var rebuildIfStopIgnored = false
     private static let stopAckTimeout: TimeInterval = 0.75
     private static let stopAttempts = 3
 
@@ -165,6 +167,17 @@ public final class StreamPictureInPicture: NSObject {
                 self.log.error("Picture in Picture stop ignored by AVKit \(attempt) times - giving up; state unlatched")
                 self.isStopping = false
                 self.stoppingProgrammatically = false
+                // The stream that owned it is gone (`reset`): the controller
+                // is reused by the next stream, and one AVKit still counts as
+                // active would make its start() a no-op. Start over with a
+                // fresh controller; the stuck PiP window goes with the old one.
+                if self.rebuildIfStopIgnored, let layer = self.layer {
+                    self.rebuildIfStopIgnored = false
+                    self.log.error("Rebuilding the Picture in Picture controller for the next stream")
+                    controller.delegate = nil
+                    self.isActive = false
+                    self.build(on: layer)
+                }
                 return
             }
             self.log.error("Picture in Picture stop not acknowledged within \(Self.stopAckTimeout)s - asking again (attempt \(attempt + 1))")
@@ -185,11 +198,14 @@ public final class StreamPictureInPicture: NSObject {
     public func reset() {
         onDidStart = nil; onDidStop = nil; onRestoreRequested = nil
         onPauseChanged = nil; onFailedToStart = nil
-        if controller?.isPictureInPictureActive == true, !isStopping {
-            stoppingProgrammatically = true
-            isStopping = true
-            controller?.stopPictureInPicture()
-            armStopWatchdog(attempt: 1)
+        if controller?.isPictureInPictureActive == true {
+            rebuildIfStopIgnored = true
+            if !isStopping {
+                stoppingProgrammatically = true
+                isStopping = true
+                controller?.stopPictureInPicture()
+                armStopWatchdog(attempt: 1)
+            }
         }
         pausedState.withLock { $0 = false }
     }
@@ -304,6 +320,7 @@ extension StreamPictureInPicture: AVPictureInPictureControllerDelegate {
     ) {
         onMain { [self] in
             let restore = restoreRequested
+            rebuildIfStopIgnored = false
             isActive = false
             isStopping = false
             restoreRequested = false
