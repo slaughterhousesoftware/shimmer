@@ -3,9 +3,8 @@
 //
 //  The first row of a machine's page: what Stream launches, with Picture in
 //  Picture and Stream beside it. A PS5's row is the console's home screen; a
-//  PC's row is its chosen app, and when the PC has more than one, the row's
-//  left side is the chooser - icon, name and a pop-up chevron in one target
-//  that lights on hover, the way Xcode's run destination does. The sidebar
+//  PC's row is its chosen app, and when the PC has more than one, an apps
+//  button joins Picture in Picture and Stream to choose another. The sidebar
 //  names the machine and its status, so the page doesn't repeat them. While
 //  this machine streams, the row shows the stream: its state, Picture in
 //  Picture (or back to the window), End Stream.
@@ -33,12 +32,7 @@ struct StreamRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if !host.isPlayStation && apps.count > 1 {
-                AppChooser(apps: apps, chosen: app, choose: choose) { leading(showsChevron: true) }
-                    .disabled(model.isStreaming)
-            } else {
-                leading(showsChevron: false)
-            }
+            leading
             Spacer(minLength: 12)
             buttons
         }
@@ -48,20 +42,13 @@ struct StreamRow: View {
 
     // MARK: Left: what streams
 
-    private func leading(showsChevron: Bool) -> some View {
+    private var leading: some View {
         HStack(spacing: 10) {
             icon
                 .frame(width: 22, height: 22)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    Text(title).lineLimit(1)
-                    if showsChevron {
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Text(title).lineLimit(1)
                 Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(subtitleIsLive ? Color.green : Color.secondary)
@@ -122,6 +109,9 @@ struct StreamRow: View {
                 Button("End Stream") { model.endStream() }
                     .tint(.red)
             } else {
+                if !host.isPlayStation && apps.count > 1 {
+                    AppsButton(apps: apps, chosen: app, choose: choose)
+                }
                 Button {
                     guard let launchable else { return }
                     model.pictureInPictureLaunchRequestedAt = Date()
@@ -140,94 +130,6 @@ struct StreamRow: View {
         .buttonStyle(.bordered)
         .fixedSize()
         .disabled(launchable == nil || (model.isStreaming && !streamingHere))
-    }
-}
-
-/// A PC's app chooser: the row's icon, name and chevron as one pop-up target.
-/// It reads as text until you point at it, then lights a soft plate, as
-/// Xcode's run destination and Finder's path bar do; a click drops a native
-/// menu of the apps under it, the current one checked. (Not a SwiftUI Menu:
-/// with a custom label style its items come out greyed, or it won't open.)
-private struct AppChooser<Label: View>: View {
-    let apps: [LibraryApp]
-    let chosen: LibraryApp?
-    let choose: (String) -> Void
-    @ViewBuilder var label: Label
-    @State private var anchor = MenuAnchor.Ref()
-
-    var body: some View {
-        Button(action: showMenu) {
-            label.background(MenuAnchor(ref: anchor))
-        }
-        .buttonStyle(ChooserButtonStyle())
-        .fixedSize()
-        .accessibilityLabel("App to stream: \(chosen?.name ?? "none")")
-        .accessibilityHint("Shows the apps on this PC")
-    }
-
-    private func showMenu() {
-        guard let view = anchor.view else { return }
-        let menu = NSMenu()
-        for app in apps {
-            let item = ClosureMenuItem(title: app.name) { choose(app.name) }
-            item.image = Self.image(for: app)
-            item.state = app.name == chosen?.name ? .on : .off
-            // macOS 27 hides menu images unless asked (Rex asks the same).
-            if #available(macOS 27, *) { item.preferredImageVisibility = .visible }
-            menu.addItem(item)
-        }
-        // Just under the label, its left edge on the icon's.
-        let below = view.isFlipped ? view.bounds.maxY + 5 : view.bounds.minY - 5
-        menu.popUp(positioning: nil, at: NSPoint(x: view.bounds.minX - 4, y: below), in: view)
-    }
-
-    private static func image(for app: LibraryApp) -> NSImage? {
-        let image: NSImage?
-        switch app.glyph {
-        case .symbol(let name): image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
-        case .asset(let name): image = NSImage(named: name)
-        }
-        guard let image else { return nil }
-        let sized = image.copy() as! NSImage
-        let side: CGFloat = 16
-        let scale = min(side / max(sized.size.width, 1), side / max(sized.size.height, 1))
-        sized.size = NSSize(width: sized.size.width * scale, height: sized.size.height * scale)
-        sized.isTemplate = true
-        return sized
-    }
-}
-
-private struct ChooserButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        ChooserPlate(configuration: configuration)
-    }
-
-    private struct ChooserPlate: View {
-        let configuration: ButtonStyleConfiguration
-        @State private var hovering = false
-        @Environment(\.isEnabled) private var isEnabled
-
-        var body: some View {
-            configuration.label
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.primary.opacity(plateOpacity)))
-                // The plate sits outside the label's own bounds, so the icon
-                // still lines up with a PS5 row's.
-                .padding(.horizontal, -6)
-                .padding(.vertical, -4)
-                .contentShape(Rectangle())
-                .onHover { hovering = $0 }
-                .animation(.easeOut(duration: 0.12), value: hovering)
-        }
-
-        private var plateOpacity: Double {
-            guard isEnabled else { return 0 }
-            if configuration.isPressed { return 0.1 }
-            return hovering ? 0.06 : 0
-        }
     }
 }
 
@@ -276,5 +178,55 @@ struct HostStatusText: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+    }
+}
+
+
+/// Which of a PC's apps Stream launches: a button in the row's own group,
+/// beside Picture in Picture and Stream, that drops a native menu of the
+/// apps (icons, the current one checked) - the choice sits with the actions
+/// it changes rather than squeezed in beside the name.
+private struct AppsButton: View {
+    let apps: [LibraryApp]
+    let chosen: LibraryApp?
+    let choose: (String) -> Void
+    @State private var anchor = MenuAnchor.Ref()
+
+    var body: some View {
+        Button(action: showMenu) {
+            Image(systemName: "square.grid.2x2").background(MenuAnchor(ref: anchor))
+        }
+        .help("Choose which app to stream")
+        .accessibilityLabel("Choose app, \(chosen?.name ?? "none") selected")
+    }
+
+    private func showMenu() {
+        guard let view = anchor.view else { return }
+        let menu = NSMenu()
+        for app in apps {
+            let item = ClosureMenuItem(title: app.name) { choose(app.name) }
+            item.image = Self.image(for: app)
+            item.state = app.name == chosen?.name ? .on : .off
+            // macOS 27 hides menu images unless asked (Rex asks the same).
+            if #available(macOS 27, *) { item.preferredImageVisibility = .visible }
+            menu.addItem(item)
+        }
+        let below = view.isFlipped ? view.bounds.maxY + 8 : view.bounds.minY - 8
+        menu.popUp(positioning: nil, at: NSPoint(x: view.bounds.minX - 8, y: below), in: view)
+    }
+
+    private static func image(for app: LibraryApp) -> NSImage? {
+        let image: NSImage?
+        switch app.glyph {
+        case .symbol(let name): image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        case .asset(let name): image = NSImage(named: name)
+        }
+        guard let image else { return nil }
+        let sized = image.copy() as! NSImage
+        let side: CGFloat = 16
+        let scale = min(side / max(sized.size.width, 1), side / max(sized.size.height, 1))
+        sized.size = NSSize(width: sized.size.width * scale, height: sized.size.height * scale)
+        sized.isTemplate = true
+        return sized
     }
 }
