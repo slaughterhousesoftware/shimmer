@@ -1,0 +1,123 @@
+diff -ruN a/lib/include/chiaki/videoreceiver.h b/lib/include/chiaki/videoreceiver.h
+--- a/lib/include/chiaki/videoreceiver.h
++++ b/lib/include/chiaki/videoreceiver.h
+@@ -38,6 +38,7 @@
+ 	ChiakiMutex waiting_for_idr_mutex;
+ 	bool waiting_for_idr;
+ 	uint64_t idr_request_last_ms; // when the IDR being waited for was last requested
++	unsigned frames_refused; // Shimmer: frames in a row that couldn't be decoded (missing reference)
+ 	ChiakiMutex frames_lost_mutex;
+ } ChiakiVideoReceiver;
+ 
+diff -ruN a/lib/src/packetstats.c b/lib/src/packetstats.c
+--- a/lib/src/packetstats.c
++++ b/lib/src/packetstats.c
+@@ -74,8 +74,12 @@
+ 	//		(unsigned long long)stats->gen_lost);
+ 
+ 	// seq
+-	uint64_t seq_diff = stats->seq_max - stats->seq_min; // overflow on purpose if max < min
+-	uint64_t seq_lost = stats->seq_received > seq_diff ? seq_diff : seq_diff - stats->seq_received;
++	// Shimmer (from P5M d65b621): the span in 16-bit sequence space, so a
++	// wrap of the frame index (every ~11 min) isn't ~2^64 losses that the
++	// cap turns into "5% loss" for the console; and more received than the
++	// span means none lost.
++	uint64_t seq_diff = (ChiakiSeqNum16)(stats->seq_max - stats->seq_min);
++	uint64_t seq_lost = stats->seq_received >= seq_diff ? 0 : seq_diff - stats->seq_received;
+ 	*received += stats->seq_received;
+ 	*lost += seq_lost;
+ 
+diff -ruN a/lib/src/streamconnection.c b/lib/src/streamconnection.c
+--- a/lib/src/streamconnection.c
++++ b/lib/src/streamconnection.c
+@@ -690,7 +690,8 @@
+ 				stream_connection->trigger_intensity = buf[21];
+ 				trigger_intensity_changed = true;
+ 			}
+-			if(buf[12])
++			// Shimmer: a reset is 1 (Sony's app; P5M), not any non-zero byte
++			if(buf[12] == 1)
+ 			{
+ 				motion_reset = true;
+ 				CHIAKI_LOGV(stream_connection->log, "StreamConnection received motion reset request in response to feedback packet with seqnum %"PRIu16"x , %"PRIu32" seconds after stream began", feedback_packet_seq_num, timestamp);
+@@ -721,7 +722,7 @@
+ 				stream_connection->trigger_intensity = buf[13];
+ 				trigger_intensity_changed = true;
+ 			}
+-			if(buf[4])
++			if(buf[4] == 1)
+ 			{
+ 				motion_reset = true;
+ 			}
+diff -ruN a/lib/src/takion.c b/lib/src/takion.c
+--- a/lib/src/takion.c
++++ b/lib/src/takion.c
+@@ -217,8 +217,23 @@
+ 
+ // Shimmer: the largest receive buffer the kernel grants, from
+ // TAKION_SOCKET_RCVBUF down to the advertised window.
++// Shimmer (as P5M): interactive video - the Wi-Fi driver and the router
++// queue our input and acks ahead of bulk traffic (WMM video, DSCP AF41).
++static void takion_set_qos(ChiakiTakion *takion)
++{
++#if defined(__APPLE__)
++	int service = NET_SERVICE_TYPE_VI;
++	setsockopt(takion->sock, SOL_SOCKET, SO_NET_SERVICE_TYPE, &service, sizeof(service));
++#endif
++#if !defined(_WIN32)
++	int tos = 34 << 2;
++	setsockopt(takion->sock, IPPROTO_IP, IP_TOS, (const CHIAKI_SOCKET_BUF_TYPE)&tos, sizeof(tos));
++#endif
++}
++
+ static int takion_set_rcvbuf(ChiakiTakion *takion)
+ {
++	takion_set_qos(takion);
+ 	for(int size = TAKION_SOCKET_RCVBUF; size > (int)takion->a_rwnd; size /= 2)
+ 	{
+ 		if(setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&size, sizeof(size)) == 0)
+diff -ruN a/lib/src/videoreceiver.c b/lib/src/videoreceiver.c
+--- a/lib/src/videoreceiver.c
++++ b/lib/src/videoreceiver.c
+@@ -9,6 +9,10 @@
+ // While waiting for a requested IDR frame, request it again this often, in case the request
+ // or the IDR frame itself was lost; otherwise the picture would stay frozen
+ #define VIDEO_IDR_RETRY_INTERVAL_MS 1000
++// Shimmer (as chiaki-ng-core's refusals_before_idr): this many frames in a row
++// without their reference - the picture frozen ~170 ms at 60 fps - ask for an
++// IDR frame rather than wait out the app's 2 s watchdog.
++#define VIDEO_REFUSALS_BEFORE_IDR 10
+ 
+ static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *video_receiver);
+ 
+@@ -60,6 +64,7 @@
+ 	chiaki_mutex_init(&video_receiver->waiting_for_idr_mutex, false);
+ 	video_receiver->waiting_for_idr = false;
+ 	video_receiver->idr_request_last_ms = 0;
++	video_receiver->frames_refused = 0;
+ 	chiaki_mutex_init(&video_receiver->frames_lost_mutex, false);
+ }
+ 
+@@ -346,7 +351,22 @@
+ 	video_receiver->frame_index_prev = video_receiver->frame_index_cur;
+ 
+ 	if(succ)
++	{
+ 		video_receiver->frame_index_prev_complete = video_receiver->frame_index_cur;
++		video_receiver->frames_refused = 0;
++	}
++	else if(++video_receiver->frames_refused >= VIDEO_REFUSALS_BEFORE_IDR
++		&& !chiaki_video_receiver_get_waiting_for_idr(video_receiver))
++	{
++		ChiakiErrorCode err = stream_connection_send_idr_request(&video_receiver->session->stream_connection);
++		if(err == CHIAKI_ERR_SUCCESS)
++		{
++			chiaki_video_receiver_set_waiting_for_idr(video_receiver, true);
++			CHIAKI_LOGI(video_receiver->log, "%u frames in a row without their reference, requested an IDR frame",
++					video_receiver->frames_refused);
++		}
++		video_receiver->frames_refused = 0;
++	}
+ 
+ 	return CHIAKI_ERR_SUCCESS;
+ }

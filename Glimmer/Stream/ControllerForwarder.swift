@@ -194,6 +194,14 @@ extension InputForwarder {
             Diag.info("controller \(slot): \(name) was bound to a macOS system gesture - "
                 + "disabled so the press reaches the stream", "Controller")
         }
+        // Every other button too, bound now or not (as P5M does): macOS can
+        // bind more later, and on macOS 27 the PS button can open the Game
+        // Overlay over the stream - in Picture in Picture especially. Restored
+        // in releaseAttachedControllers like Create and Home.
+        for button in gamepad.physicalInputProfile.allButtons
+        where button.preferredSystemGestureState != .disabled {
+            button.preferredSystemGestureState = .disabled
+        }
 
         // DualSense + the user opted in: start the raw-HID side-channel so the
         // Options / Create / Mute buttons GameController hides become available
@@ -348,6 +356,10 @@ extension InputForwarder {
             if let pad = state.controller?.extendedGamepad {
                 for button in [pad.buttonOptions, pad.buttonHome].compactMap({ $0 })
                 where button.isBoundToSystemGesture && button.preferredSystemGestureState == .disabled {
+                    button.preferredSystemGestureState = .enabled
+                }
+                for button in state.controller?.physicalInputProfile.allButtons ?? []
+                where button.preferredSystemGestureState == .disabled {
                     button.preferredSystemGestureState = .enabled
                 }
             }
