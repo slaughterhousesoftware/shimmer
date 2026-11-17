@@ -1343,6 +1343,9 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             let seated = lock.withLock { () -> UInt8? in
                 guard let num = pendingSeats.removeValue(forKey: seat) else { return nil }
                 seats[num] = seat
+                // Announce the pad on the Takion side too: every other co-op
+                // client does, and an extra pad got no haptics without it.
+                if let session { chiaki_session_pad_seated(session, seat) }
                 return num
             }
             if let seated {

@@ -1,0 +1,127 @@
+diff -ruN a/lib/include/chiaki/session.h b/lib/include/chiaki/session.h
+--- a/lib/include/chiaki/session.h
++++ b/lib/include/chiaki/session.h
+@@ -330,6 +330,8 @@
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_answer_user_passcode(ChiakiSession *session, uint8_t pad, const char *passcode);
+ /** Shimmer: pad `pad` (1-3) leaves: its buttons released, the console told (ctrl 0x09). */
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_leave_pad(ChiakiSession *session, uint8_t pad);
++/** Shimmer: the console seated pad `pad` (1-3; 0x8068 status 0): announce it connected on the Takion side. */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_pad_seated(ChiakiSession *session, uint8_t pad);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_set_login_pin(ChiakiSession *session, const uint8_t *pin, size_t pin_size);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_set_stream_connection_switch_received(ChiakiSession *session);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_goto_bed(ChiakiSession *session);
+diff -ruN a/lib/include/chiaki/streamconnection.h b/lib/include/chiaki/streamconnection.h
+--- a/lib/include/chiaki/streamconnection.h
++++ b/lib/include/chiaki/streamconnection.h
+@@ -89,7 +89,7 @@
+ 	double measured_bitrate;
+ } ChiakiStreamConnection;
+ 
+-CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_send_pad_disconnected(ChiakiStreamConnection *stream_connection, uint8_t pad);
++CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_send_pad_connection(ChiakiStreamConnection *stream_connection, uint8_t pad, bool connected);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_init(ChiakiStreamConnection *stream_connection, ChiakiSession *session, double packet_loss_max);
+ CHIAKI_EXPORT void chiaki_stream_connection_fini(ChiakiStreamConnection *stream_connection);
+ 
+diff -ruN a/lib/src/feedback.c b/lib/src/feedback.c
+--- a/lib/src/feedback.c
++++ b/lib/src/feedback.c
+@@ -23,7 +23,8 @@
+ // opposite extreme, a full-speed spin the wrong way for a frame.
+ static uint16_t feedback_unorm16(float v, float min, float max)
+ {
+-	if(!(v > min)) v = min; // also NaN
++	if(v != v) v = 0; // NaN: no motion (as chiaki-ng-core), not the range's end
++	if(v < min) v = min;
+ 	if(v > max) v = max;
+ 	return (uint16_t)(0xffff * (v - min) / (max - min));
+ }
+diff -ruN a/lib/src/session.c b/lib/src/session.c
+--- a/lib/src/session.c
++++ b/lib/src/session.c
+@@ -384,6 +384,13 @@
+ 	return chiaki_ctrl_send_message(&session->ctrl, 0x8064, payload, sizeof(payload));
+ }
+ 
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_pad_seated(ChiakiSession *session, uint8_t pad)
++{
++	if(pad == 0)
++		return CHIAKI_ERR_INVALID_DATA;
++	return chiaki_stream_connection_send_pad_connection(&session->stream_connection, pad, true);
++}
++
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_leave_pad(ChiakiSession *session, uint8_t pad)
+ {
+ 	if(pad == 0)
+@@ -397,7 +404,7 @@
+ 	uint8_t payload[1] = { pad };
+ 	err = chiaki_ctrl_send_message(&session->ctrl, 0x09, payload, sizeof(payload));
+ 	// and the Takion side, as PXPlay and chiaki-ng-androidtv do on a leave
+-	chiaki_stream_connection_send_pad_disconnected(&session->stream_connection, pad);
++	chiaki_stream_connection_send_pad_connection(&session->stream_connection, pad, false);
+ 	return err;
+ }
+ 
+diff -ruN a/lib/src/streamconnection.c b/lib/src/streamconnection.c
+--- a/lib/src/streamconnection.c
++++ b/lib/src/streamconnection.c
+@@ -670,6 +670,18 @@
+ 
+ 	CHIAKI_LOGV(stream_connection->log, "Pad info packet: ");
+ 	chiaki_log_hexdump(stream_connection->log, CHIAKI_LOG_VERBOSE, buf, buf_size);
++	// Shimmer: each size once, in full - which sizes a PS5 sends on Takion 20
++	// (0x19/0x1a? 0x11/0x12?) is disputed between P5M and chiaki-ng-core.
++	{
++		static bool logged_size[64];
++		if(buf_size < 64 && !logged_size[buf_size])
++		{
++			logged_size[buf_size] = true;
++			CHIAKI_LOGI(stream_connection->log, "Pad info size %#llx on Takion %u:", (unsigned long long)buf_size,
++					(unsigned int)stream_connection->takion.version);
++			chiaki_log_hexdump(stream_connection->log, CHIAKI_LOG_INFO, buf, buf_size);
++		}
++	}
+ 
+ 	switch(buf_size)
+ 	{
+@@ -1271,26 +1283,35 @@
+ }
+ 
+ /**
+- * Shimmer: pad `pad` (1-3) disconnected, as PXPlay and chiaki-ng-androidtv
+- * send it after ctrl 0x09: controller_id set, connected=false, no type.
++ * Shimmer: pad `pad` (1-3) joined or left, on the Takion side (ctrl 0x68 /
++ * 0x09 are the console side). As chiaki-ng-core and chiaki-ng-androidtv:
++ * once the console seats the user (0x8068 status 0) the pad is announced
++ * connected with its type - an extra pad gets no haptics until it is (Remote
++ * Game, on a PS5) - and on leave it is disconnected with the type "not set"
++ * (chiaki-ng-core; androidtv repeats the type).
+  */
+-CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_send_pad_disconnected(ChiakiStreamConnection *stream_connection, uint8_t pad)
++CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_send_pad_connection(ChiakiStreamConnection *stream_connection, uint8_t pad, bool connected)
+ {
+ 	tkproto_TakionMessage msg;
+ 	memset(&msg, 0, sizeof(msg));
+ 	msg.type = tkproto_TakionMessage_PayloadType_CONTROLLERCONNECTION;
+ 	msg.has_controller_connection_payload = true;
+ 	msg.controller_connection_payload.has_connected = true;
+-	msg.controller_connection_payload.connected = false;
++	msg.controller_connection_payload.connected = connected;
+ 	msg.controller_connection_payload.has_controller_id = true;
+ 	msg.controller_connection_payload.controller_id = pad;
+-	msg.controller_connection_payload.has_controller_type = false;
++	msg.controller_connection_payload.has_controller_type = true;
++	msg.controller_connection_payload.controller_type = !connected
++		? tkproto_ControllerConnectionPayload_ControllerType_NOTSET
++		: stream_connection->session->connect_info.enable_dualsense
++			? tkproto_ControllerConnectionPayload_ControllerType_DUALSENSE
++			: tkproto_ControllerConnectionPayload_ControllerType_DUALSHOCK4;
+ 
+ 	uint8_t buf[256];
+ 	pb_ostream_t stream = pb_ostream_from_buffer(buf, sizeof(buf));
+ 	if(!pb_encode(&stream, tkproto_TakionMessage_fields, &msg))
+ 	{
+-		CHIAKI_LOGE(stream_connection->log, "StreamConnection pad disconnect protobuf encoding failed");
++		CHIAKI_LOGE(stream_connection->log, "StreamConnection pad connection protobuf encoding failed");
+ 		return CHIAKI_ERR_UNKNOWN;
+ 	}
+ 	return chiaki_takion_send_message_data(&stream_connection->takion, 1, 1, buf, stream.bytes_written, NULL);

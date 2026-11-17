@@ -1004,6 +1004,12 @@ static int cmd_drive(int argc, char **argv)
 			ChiakiErrorCode e = chiaki_session_answer_user_passcode(&session, (uint8_t)pad, code);
 			printf("ok passcode pad %u err %d\n", pad, (int)e);
 		}
+		else if(!strcmp(cmd, "seated") && n >= 2)
+		{
+			// seated PAD: announce a seated pad on the Takion side (after 0x8068 status 0)
+			ChiakiErrorCode e = chiaki_session_pad_seated(&session, (uint8_t)atoi(arg));
+			printf("ok seated pad %d err %d\n", atoi(arg), (int)e);
+		}
 		else if(!strcmp(cmd, "leave") && n >= 2)
 		{
 			ChiakiErrorCode e = chiaki_session_leave_pad(&session, (uint8_t)atoi(arg));
