@@ -411,11 +411,8 @@ struct ComputersTab: View {
                 Text("Puts the console in rest mode when you end the stream.")
             }
         } else {
-            Toggle(isOn: Binding(
-                get: { model.quitAppWhenStreamEnds }, set: { model.quitAppWhenStreamEnds = $0 })) {
-                Text("Quit the game when the stream ends")
-                Text("Off, it keeps running so you can resume.")
-            }
+            Toggle("Quit the game when the stream ends", isOn: Binding(
+                get: { model.quitAppWhenStreamEnds }, set: { model.quitAppWhenStreamEnds = $0 }))
         }
     }
 
