@@ -44,11 +44,8 @@ struct PlayStationSettingsPane: View {
             FormSectionHeader("Video")
         }
         Section {
-            Picker(selection: $settings.haptics) {
+            Picker("Vibration", selection: $settings.haptics) {
                 ForEach(PlayStationSettings.HapticsMode.allCases, id: \.self) { Text($0.displayName).tag($0) }
-            } label: {
-                Text("Vibration")
-                Text("Haptic feedback needs a DualSense; Rumble suits other controllers.")
             }
             Toggle("Adaptive triggers", isOn: $settings.adaptiveTriggers)
             Toggle(isOn: $settings.lightBar) {
