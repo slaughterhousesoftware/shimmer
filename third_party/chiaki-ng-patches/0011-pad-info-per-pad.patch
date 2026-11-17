@@ -1,0 +1,195 @@
+diff -ruN a/lib/include/chiaki/streamconnection.h b/lib/include/chiaki/streamconnection.h
+--- a/lib/include/chiaki/streamconnection.h
++++ b/lib/include/chiaki/streamconnection.h
+@@ -89,6 +89,25 @@
+ 	double measured_bitrate;
+ } ChiakiStreamConnection;
+ 
++/**
++ * Shimmer: one pad info message (CHIAKI_TAKION_MESSAGE_DATA_TYPE_PAD_INFO), as
++ * chiaki-ng-core reads it. Each message is for one pad - `index`, the low
++ * nibble of the selector - and only pad 0's says anything about player 1.
++ */
++typedef struct chiaki_pad_info_t
++{
++	uint8_t index; // the pad the message is for (0-3)
++	uint8_t led[3];
++	bool motion_reset; // pad 0 asked to re-centre motion (byte == 1)
++	bool user_valid; // a user holds the pad (the 0x11 layout's [7], the 0x19 layout's [15])
++	uint8_t haptic_intensity;
++	uint8_t trigger_intensity;
++	uint16_t feedback_seq_num; // 0x19 layout only
++} ChiakiPadInfo;
++
++/** Shimmer: parse a pad info payload (0x19/0x1a with the 8-byte prefix, or 0x11/0x12); false for other sizes. */
++CHIAKI_EXPORT bool chiaki_pad_info_parse(const uint8_t *buf, size_t buf_size, ChiakiPadInfo *info);
++
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_send_pad_connection(ChiakiStreamConnection *stream_connection, uint8_t pad, bool connected);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_init(ChiakiStreamConnection *stream_connection, ChiakiSession *session, double packet_loss_max);
+ CHIAKI_EXPORT void chiaki_stream_connection_fini(ChiakiStreamConnection *stream_connection);
+diff -ruN a/lib/src/streamconnection.c b/lib/src/streamconnection.c
+--- a/lib/src/streamconnection.c
++++ b/lib/src/streamconnection.c
+@@ -660,6 +660,35 @@
+ 			break;
+ 	}
+ }
++CHIAKI_EXPORT bool chiaki_pad_info_parse(const uint8_t *buf, size_t buf_size, ChiakiPadInfo *info)
++{
++	memset(info, 0, sizeof(*info));
++	size_t row;
++	switch(buf_size)
++	{
++		case 0x1a: // Takion 20 may append a byte
++		case 0x19: // 8-byte prefix, then the 0x11 layout
++			info->feedback_seq_num = ntohs(*(chiaki_unaligned_uint16_t *)(buf));
++			row = 8;
++			break;
++		case 0x12:
++		case 0x11:
++			row = 0;
++			break;
++		default:
++			return false;
++	}
++	// low nibble: the high one (Takion 16+) isn't the index
++	info->index = buf[row] & 0x0f;
++	memcpy(info->led, buf + row + 1, 3);
++	// a reset is 1 (Sony's app; P5M), and only pad 0's (chiaki-ng-core)
++	info->motion_reset = info->index == 0 && buf[row + 4] == 1;
++	info->user_valid = buf[row + 7] != 0;
++	info->haptic_intensity = buf[row + 12];
++	info->trigger_intensity = buf[row + 13];
++	return true;
++}
++
+ static void stream_connection_takion_data_pad_info(ChiakiStreamConnection *stream_connection, uint8_t *buf, size_t buf_size)
+ {
+ 	bool led_changed = false;
+@@ -670,8 +699,7 @@
+ 
+ 	CHIAKI_LOGV(stream_connection->log, "Pad info packet: ");
+ 	chiaki_log_hexdump(stream_connection->log, CHIAKI_LOG_VERBOSE, buf, buf_size);
+-	// Shimmer: each size once, in full - which sizes a PS5 sends on Takion 20
+-	// (0x19/0x1a? 0x11/0x12?) is disputed between P5M and chiaki-ng-core.
++	// Shimmer: each size once, in full (Takion 20 sends 0x19: verified on PS5-661)
+ 	{
+ 		static bool logged_size[64];
+ 		if(buf_size < 64 && !logged_size[buf_size])
+@@ -683,79 +711,50 @@
+ 		}
+ 	}
+ 
+-	switch(buf_size)
++	ChiakiPadInfo info;
++	if(!chiaki_pad_info_parse(buf, buf_size, &info))
+ 	{
+-		case 0x1a: // Takion 20 appends a byte
+-		case 0x19:
++		CHIAKI_LOGE(stream_connection->log, "StreamConnection got pad info with size %#llx not 0x19/0x1a or 0x11/0x12",
++				(unsigned long long)buf_size);
++		return;
++	}
++	// the intensities are the console's, for every pad (chiaki-ng-core)
++	if(stream_connection->haptic_intensity != info.haptic_intensity)
++	{
++		stream_connection->haptic_intensity = info.haptic_intensity;
++		haptic_intensity_changed = true;
++	}
++	if(stream_connection->trigger_intensity != info.trigger_intensity)
++	{
++		stream_connection->trigger_intensity = info.trigger_intensity;
++		trigger_intensity_changed = true;
++	}
++	if(info.index == 0)
++	{
++		if(info.motion_reset)
+ 		{
+-			// sequence number of feedback packet this is responding to
+-			uint16_t feedback_packet_seq_num = ntohs(*(chiaki_unaligned_uint16_t *)(buf));
+-			// int16_t unknown = ntohs(*(chiaki_unaligned_uint16_t *)(buf + 2));
+-			uint32_t timestamp = ntohs(*(chiaki_unaligned_uint32_t *)(buf + 4));
+-			if(stream_connection->haptic_intensity != buf[20])
+-			{
+-				stream_connection->haptic_intensity = buf[20];
+-				haptic_intensity_changed = true;
+-			}
+-			if(stream_connection->trigger_intensity != buf[21])
+-			{
+-				stream_connection->trigger_intensity = buf[21];
+-				trigger_intensity_changed = true;
+-			}
+-			// Shimmer: a reset is 1 (Sony's app; P5M), not any non-zero byte
+-			if(buf[12] == 1)
+-			{
+-				motion_reset = true;
+-				CHIAKI_LOGV(stream_connection->log, "StreamConnection received motion reset request in response to feedback packet with seqnum %"PRIu16"x , %"PRIu32" seconds after stream began", feedback_packet_seq_num, timestamp);
+-			}
+-			// low nibble: the high one (Takion 16+) isn't the index
+-			if((buf[8] & 0x0f) != stream_connection->player_index)
+-			{
+-				player_index_changed = true;
+-				stream_connection->player_index = buf[8] & 0x0f;
+-			}
+-			if(memcmp(buf + 9, stream_connection->led_state, 3) != 0)
+-			{
+-				led_changed = true;
+-				memcpy(stream_connection->led_state, buf + 9, 3);
+-			}
+-			break;
++			motion_reset = true;
++			CHIAKI_LOGV(stream_connection->log, "StreamConnection received motion reset request in response to feedback packet with seqnum %"PRIu16"x", info.feedback_seq_num);
+ 		}
+-		case 0x12: // Takion 20 appends a byte
+-		case 0x11:
++		if(info.index != stream_connection->player_index)
+ 		{
+-			if(stream_connection->haptic_intensity != buf[12])
+-			{
+-				stream_connection->haptic_intensity = buf[12];
+-				haptic_intensity_changed = true;
+-			}
+-			if(stream_connection->trigger_intensity != buf[13])
+-			{
+-				stream_connection->trigger_intensity = buf[13];
+-				trigger_intensity_changed = true;
+-			}
+-			if(buf[4] == 1)
+-			{
+-				motion_reset = true;
+-			}
+-			if((buf[0] & 0x0f) != stream_connection->player_index)
+-			{
+-				player_index_changed = true;
+-				stream_connection->player_index = buf[0] & 0x0f;
+-			}
+-			if(memcmp(buf + 1, stream_connection->led_state, 3) != 0)
+-			{
+-				led_changed = true;
+-				memcpy(stream_connection->led_state, buf + 1, 3);
+-			}
+-			break;
++			player_index_changed = true;
++			stream_connection->player_index = info.index;
+ 		}
+-		default:
++		if(memcmp(info.led, stream_connection->led_state, 3) != 0)
+ 		{
+-			CHIAKI_LOGE(stream_connection->log, "StreamConnection got pad info with size %#llx not 0x19/0x1a or 0x11/0x12",
+-					(unsigned long long)buf_size);
+-			return;
++			led_changed = true;
++			memcpy(stream_connection->led_state, info.led, 3);
+ 		}
++	}
++	else
++	{
++		// Shimmer: another pad's info (sent when a player is seated) - its light
++		// and reset are that pad's; applying them recoloured player 1's light
++		// bar and re-centred its motion (seen live, 2026-11-17)
++		CHIAKI_LOGI(stream_connection->log, "Pad info for pad %u: LED %02x%02x%02x%s%s", (unsigned)info.index,
++				info.led[0], info.led[1], info.led[2], info.user_valid ? "" : ", no user yet",
++				buf[(buf_size >= 0x19 ? 8 : 0) + 4] == 1 ? ", motion reset" : "");
+ 	}
+ 	if(motion_reset)
+ 	{

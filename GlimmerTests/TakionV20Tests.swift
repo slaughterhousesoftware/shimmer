@@ -213,4 +213,43 @@ struct TakionV20Tests {
         #expect(encoded { $0.orient_x = .nan } == rest)
         #expect(encoded { $0.gyro_y = .nan } == rest)
     }
+
+    // MARK: Pad info (live PS5-661, Takion 20, 2026-11-17)
+
+    private static func padInfo(_ hex: String) -> ChiakiPadInfo? {
+        let bytes = hex.split(separator: " ").map { UInt8($0, radix: 16)! }
+        var info = ChiakiPadInfo()
+        return chiaki_pad_info_parse(bytes, bytes.count, &info) ? info : nil
+    }
+
+    /// At session start: pad 0, a motion reset, intensities 1/1.
+    @Test func padInfoForPadZeroAtStart() throws {
+        let info = try #require(Self.padInfo("00 01 05 08 00 00 00 00 00 00 00 00 01 00 00 01 00 00 00 01 01 01 00 00 00"))
+        #expect(info.index == 0)
+        #expect(info.motion_reset)
+        #expect(info.user_valid)
+        #expect(info.haptic_intensity == 1 && info.trigger_intensity == 1)
+    }
+
+    /// When player 2 is seated the console sends pad info for pad 1 (index in
+    /// the low nibble of [8]) - blue, with byte [12] set. That is pad 1's, not a
+    /// reset of player 1's motion (chiaki-ng-core applies reset to index 0 only).
+    @Test func padInfoForPadOneIsNotPlayerOnes() throws {
+        let joining = try #require(Self.padInfo("00 3f ea 61 00 00 07 96 01 00 00 ff 01 00 00 00 00 00 00 01 01 01 00 00 00"))
+        #expect(joining.index == 1)
+        #expect(joining.led.0 == 0 && joining.led.1 == 0 && joining.led.2 == 0xff)
+        #expect(!joining.motion_reset)
+        #expect(!joining.user_valid)
+        let seated = try #require(Self.padInfo("00 42 3a b7 00 00 07 e7 01 00 00 00 00 00 00 03 00 00 00 01 01 01 00 00 00"))
+        #expect(seated.index == 1)
+        #expect(seated.user_valid)
+    }
+
+    /// The 0x11 layout (no 8-byte prefix) reads the same fields from offset 0.
+    @Test func padInfoShortLayout() throws {
+        let info = try #require(Self.padInfo("01 00 00 ff 01 00 00 03 00 00 00 00 02 03 00 00 00"))
+        #expect(info.index == 1 && info.led.2 == 0xff && !info.motion_reset && info.user_valid)
+        #expect(info.haptic_intensity == 2 && info.trigger_intensity == 3)
+        #expect(Self.padInfo("00 01 02") == nil)
+    }
 }
