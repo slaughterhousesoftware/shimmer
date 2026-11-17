@@ -58,10 +58,18 @@ struct StreamRow: View {
                 } else {
                     Text(title).lineLimit(1)
                 }
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(subtitleIsLive ? Color.green : Color.secondary)
-                    .lineLimit(1)
+                // While live, a green dot leads the status line, as System
+                // Settings marks a connected network; the words stay grey.
+                HStack(spacing: 5) {
+                    if subtitleIsLive {
+                        Circle().fill(Color.green).frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                    }
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             .layoutPriority(1)
         }
