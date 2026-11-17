@@ -648,13 +648,13 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             _ = pushPad()
         case CHIAKI_EVENT_LED_COLOR:
             guard options.settings.lightBar, ControllerFocus.allows(focusID) else { break }
-            let (events, usbHaptics) = lock.withLock { (self.events, audioHaptics != nil) }
+            let (events, usbHaptics, player1) = lock.withLock { (self.events, audioHaptics != nil, primaryPad ?? 0) }
             let led = event.led_state
             // GameController's light setter would switch the pad's audio haptics off.
             if usbHaptics {
-                DualSenseHID.shared.setLightbar(red: led.0, green: led.1, blue: led.2)
+                DualSenseHID.shared.setLightbar(slot: player1, red: led.0, green: led.1, blue: led.2)
             } else {
-                events?.setControllerLED(controller: 0, r: led.0, g: led.1, b: led.2)
+                events?.setControllerLED(controller: UInt16(player1), r: led.0, g: led.1, b: led.2)
             }
         case CHIAKI_EVENT_HAPTIC_INTENSITY, CHIAKI_EVENT_TRIGGER_INTENSITY:
             applyIntensity(event.intensity, haptics: event.type == CHIAKI_EVENT_HAPTIC_INTENSITY)
@@ -842,7 +842,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         let events = lock.withLock { self.events }
         // Low-frequency (big) motor on the left, high-frequency on the right,
         // matching the DualSense's left/right actuator sides.
-        events?.rumble(controller: 0, lowFreq: left, highFreq: right)
+        events?.rumble(controller: UInt16(lock.withLock { primaryPad } ?? 0), lowFreq: left, highFreq: right)
     }
 
     /// Mean |amplitude| per frame, averaged over a window → 16-bit motor
@@ -1069,7 +1069,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// it goes through our own report; GameController's would be undone by the
     /// haptics keepalive within a second.
     private func handleRumble(left: UInt8, right: UInt8) {
-        let (events, player) = lock.withLock { (self.events, audioHaptics) }
+        // Player 1's rumble: their pad only (players 2-4 come by seat).
+        let (events, player, player1) = lock.withLock { (self.events, audioHaptics, primaryPad ?? 0) }
         if let player {
             // While the actuators play the console's haptics, its rumble is a
             // compatibility copy of the same effect. Over Bluetooth a rumble
@@ -1077,12 +1078,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             // rumble emulation, cutting the haptics off; skip it there
             // (chiaki-ng does the same), and let it through once they go quiet.
             if player is DualSenseBluetoothHaptics, left != 0 || right != 0, DualSenseHID.shared.hapticsBusy {
-                if DualSenseHID.shared.isRumbling { DualSenseHID.shared.setRumble(left: 0, right: 0) }
+                if DualSenseHID.shared.isRumbling { DualSenseHID.shared.setRumble(slot: player1, left: 0, right: 0) }
                 return
             }
-            DualSenseHID.shared.setRumble(left: left, right: right)
+            DualSenseHID.shared.setRumble(slot: player1, left: left, right: right)
         } else {
-            events?.rumble(controller: 0, lowFreq: UInt16(left) * 257, highFreq: UInt16(right) * 257)
+            events?.rumble(controller: UInt16(player1), lowFreq: UInt16(left) * 257, highFreq: UInt16(right) * 257)
         }
     }
 

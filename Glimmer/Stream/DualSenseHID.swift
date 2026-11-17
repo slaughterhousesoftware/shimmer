@@ -90,6 +90,9 @@ struct DualSenseOutputState: Equatable, Sendable {
     /// haptics" bit, plus enable byte 38 bit 0x08, as Sony's Remote Play does
     /// on current pad firmware - the motors run and the haptics keep playing.
     var rumbleKeepsHaptics = false
+    /// The pad's firmware update version (feature report 0x20, bytes 44-45);
+    /// 0 until read. Per pad - never copied from another.
+    var firmware: UInt16 = 0
     /// The mic mute light (PS5 chat): true lit (muted), false off, nil untouched.
     var micLED: Bool?
 }
@@ -298,6 +301,7 @@ final class DualSenseHID: @unchecked Sendable {
         if var state = slotOutputs[slot] {
             // Motors stay off: a rumble from before the pad dropped is stale.
             state.rumbleLeft = 0; state.rumbleRight = 0
+            state.firmware = padOutputs[device]?.firmware ?? 0
             padOutputs[device] = state
             padDirtyTriggers[device] = Self.bothTriggers
             restored = true
@@ -306,6 +310,21 @@ final class DualSenseHID: @unchecked Sendable {
         Diag.notice("DualSense on slot \(slot) is the \(transport) pad #\(deviceOrdinal(device))"
             + (restored ? " (its triggers and light restored)" : ""), "Controller")
         return restored
+    }
+
+    /// The pad's firmware update version from feature report 0x20 (bytes
+    /// 44-45 little-endian, counting the report ID - Linux hid-playstation's
+    /// update_version, the number Sony's app gates its rumble mode on).
+    static func firmwareVersion(_ device: IOHIDDevice) -> UInt16 {
+        var buffer = [UInt8](repeating: 0, count: 64)
+        buffer[0] = 0x20
+        var length = CFIndex(buffer.count)
+        let rc = buffer.withUnsafeMutableBufferPointer {
+            IOHIDDeviceGetReport(device, kIOHIDReportTypeFeature, 0x20, $0.baseAddress!, &length)
+        }
+        guard rc == kIOReturnSuccess, length >= 46 else { return 0 }
+        let offset = buffer[0] == 0x20 ? 44 : 43
+        return UInt16(buffer[offset]) | UInt16(buffer[offset + 1]) << 8
     }
 
     /// A stable small number for a pad in the logs.
@@ -611,12 +630,15 @@ final class DualSenseHID: @unchecked Sendable {
         // device deallocation. (The `key` opaque pointer is only an identity
         // token, NOT the retain; do not switch this value to Unmanaged.)
         writeDevices[key] = (device: device, bluetooth: isBluetooth)
-        padOutputs[key] = outputState
+        var fresh = outputState
+        fresh.firmware = Self.firmwareVersion(device)
+        padOutputs[key] = fresh
         padDirtyTriggers[key] = Self.bothTriggers    // a pad that (re)connects gets the current effects
         lock.unlock()
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputReportCallback(device, buf, bufLen, Self.reportCallback, ctx)
-        Diag.notice("DualSense HID device matched (\(transport))", "Controller")
+        let firmware = lock.withLock { padOutputs[key]?.firmware ?? 0 }
+        Diag.notice("DualSense HID device matched (\(transport), firmware 0x\(String(firmware, radix: 16)))", "Controller")
     }
 
     private func unregisterDevice(_ device: IOHIDDevice) {

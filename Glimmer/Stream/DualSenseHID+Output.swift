@@ -46,11 +46,14 @@ extension DualSenseHID {
         var d = [UInt8](repeating: 0, count: 47)
         d[0] = triggerFlags & (flagRightTrigger | flagLeftTrigger)
         if s.rumbleLeft != 0 || s.rumbleRight != 0 {
-            if s.rumbleKeepsHaptics {
+            // Sony: rumble beside the haptics only on pad firmware above
+            // 0x38F; older pads take classic rumble (which mutes them).
+            if s.rumbleKeepsHaptics && s.firmware > 0x38F {
                 d[0] |= flagRumbleEmulation
                 d[38] |= 0x08
             } else {
                 d[0] |= flagRumbleEmulation | flagRumbleNotHaptics
+                if s.firmware >= 0x0224 { d[38] |= 0x04 }   // improved rumble emulation (SDL, Sony)
             }
             d[2] = s.rumbleRight   // high-frequency side
             d[3] = s.rumbleLeft    // low-frequency side
@@ -161,9 +164,9 @@ extension DualSenseHID {
     /// Rumble through our own report (PS5 streams with USB-audio haptics,
     /// where GameController's rumble would fight the keepalive). The pad leaves
     /// rumble mode, and plays haptics again, once it drops back to zero.
-    func setRumble(left: UInt8, right: UInt8) {
+    func setRumble(slot: UInt8? = nil, left: UInt8, right: UInt8) {
         lock.lock()
-        mutateOutput(slot: nil) { $0.rumbleLeft = left; $0.rumbleRight = right }
+        mutateOutput(slot: slot) { $0.rumbleLeft = left; $0.rumbleRight = right }
         lock.unlock()
         scheduleWrite()
     }
@@ -223,8 +226,8 @@ extension DualSenseHID {
 
     /// Set and write the light bar ourselves (GameController's setter would
     /// switch audio haptics off).
-    func setLightbar(red: UInt8, green: UInt8, blue: UInt8) {
-        setLightbarState(red: red, green: green, blue: blue)
+    func setLightbar(slot: UInt8? = nil, red: UInt8, green: UInt8, blue: UInt8) {
+        setLightbarState(slot: slot, red: red, green: green, blue: blue)
         scheduleWrite()
     }
 
@@ -242,7 +245,9 @@ extension DualSenseHID {
     /// high nibble (0x00, 0x60, 0x90) - chiaki-ng's mapping.
     func setIntensity(haptics: UInt8, triggers: UInt8) {
         lock.lock()
-        mutateOutput(slot: nil) { $0.intensity = (triggers & 0xF0) | (haptics & 0x0F) }
+        // Haptics are 3 bits (Sony's vcm_volume:3, then a reserved bit):
+        // "off" is 7, not 0xF.
+        mutateOutput(slot: nil) { $0.intensity = (triggers & 0xF0) | (haptics & 0x07) }
         lock.unlock()
         scheduleWrite()
     }

@@ -84,11 +84,18 @@ struct DualSenseRawAxesTests {
         var s = DualSenseOutputState()
         s.rumbleLeft = 200; s.rumbleRight = 100
         s.audioHaptics = true; s.hapticsFilter = false; s.rumbleKeepsHaptics = true
+        s.firmware = 0x0420                                   // above Sony's 0x38F gate
         let d = DualSenseHID.effectsState(s, triggerFlags: 0)
         #expect(d[0] & 0x01 != 0 && d[0] & 0x02 == 0)
         #expect(d[38] & 0x08 != 0)
         #expect(d[3] == 200 && d[2] == 100)
-        s.rumbleKeepsHaptics = false
+        // Older firmware: classic rumble, with improved emulation from 0x224.
+        s.firmware = 0x0300
+        let old = DualSenseHID.effectsState(s, triggerFlags: 0)
+        #expect(old[0] & 0x03 == 0x03 && old[38] & 0x08 == 0 && old[38] & 0x04 != 0)
+        s.firmware = 0                                        // unread: classic
+        #expect(DualSenseHID.effectsState(s, triggerFlags: 0)[38] & 0x0C == 0)
+        s.firmware = 0x0420; s.rumbleKeepsHaptics = false
         #expect(DualSenseHID.effectsState(s, triggerFlags: 0)[0] & 0x03 == 0x03)
     }
 }

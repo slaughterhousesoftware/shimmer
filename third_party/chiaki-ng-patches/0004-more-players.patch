@@ -413,7 +413,7 @@ diff -ruN a/lib/src/session.c b/lib/src/session.c
 +{
 +	if(!passcode || strlen(passcode) != 4)
 +		return CHIAKI_ERR_INVALID_DATA;
-+	uint8_t payload[5] = { pad, (uint8_t)passcode[0], (uint8_t)passcode[1], (uint8_t)passcode[2], (uint8_t)passcode[3] };
++	uint8_t payload[8] = { pad, (uint8_t)passcode[0], (uint8_t)passcode[1], (uint8_t)passcode[2], (uint8_t)passcode[3], 0, 0, 0 }; // 8 bytes, as Sony and PXPlay
 +	return chiaki_ctrl_send_message(&session->ctrl, 0x8064, payload, sizeof(payload));
 +}
 +
