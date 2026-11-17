@@ -38,6 +38,15 @@ struct StreamHeader: View {
                     .foregroundStyle(subtitleIsLive ? Color.green : Color.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                // Where the machine is reached, under its status: part of the
+                // card that names it, not a settings row of its own.
+                if !address.isEmpty {
+                    Text(address)
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
             .layoutPriority(1)
             Spacer(minLength: 8)
@@ -50,7 +59,6 @@ struct StreamHeader: View {
     private var subtitle: String {
         if streamingHere { return model.hostStatusLine(for: host.id) }
         if model.isStreaming { return "Another stream is running" }
-        // The address has its own row under the card (Rex's Remote Address).
         return model.hostStatusLine(for: host.id)
     }
 

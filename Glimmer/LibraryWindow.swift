@@ -348,8 +348,8 @@ struct ComputersTab: View {
 
 
     /// A machine's page as System Settings lays one out: a grouped Form whose
-    /// first box is the machine itself (Stream / Picture in Picture), then its
-    /// address and what to stream, Video (and Controller on a PS5), and last
+    /// first box is the machine itself (its status and address, Stream /
+    /// Picture in Picture), then what to stream, Video (and Controller on a PS5), and last
     /// what ending the stream does.
     private func machinePage(for host: Host) -> some View {
         let chosen = apps.first { $0.name == (chosenAppName ?? model.heroTargetAppName) } ?? apps.first
@@ -359,18 +359,13 @@ struct ComputersTab: View {
                 StreamHeader(host: host, app: chosen,
                              address: model.selectedHostRouteAddress ?? model.dialAddress(for: host))
             }
-            Section {
-                addressRow(model.selectedHostRouteAddress ?? model.dialAddress(for: host))
-                if !host.isPlayStation && apps.isEmpty {
+            if !host.isPlayStation && apps.isEmpty {
+                Section {
                     noAppsNotice(for: host)
-                } else if apps.count > 1 {
-                    Picker("Game", selection: Binding(get: { chosen?.name ?? "" }, set: { chosenAppName = $0 })) {
-                        ForEach(apps) { app in
-                            Label { Text(app.name) } icon: { AppGlyphIcon(app: app) }
-                                .tag(app.name)
-                        }
-                    }
-                    .disabled(model.isStreaming)
+                }
+            } else if apps.count > 1 {
+                Section {
+                    gamePicker(chosen: chosen)
                 }
             }
             if host.isPlayStation {
@@ -393,9 +388,15 @@ struct ComputersTab: View {
         .toggleStyle(.switch)
     }
 
-    /// Where the machine is reached: a plain read-only row.
-    private func addressRow(_ address: String) -> some View {
-        LabeledContent("Address", value: address)
+    /// Which of the PC's apps Stream launches, when it has more than one.
+    private func gamePicker(chosen: LibraryApp?) -> some View {
+        Picker("Game", selection: Binding(get: { chosen?.name ?? "" }, set: { chosenAppName = $0 })) {
+            ForEach(apps) { app in
+                Label { Text(app.name) } icon: { AppGlyphIcon(app: app) }
+                    .tag(app.name)
+            }
+        }
+        .disabled(model.isStreaming)
     }
 
     /// What ending a stream does to the machine. Off, a PC's game keeps
