@@ -67,9 +67,10 @@ struct HostSystemLogo: View {
     }
 }
 
-/// A machine's icon: its platform's mark (see `body`), picked automatically
-/// from the distro its name gives, else its detected system; a PS5 is
-/// PlayStation.
+/// A machine as a round avatar, in the shape of Tailscale's account rows:
+/// a brand-coloured disc with its system's mark, and its status as a badge.
+/// Picked automatically - the distro its name gives (Bazzite's own artwork),
+/// else its detected system; a PS5 is PlayStation.
 struct HostAvatar: View {
     enum Mark: Equatable {
         case playStation
@@ -108,30 +109,87 @@ struct HostAvatar: View {
         return Self.mark(isPlayStation: host.isPlayStation, serverName: host.name, kind: kind)
     }
 
-    /// One icon library for every machine: Font Awesome's brand glyphs,
-    /// drawn plain in the text colour - Tux for any Linux, the PlayStation,
-    /// Windows and Apple marks - with no disc or tile behind them. Status is
-    /// said in words beside the icon, not with a dot on it.
     var body: some View {
-        Self.glyph(for: mark)
-            .resizable()
-            .scaledToFit()
-            .frame(width: size * 0.72, height: size * 0.72)
-            .frame(width: size, height: size)
-            .foregroundStyle(.primary)
-            .help(statusText ?? host.displayName)
-            .accessibilityLabel([Self.name(of: mark), statusText].compactMap { $0 }.joined(separator: ", "))
+        Self.disc(mark, size: size)
+        .frame(width: size, height: size)
+        // Tailscale's status dot (measured off its Settings window at 2x): a
+        // 10 pt dot centred 10 pt right of and below a 36 pt avatar's centre,
+        // set into a 1.5 pt gap cut out of the avatar - whatever is behind the
+        // row (the selection plate, the sidebar) shows through, no drawn ring.
+        .mask {
+            if status != nil {
+                ZStack {
+                    Rectangle()
+                    Circle()
+                        .frame(width: badge + 3, height: badge + 3)
+                        .position(x: size / 2 + badgeOffset, y: size / 2 + badgeOffset)
+                        .blendMode(.destinationOut)
+                }
+                .compositingGroup()
+            } else {
+                Rectangle()
+            }
+        }
+        .overlay {
+            if let status {
+                Circle()
+                    .fill(HostConnectionBadge.colour(for: status))
+                    .frame(width: badge, height: badge)
+                    .position(x: size / 2 + badgeOffset, y: size / 2 + badgeOffset)
+            }
+        }
+        .help(statusText ?? host.displayName)
+        .accessibilityLabel([Self.name(of: mark), statusText].compactMap { $0 }.joined(separator: ", "))
     }
 
-    static func glyph(for mark: Mark) -> Image {
+    /// The disc for a mark: the platform's colour with its mark in white.
+    @ViewBuilder
+    static func disc(_ mark: Mark, size: CGFloat) -> some View {
         switch mark {
-        case .playStation: Image("HostGlyph-playstation")
-        case .icon(.windows): Image("HostGlyph-windows")
-        case .icon(.macOS): Image("HostGlyph-apple")
-        case .icon(.computer), .icon(.automatic): Image(systemName: "desktopcomputer")
-        case .icon: Image("HostGlyph-linux")
+        case .playStation:
+            Circle().fill(colour(0x0070D1))
+                .overlay {
+                    Image(systemName: "playstation.logo")
+                        .resizable().scaledToFit()
+                        .frame(width: size * 0.56, height: size * 0.56)
+                        .foregroundStyle(.white)
+                }
+        case .icon(.bazzite):
+            // The official colour artwork, which includes its own disc, with
+            // its translucent monogram made solid white so it reads at 36 pt.
+            Image("HostLogo-bazzite").renderingMode(.original).resizable().scaledToFit()
+        case .icon(.chimeraOS), .icon(.computer), .icon(.automatic):
+            // ChimeraOS's only artwork is a detailed mascot that can't read at
+            // this size, so it gets a controller; a plain PC a computer.
+            Circle().fill(colour(mark == .icon(.chimeraOS) ? HostIcon.chimeraOS.backgroundRGB
+                                                            : HostIcon.computer.backgroundRGB))
+                .overlay {
+                    Image(systemName: mark == .icon(.chimeraOS) ? "gamecontroller.fill" : "desktopcomputer")
+                        .resizable().scaledToFit()
+                        .frame(width: size * 0.52, height: size * 0.52)
+                        .foregroundStyle(.white)
+                }
+        case .icon(let icon):
+            Circle().fill(colour(icon.backgroundRGB))
+                .overlay {
+                    Group {
+                        if icon == .macOS {
+                            Image(systemName: "apple.logo").resizable().scaledToFit()
+                                .frame(width: size * 0.5, height: size * 0.5)
+                        } else if let asset = icon.assetName {
+                            Image(asset)
+                                .renderingMode(icon == .chimeraOS ? .original : .template)
+                                .resizable().scaledToFit()
+                                .frame(width: size * 0.69, height: size * 0.69)
+                        }
+                    }
+                    .foregroundStyle(icon == .linux ? .black : .white)
+                }
         }
     }
+
+    private var badge: CGFloat { size * 10 / 36 }
+    private var badgeOffset: CGFloat { size * 10 / 36 }
 
     private static func name(of mark: Mark) -> String {
         switch mark {
@@ -139,9 +197,14 @@ struct HostAvatar: View {
         case .icon(let icon): icon.title
         }
     }
+
+    private static func colour(_ rgb: UInt32) -> Color {
+        Color(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255,
+              blue: Double(rgb & 255) / 255)
+    }
 }
 
-/// Status colours for the dot before a machine's status.
+/// Status colours for a machine's avatar dot.
 enum HostConnectionBadge {
     static func colour(for status: HostStatusIndicator) -> Color {
         switch status {

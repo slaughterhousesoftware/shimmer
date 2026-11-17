@@ -602,9 +602,9 @@ private struct NearbyPCRow: View {
 
 // MARK: - Sidebar row
 
-/// One machine: its icon, the name, and a word or two of status beneath, as
-/// Rex's sidebar says "Server / Running". The address and the full status
-/// are in the row's tooltip.
+/// One machine: its round avatar (its platform's colour and mark, status on
+/// its corner), the name, and the address beneath - the shape of Tailscale's
+/// account rows. The full status is in the row's tooltip.
 private struct HostRow: View {
     let host: Host
     let address: String
@@ -614,13 +614,13 @@ private struct HostRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            HostAvatar(host: host)
+            HostAvatar(host: host, status: status, statusText: statusText)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(host.displayName)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
-                Text(Self.shortStatus(statusText))
+                Text(address)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -630,7 +630,7 @@ private struct HostRow: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .frame(minHeight: SettingsMetrics.sidebarRowHeight)
-        .help("\(statusText)\n\(address)")
+        .help(statusText)
         // Tailscale's selected account: a flat grey plate (68,68,68 on its
         // dark sidebar) - the unemphasised selection colour.
         .background(
@@ -638,12 +638,6 @@ private struct HostRow: View {
                 .fill(selected ? Color(nsColor: .unemphasizedSelectedContentBackgroundColor) : Color.clear))
     }
 
-    /// The sidebar's short form: "Streaming" rather than "Streaming at
-    /// 1080p60 HDR", "Online" rather than "Online · status unavailable".
-    static func shortStatus(_ text: String) -> String {
-        if text.hasPrefix("Streaming") { return "Streaming" }
-        return text.components(separatedBy: " · ").first ?? text
-    }
 }
 
 // MARK: - App glyph

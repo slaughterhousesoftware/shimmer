@@ -72,7 +72,7 @@ struct StreamRow: View {
     @ViewBuilder
     private var icon: some View {
         if host.isPlayStation {
-            Image("HostGlyph-playstation").resizable().scaledToFit()
+            Image(systemName: "playstation.logo").resizable().scaledToFit()
                 .frame(width: 26, height: 26)
         } else if let app {
             AppGlyphIcon(app: app, size: 24)

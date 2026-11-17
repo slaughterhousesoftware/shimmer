@@ -11,10 +11,12 @@ are Shimmer presentation. The vector masters are retained in the asset catalog.
 - SteamOS: the Steam mark from Simple Icons, identifying the Valve operating system.
 - Other Linux marks: [Simple Icons](https://github.com/simple-icons/simple-icons/tree/c71c69e3a27e4436936b831c72643e6513b9f49b/icons), revision `c71c69e3a27e4436936b831c72643e6513b9f49b`. Individual sources, brand guidance, and license overrides are recorded in `simple-icons-metadata.json`. See `Simple-Icons-CC0.md` for the collection license. In particular, Debian is CC-BY-SA-3.0, Gentoo CC-BY-SA-2.5, NixOS CC-BY-4.0, and Garuda GPL-3.0-only. Fedora's brand terms are linked in the metadata.
 
-SVG path syntax is normalized for Apple CoreSVG. Bazzite retains the official
-colour mark’s gradient and translucent monogram, with its background presented
-as a circle and the monogram inset to fit. ChimeraOS also retains its original
-colours. The remaining marks are monochrome templates (white on a coloured
+SVG path syntax is normalized for Apple CoreSVG. Bazzite keeps the official
+colour mark's gradient disc, with its monogram drawn solid white (the press
+kit's version is translucent, which washes out at sidebar size). ChimeraOS's
+artwork is a detailed mascot that cannot read at 36 pt, so its avatar shows a
+game-controller symbol on its colour instead; the artwork stays in the asset
+catalog. The remaining marks are monochrome templates (white on a coloured
 avatar; Tux is black on yellow).
 
 Automatic selection is a hostname suggestion, not verified OS detection.
