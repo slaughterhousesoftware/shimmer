@@ -3,8 +3,8 @@
 //
 //  The first row of a machine's page: what Stream launches, with Picture in
 //  Picture and Stream beside it. A PS5's row is the console's home screen; a
-//  PC's row is its chosen app, and when the PC has more than one, an apps
-//  button joins Picture in Picture and Stream to choose another. The sidebar
+//  PC's row is its chosen app, and when the PC has more than one, the app's
+//  name is a menu like the page's others (its arrow in a grey square). The sidebar
 //  names the machine and its status, so the page doesn't repeat them. While
 //  this machine streams, the row shows the stream: its state, Picture in
 //  Picture (or back to the window), End Stream.
@@ -42,13 +42,20 @@ struct StreamRow: View {
 
     // MARK: Left: what streams
 
+    private var showsChooser: Bool { !host.isPlayStation && apps.count > 1 }
+
     private var leading: some View {
         HStack(spacing: 10) {
             icon
                 .frame(width: 22, height: 22)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).lineLimit(1)
+                if showsChooser {
+                    TitleChooser(title: title, apps: apps, chosen: app, choose: choose)
+                        .disabled(model.isStreaming)
+                } else {
+                    Text(title).lineLimit(1)
+                }
                 Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(subtitleIsLive ? Color.green : Color.secondary)
@@ -109,9 +116,6 @@ struct StreamRow: View {
                 Button("End Stream") { model.endStream() }
                     .tint(.red)
             } else {
-                if !host.isPlayStation && apps.count > 1 {
-                    AppsButton(apps: apps, chosen: app, choose: choose)
-                }
                 Button {
                     guard let launchable else { return }
                     model.pictureInPictureLaunchRequestedAt = Date()
@@ -182,11 +186,11 @@ struct HostStatusText: View {
 }
 
 
-/// Which of a PC's apps Stream launches: a button in the row's own group,
-/// beside Picture in Picture and Stream, that drops a native menu of the
-/// apps (icons, the current one checked) - the choice sits with the actions
-/// it changes rather than squeezed in beside the name.
-private struct AppsButton: View {
+/// Which of a PC's apps Stream launches: the row's title, with the pop-up
+/// arrow in the same grey square as the page's other menus, dropping a
+/// native menu of the apps (icons, the current one checked).
+private struct TitleChooser: View {
+    let title: String
     let apps: [LibraryApp]
     let chosen: LibraryApp?
     let choose: (String) -> Void
@@ -194,10 +198,24 @@ private struct AppsButton: View {
 
     var body: some View {
         Button(action: showMenu) {
-            Image(systemName: "square.grid.2x2").background(MenuAnchor(ref: anchor))
+            HStack(spacing: 8) {
+                Text(title).lineLimit(1)
+                // The pop-up arrow exactly as every menu on this page draws
+                // it (measured off Quality and Bitrate): a 20 pt circle at 6%
+                // of the text colour, the arrow in the text colour.
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(Color.primary.opacity(0.06)))
+            }
+            .contentShape(Rectangle())
+            .background(MenuAnchor(ref: anchor))
         }
+        .buttonStyle(.plain)
+        .fixedSize()
         .help("Choose which app to stream")
-        .accessibilityLabel("Choose app, \(chosen?.name ?? "none") selected")
+        .accessibilityLabel("App to stream, \(chosen?.name ?? "none")")
     }
 
     private func showMenu() {
@@ -211,8 +229,8 @@ private struct AppsButton: View {
             if #available(macOS 27, *) { item.preferredImageVisibility = .visible }
             menu.addItem(item)
         }
-        let below = view.isFlipped ? view.bounds.maxY + 8 : view.bounds.minY - 8
-        menu.popUp(positioning: nil, at: NSPoint(x: view.bounds.minX - 8, y: below), in: view)
+        let below = view.isFlipped ? view.bounds.maxY + 6 : view.bounds.minY - 6
+        menu.popUp(positioning: nil, at: NSPoint(x: view.bounds.minX - 10, y: below), in: view)
     }
 
     private static func image(for app: LibraryApp) -> NSImage? {
