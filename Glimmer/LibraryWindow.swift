@@ -348,8 +348,9 @@ struct ComputersTab: View {
 
 
     /// A machine's page as System Settings lays one out: a grouped Form whose
-    /// first box is the machine itself (Stream / Picture in Picture), what to
-    /// stream and what ending it does; then Video (and Controller on a PS5).
+    /// first box is the machine itself (Stream / Picture in Picture), then its
+    /// address and what to stream, Video (and Controller on a PS5), and last
+    /// what ending the stream does.
     private func machinePage(for host: Host) -> some View {
         let chosen = apps.first { $0.name == (chosenAppName ?? model.heroTargetAppName) } ?? apps.first
         return Form {
@@ -371,7 +372,6 @@ struct ComputersTab: View {
                     }
                     .disabled(model.isStreaming)
                 }
-                endOfStreamToggle(for: host)
             }
             if host.isPlayStation {
                 PlayStationSettingsPane(settings: .forConsole(host.id))
@@ -383,27 +383,19 @@ struct ComputersTab: View {
                     FormSectionHeader("Video")
                 }
             }
+            // What ending the stream does comes last, after the settings for
+            // the stream itself.
+            Section {
+                endOfStreamToggle(for: host)
+            }
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
     }
 
-    /// Where the machine is reached, with a copy button - Rex's Remote Address row.
+    /// Where the machine is reached: a plain read-only row.
     private func addressRow(_ address: String) -> some View {
-        LabeledContent {
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(address, forType: .string)
-            } label: {
-                Image(systemName: "doc.on.doc")
-            }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .help("Copy the address")
-        } label: {
-            Text("Address")
-            Text(address).textSelection(.enabled)
-        }
+        LabeledContent("Address", value: address)
     }
 
     /// What ending a stream does to the machine. Off, a PC's game keeps
