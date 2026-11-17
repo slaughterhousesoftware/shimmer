@@ -33,7 +33,7 @@ struct VideoPane: View {
         @Bindable var model = model
         Group {
             SettingsRow("Codec") {
-                CapsuleSegmentedPicker(selection: codecSelection, options: HostCodecPreference.allCases.map {
+                SettingsSegmentedControl(selection: codecSelection, options: HostCodecPreference.allCases.map {
                     .init(value: $0, title: $0 == .auto ? "Automatic" : $0.displayName)
                 })
             }

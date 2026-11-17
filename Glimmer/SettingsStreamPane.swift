@@ -139,7 +139,7 @@ struct StreamWindowPane: View {
         @Bindable var model = model
         Section {
             SettingsRow("Show the stream") {
-                CapsuleSegmentedPicker(selection: $model.streamDisplayMode, options: StreamDisplayMode.allCases.map {
+                SettingsSegmentedControl(selection: $model.streamDisplayMode, options: StreamDisplayMode.allCases.map {
                     .init(value: $0, title: $0.displayName, symbol: $0.settingsSymbol)
                 })
             }

@@ -16,12 +16,12 @@ struct PlayStationSettingsPane: View {
     var body: some View {
         Section {
             SettingsRow("Resolution") {
-                CapsuleSegmentedPicker(selection: $settings.height, options: [
+                SettingsSegmentedControl(selection: $settings.height, options: [
                     .init(value: 1080, title: "1080p"), .init(value: 720, title: "720p"),
                 ])
             }
             SettingsRow("Frame rate") {
-                CapsuleSegmentedPicker(selection: $settings.fps, options: [
+                SettingsSegmentedControl(selection: $settings.fps, options: [
                     .init(value: 60, title: "60 Hz"), .init(value: 30, title: "30 Hz"),
                 ])
             }
@@ -29,7 +29,7 @@ struct PlayStationSettingsPane: View {
                         automaticMbps: PlayStationSettings.presetBitrateMbps,
                         maxMbps: PlayStationSettings.bitrateRangeMbps.upperBound)
             SettingsRow("Codec") {
-                CapsuleSegmentedPicker(selection: $settings.hevc, options: [
+                SettingsSegmentedControl(selection: $settings.hevc, options: [
                     .init(value: true, title: "HEVC"), .init(value: false, title: "H.264"),
                 ])
             }
@@ -39,7 +39,7 @@ struct PlayStationSettingsPane: View {
             }
             .disabled(!settings.hevc)
             SettingsRow("Presentation") {
-                CapsuleSegmentedPicker(selection: $settings.presentation, options: [
+                SettingsSegmentedControl(selection: $settings.presentation, options: [
                     .init(value: .lowestLatency, title: "Lowest latency", symbol: "bolt"),
                     .init(value: .smooth, title: "Smooth", symbol: "film"),
                 ])

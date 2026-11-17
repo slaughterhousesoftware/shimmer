@@ -222,10 +222,14 @@ struct FormSectionHeader: View {
     }
 }
 
-/// Rex's segmented control, not AppKit's: a grey capsule track with the chosen
-/// option lifted onto a white pill (icon and title), where NSSegmentedControl
-/// fills the selected segment with the accent colour.
-struct CapsuleSegmentedPicker<Value: Hashable>: View {
+/// Rex's segmented control, built the way Rex builds it (read from Rex's
+/// binary, RexMacOS.SettingsSegmentedControl): a real NSSegmentedControl, not a
+/// SwiftUI imitation. What gives it the Liquid Glass pill instead of AppKit's
+/// accent-blue fill is `role = .tabs` (macOS 27) on a capsule border; the rest
+/// is Rex's sizing: the large control size (28 pt), the regular 13 pt system
+/// font, SF Symbols at the font's point size, and each segment as wide as its
+/// icon, title and 8 pt of padding a side.
+struct SettingsSegmentedControl<Value: Hashable>: NSViewRepresentable {
     struct Option {
         let value: Value
         let title: String
@@ -234,58 +238,77 @@ struct CapsuleSegmentedPicker<Value: Hashable>: View {
 
     @Binding var selection: Value
     let options: [Option]
-    @Namespace private var pill
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var colorScheme
 
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(options.indices, id: \.self) { index in
-                segment(options[index])
-            }
+    static var segmentHorizontalPadding: CGFloat { 8 }
+    /// The gap AppKit leaves between a segment's image and its label.
+    static var imageSpacing: CGFloat { 6 }
+
+    final class Coordinator: NSObject {
+        var parent: SettingsSegmentedControl
+        var configured: [String] = []
+        init(_ parent: SettingsSegmentedControl) { self.parent = parent }
+
+        @objc func selectSegment(_ sender: NSSegmentedControl) {
+            let index = sender.selectedSegment
+            guard parent.options.indices.contains(index) else { return }
+            parent.selection = parent.options[index].value
         }
-        .padding(2)
-        .background(Capsule().fill(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.07)))
-        .opacity(isEnabled ? 1 : 0.45)
-        .accessibilityElement(children: .contain)
     }
 
-    private func segment(_ option: Option) -> some View {
-        let chosen = option.value == selection
-        return Button {
-            guard !chosen else { return }
-            withAnimation(.snappy(duration: 0.22)) { selection = option.value }
-        } label: {
-            HStack(spacing: 5) {
-                if let symbol = option.symbol {
-                    Image(systemName: symbol).imageScale(.medium)
-                }
-                Text(option.title)
-            }
-            .font(.system(size: 13))
-            .foregroundStyle(chosen ? .primary : .secondary)
-            .padding(.horizontal, 11)
-            .frame(height: 24)
-            .background {
-                if chosen {
-                    Capsule()
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.18) : Color.white)
-                        .shadow(color: .black.opacity(0.14), radius: 1.5, y: 0.5)
-                        .overlay(Capsule().strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5))
-                        .matchedGeometryEffect(id: "pill", in: pill)
-                }
-            }
-            .contentShape(Capsule())
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl(frame: .zero)
+        control.trackingMode = .selectOne
+        control.target = context.coordinator
+        control.action = #selector(Coordinator.selectSegment(_:))
+        control.segmentStyle = .automatic
+        control.controlSize = .large
+        control.font = .systemFont(ofSize: NSFont.systemFontSize(for: .regular))
+        control.borderShape = .capsule
+        if #available(macOS 27, *) { control.role = .tabs }
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.parent = self
+        let signature = options.map { "\($0.title)|\($0.symbol ?? "")" }
+        if context.coordinator.configured != signature {
+            context.coordinator.configured = signature
+            configureSegments(of: control)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(option.title)
-        .accessibilityAddTraits(chosen ? .isSelected : [])
+        control.selectedSegment = options.firstIndex { $0.value == selection } ?? -1
+        let enabled = context.environment.isEnabled
+        control.isEnabled = enabled
+        control.alphaValue = enabled ? 1 : 0.5
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
+        nsView.intrinsicContentSize
+    }
+
+    private func configureSegments(of control: NSSegmentedControl) {
+        let font = control.font ?? .systemFont(ofSize: NSFont.systemFontSize(for: .regular))
+        control.segmentDistribution = .fit
+        control.segmentCount = options.count
+        for (index, option) in options.enumerated() {
+            let image = option.symbol
+                .flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }?
+                .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
+            image?.isTemplate = true
+            control.setImage(image, forSegment: index)
+            control.setLabel(option.title, forSegment: index)
+            let titleWidth = (option.title as NSString).size(withAttributes: [.font: font]).width
+            let imageWidth = image.map { $0.size.width + Self.imageSpacing } ?? 0
+            control.setWidth((titleWidth + imageWidth + 2 * Self.segmentHorizontalPadding).rounded(.up), forSegment: index)
+        }
     }
 }
 
 /// A grouped-Form row whose title is centred against a taller control (the
-/// capsule picker): LabeledContent aligns by text baseline, which left the
-/// title riding high beside the 28pt capsule.
+/// segmented control): LabeledContent aligns by text baseline, which left the
+/// title riding high beside the 28pt control.
 struct SettingsRow<Control: View>: View {
     let title: String
     @ViewBuilder var control: Control
