@@ -102,6 +102,11 @@ extension AppModel {
     }
 
     func runDebugAutomationIfRequested() {
+        // `--debug-render-avatars=<file.png>`: every host avatar drawn at 4x
+        // (no screen, no screenshot), to judge the marks' size and centring.
+        if let path = Self.debugKnob("render-avatars") {
+            HostAvatar.renderGallery(to: URL(fileURLWithPath: path))
+        }
         // `--debug-cycle=<host>:<sec>[,<host>:<sec>...]`: a stress loop for
         // stream start/stop - stream each host for up to <sec> (randomised
         // down to half), end it, wait a random 0.3-4 s, go on to the next,
