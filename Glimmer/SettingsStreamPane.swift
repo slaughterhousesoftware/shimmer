@@ -55,7 +55,7 @@ struct StreamPane: View {
     /// Rows of the page's Video section (a grouped Form, System Settings style).
     var body: some View {
         @Bindable var model = model
-        ResolutionFrameRateRow(
+        ResolutionFrameRateRows(
             resolution: resolutionSelection,
             resolutions: ResolutionChoice.all.map { (resolutionLabel($0), $0) },
             frameRate: frameRateSelection,

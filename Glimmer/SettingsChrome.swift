@@ -306,111 +306,23 @@ struct SettingsSegmentedControl<Value: Hashable>: NSViewRepresentable {
     }
 }
 
-/// Resolution and frame rate on one row: one capsule split into two menus,
-/// `[1920 × 1080 ⌄ | 60 Hz ⌄]`, the same shape and height as the page's
-/// segmented controls, so the pair reads as one control rather than two
-/// popups that happen to share a row.
-struct ResolutionFrameRateRow<Resolution: Hashable, FrameRate: Hashable>: View {
+/// Resolution and frame rate as two standard menu rows, as System Settings ›
+/// Displays lays out Resolution and Refresh rate. (Tried and dropped
+/// 2026-11-17: both menus on one row, then one capsule split into two menus;
+/// neither read as cohesive as the plain rows.)
+struct ResolutionFrameRateRows<Resolution: Hashable, FrameRate: Hashable>: View {
     @Binding var resolution: Resolution
     let resolutions: [(title: String, value: Resolution)]
     @Binding var frameRate: FrameRate
     let frameRates: [(title: String, value: FrameRate)]
 
     var body: some View {
-        LabeledContent("Resolution") {
-            SettingsMenuSegments(segments: [
-                .init(name: "Resolution", selection: $resolution, options: resolutions),
-                .init(name: "Frame rate", selection: $frameRate, options: frameRates),
-            ])
+        Picker("Resolution", selection: $resolution) {
+            ForEach(resolutions.indices, id: \.self) { Text(resolutions[$0].title).tag(resolutions[$0].value) }
         }
-    }
-}
-
-/// A capsule of menu segments: AppKit's NSSegmentedControl in momentary mode
-/// with a menu on each segment, styled like SettingsSegmentedControl (large,
-/// capsule, 13 pt). A click opens that segment's menu, the current value
-/// checked. Each segment is as wide as its longest option, so picking a
-/// shorter value never resizes the capsule or shifts its neighbour.
-struct SettingsMenuSegments: NSViewRepresentable {
-    struct Segment {
-        struct Item {
-            let title: String
-            let isSelected: Bool
-            let choose: () -> Void
+        Picker("Frame rate", selection: $frameRate) {
+            ForEach(frameRates.indices, id: \.self) { Text(frameRates[$0].title).tag(frameRates[$0].value) }
         }
-        let name: String
-        let items: [Item]
-
-        init<V: Hashable>(name: String, selection: Binding<V>, options: [(title: String, value: V)]) {
-            self.name = name
-            items = options.map { option in
-                Item(title: option.title, isSelected: option.value == selection.wrappedValue,
-                     choose: { selection.wrappedValue = option.value })
-            }
-        }
-
-        var title: String { items.first(where: \.isSelected)?.title ?? items.first?.title ?? "" }
-    }
-
-    let segments: [Segment]
-
-    /// Rex's segment padding, plus room for the menu indicator.
-    static var segmentHorizontalPadding: CGFloat { 8 }
-    static var menuIndicatorWidth: CGFloat { 14 }
-
-    final class Coordinator: NSObject {
-        var segments: [Segment] = []
-
-        @objc func choose(_ item: NSMenuItem) {
-            guard let (segment, index) = item.representedObject as? (Int, Int),
-                  segments.indices.contains(segment),
-                  segments[segment].items.indices.contains(index) else { return }
-            segments[segment].items[index].choose()
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NSSegmentedControl {
-        let control = NSSegmentedControl(frame: .zero)
-        control.trackingMode = .momentary
-        control.segmentStyle = .automatic
-        control.controlSize = .large
-        control.font = .systemFont(ofSize: NSFont.systemFontSize(for: .regular))
-        control.borderShape = .capsule
-        return control
-    }
-
-    func updateNSView(_ control: NSSegmentedControl, context: Context) {
-        context.coordinator.segments = segments
-        let font = control.font ?? .systemFont(ofSize: NSFont.systemFontSize(for: .regular))
-        control.segmentCount = segments.count
-        for (index, segment) in segments.enumerated() {
-            control.setLabel(segment.title, forSegment: index)
-            control.setToolTip(segment.name, forSegment: index)
-            control.setShowsMenuIndicator(true, forSegment: index)
-            let menu = NSMenu(title: segment.name)
-            for (itemIndex, entry) in segment.items.enumerated() {
-                let item = NSMenuItem(title: entry.title, action: #selector(Coordinator.choose(_:)), keyEquivalent: "")
-                item.target = context.coordinator
-                item.representedObject = (index, itemIndex)
-                item.state = entry.isSelected ? .on : .off
-                menu.addItem(item)
-            }
-            control.setMenu(menu, forSegment: index)
-            let widest = segment.items
-                .map { ($0.title as NSString).size(withAttributes: [.font: font]).width }
-                .max() ?? 0
-            control.setWidth((widest + Self.menuIndicatorWidth + 2 * Self.segmentHorizontalPadding).rounded(.up),
-                             forSegment: index)
-        }
-        let enabled = context.environment.isEnabled
-        control.isEnabled = enabled
-        control.alphaValue = enabled ? 1 : 0.5
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
-        nsView.intrinsicContentSize
     }
 }
 
