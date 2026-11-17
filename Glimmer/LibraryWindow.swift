@@ -360,8 +360,6 @@ struct ComputersTab: View {
                 } else {
                     StreamRow(host: host, apps: apps, app: chosen, choose: { chosenAppName = $0 })
                 }
-            } header: {
-                FormSectionHeader("Stream")
             }
             if host.isPlayStation {
                 PlayStationSettingsPane(settings: .forConsole(host.id))
