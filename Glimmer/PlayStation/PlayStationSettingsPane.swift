@@ -11,20 +11,16 @@ import SwiftUI
 struct PlayStationSettingsPane: View {
     @Bindable var settings: PlayStationSettings
 
-    /// The page's Video and Controller sections (a grouped Form). Two-way
-    /// choices are segmented, as Rex lays out its few-option rows.
+    /// The page's Video and Controller sections (a grouped Form). Resolution
+    /// and frame rate share a row; other two-way choices are segmented, as Rex
+    /// lays out its few-option rows.
     var body: some View {
         Section {
-            SettingsRow("Resolution") {
-                SettingsSegmentedControl(selection: $settings.height, options: [
-                    .init(value: 1080, title: "1080p"), .init(value: 720, title: "720p"),
-                ])
-            }
-            SettingsRow("Frame rate") {
-                SettingsSegmentedControl(selection: $settings.fps, options: [
-                    .init(value: 60, title: "60 Hz"), .init(value: 30, title: "30 Hz"),
-                ])
-            }
+            ResolutionFrameRateRow(
+                resolution: $settings.height,
+                resolutions: [("1920 × 1080", 1080), ("1280 × 720", 720)],
+                frameRate: $settings.fps,
+                frameRates: [("60 Hz", 60), ("30 Hz", 30)])
             BitrateMenu(automatic: $settings.bitrateAuto, mbps: $settings.bitrateMbps,
                         automaticMbps: PlayStationSettings.presetBitrateMbps,
                         maxMbps: PlayStationSettings.bitrateRangeMbps.upperBound)

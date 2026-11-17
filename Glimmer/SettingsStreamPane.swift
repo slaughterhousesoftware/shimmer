@@ -18,7 +18,7 @@ import SwiftUI
 struct StreamPane: View {
     @Environment(AppModel.self) private var model
 
-    /// "Custom…" was picked while the Custom number still equals a standard
+    /// "Custom" was picked while the Custom number still equals a standard
     /// rate; without this the picker would snap back to that rate's row and
     /// the field would never appear. Cleared by any other pick.
     @State private var customFrameRateEntry = false
@@ -62,7 +62,9 @@ struct StreamPane: View {
     private func frameRateLabel(_ choice: FrameRateChoice) -> String {
         switch choice {
         case .fixed(let hz): return "\(hz) Hz"
-        case .custom: return "Custom…"
+        // No ellipsis: closed, "Custom…" reads as a truncated label. Picking it
+        // shows the Custom frame rate row below.
+        case .custom: return "Custom"
         }
     }
 
@@ -76,12 +78,11 @@ struct StreamPane: View {
     /// Rows of the page's Video section (a grouped Form, System Settings style).
     var body: some View {
         @Bindable var model = model
-        Picker("Resolution", selection: resolutionSelection) {
-            ForEach(ResolutionChoice.all, id: \.self) { Text(resolutionLabel($0)).tag($0) }
-        }
-        Picker("Frame rate", selection: frameRateSelection) {
-            ForEach(FrameRateChoice.all, id: \.self) { Text(frameRateLabel($0)).tag($0) }
-        }
+        ResolutionFrameRateRow(
+            resolution: resolutionSelection,
+            resolutions: ResolutionChoice.all.map { (resolutionLabel($0), $0) },
+            frameRate: frameRateSelection,
+            frameRates: FrameRateChoice.all.map { (frameRateLabel($0), $0) })
         if frameRateSelection.wrappedValue == .custom {
             LabeledContent("Custom frame rate") {
                 HStack(spacing: 4) {

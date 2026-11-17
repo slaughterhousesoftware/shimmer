@@ -306,6 +306,48 @@ struct SettingsSegmentedControl<Value: Hashable>: NSViewRepresentable {
     }
 }
 
+/// Resolution and frame rate on one row, as both server pages had them before
+/// the grouped layout: two menus side by side at the row's trailing edge. Each
+/// menu keeps the width of its widest value, so changing one never slides the
+/// other along the row, and neither stretches or truncates (fixedSize).
+struct ResolutionFrameRateRow<Resolution: Hashable, FrameRate: Hashable>: View {
+    @Binding var resolution: Resolution
+    let resolutions: [(title: String, value: Resolution)]
+    @Binding var frameRate: FrameRate
+    let frameRates: [(title: String, value: FrameRate)]
+
+    var body: some View {
+        LabeledContent("Resolution") {
+            HStack(spacing: 6) {
+                Self.menu("Resolution", $resolution, resolutions)
+                Self.menu("Frame rate", $frameRate, frameRates)
+            }
+        }
+    }
+
+    private static func menu<V: Hashable>(_ title: String, _ selection: Binding<V>,
+                                          _ options: [(title: String, value: V)]) -> some View {
+        ZStack(alignment: .trailing) {
+            // One invisible copy per value: the stack takes the widest.
+            ForEach(options.indices, id: \.self) { index in
+                picker(title, .constant(options[index].value), options)
+                    .hidden()
+                    .accessibilityHidden(true)
+            }
+            picker(title, selection, options)
+        }
+    }
+
+    private static func picker<V: Hashable>(_ title: String, _ selection: Binding<V>,
+                                            _ options: [(title: String, value: V)]) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(options.indices, id: \.self) { Text(options[$0].title).tag(options[$0].value) }
+        }
+        .labelsHidden()
+        .fixedSize()
+    }
+}
+
 /// A grouped-Form row whose title is centred against a taller control (the
 /// segmented control): LabeledContent aligns by text baseline, which left the
 /// title riding high beside the 28pt control.
