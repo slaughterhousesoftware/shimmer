@@ -221,3 +221,85 @@ struct FormSectionHeader: View {
         Text(title).padding(.top, -14)
     }
 }
+
+/// Rex's segmented control, not AppKit's: a grey capsule track with the chosen
+/// option lifted onto a white pill (icon and title), where NSSegmentedControl
+/// fills the selected segment with the accent colour.
+struct CapsuleSegmentedPicker<Value: Hashable>: View {
+    struct Option {
+        let value: Value
+        let title: String
+        var symbol: String? = nil
+    }
+
+    @Binding var selection: Value
+    let options: [Option]
+    @Namespace private var pill
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options.indices, id: \.self) { index in
+                segment(options[index])
+            }
+        }
+        .padding(2)
+        .background(Capsule().fill(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.07)))
+        .opacity(isEnabled ? 1 : 0.45)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func segment(_ option: Option) -> some View {
+        let chosen = option.value == selection
+        return Button {
+            guard !chosen else { return }
+            withAnimation(.snappy(duration: 0.22)) { selection = option.value }
+        } label: {
+            HStack(spacing: 5) {
+                if let symbol = option.symbol {
+                    Image(systemName: symbol).imageScale(.medium)
+                }
+                Text(option.title)
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(chosen ? .primary : .secondary)
+            .padding(.horizontal, 11)
+            .frame(height: 24)
+            .background {
+                if chosen {
+                    Capsule()
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.18) : Color.white)
+                        .shadow(color: .black.opacity(0.14), radius: 1.5, y: 0.5)
+                        .overlay(Capsule().strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5))
+                        .matchedGeometryEffect(id: "pill", in: pill)
+                }
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(option.title)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+}
+
+/// A grouped-Form row whose title is centred against a taller control (the
+/// capsule picker): LabeledContent aligns by text baseline, which left the
+/// title riding high beside the 28pt capsule.
+struct SettingsRow<Control: View>: View {
+    let title: String
+    @ViewBuilder var control: Control
+
+    init(_ title: String, @ViewBuilder control: () -> Control) {
+        self.title = title
+        self.control = control()
+    }
+
+    var body: some View {
+        HStack(alignment: .center) {
+            Text(title)
+            Spacer(minLength: 12)
+            control
+        }
+    }
+}

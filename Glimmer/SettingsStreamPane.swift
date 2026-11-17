@@ -138,14 +138,11 @@ struct StreamWindowPane: View {
     var body: some View {
         @Bindable var model = model
         Section {
-            Picker(selection: $model.streamDisplayMode) {
-                ForEach(StreamDisplayMode.allCases) { mode in
-                    Label(mode.displayName, systemImage: mode.settingsSymbol).tag(mode)
-                }
-            } label: {
-                Text("Show the stream")
+            SettingsRow("Show the stream") {
+                CapsuleSegmentedPicker(selection: $model.streamDisplayMode, options: StreamDisplayMode.allCases.map {
+                    .init(value: $0, title: $0.displayName, symbol: $0.settingsSymbol)
+                })
             }
-            .pickerStyle(.segmented)
             Toggle(isOn: $model.autoPictureInPicture) {
                 Text("Picture in Picture when you switch away")
                 Text("Moves the stream into a floating window when you switch apps.")

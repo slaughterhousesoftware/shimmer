@@ -32,14 +32,11 @@ struct VideoPane: View {
     var body: some View {
         @Bindable var model = model
         Group {
-            Picker(selection: codecSelection) {
-                ForEach(HostCodecPreference.allCases, id: \.self) {
-                    Text($0 == .auto ? "Automatic" : $0.displayName).tag($0)
-                }
-            } label: {
-                Text("Codec")
+            SettingsRow("Codec") {
+                CapsuleSegmentedPicker(selection: codecSelection, options: HostCodecPreference.allCases.map {
+                    .init(value: $0, title: $0 == .auto ? "Automatic" : $0.displayName)
+                })
             }
-            .pickerStyle(.segmented)
             .help("Automatic uses AV1 when the PC and this Mac both can, else HEVC.")
             .disabled(model.selectedHost == nil)
             Toggle(isOn: $model.customHDR) {
