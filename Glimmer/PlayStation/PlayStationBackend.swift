@@ -95,7 +95,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// seats a console user by PSN account (ctrl 0x68); one it refuses (no
     /// such user on the console, a passcode) stays merged.
     private var seats: [UInt8: UInt8] = [:]
-    /// The pad that is player 1: the first to send input (`lock`).
+    /// The pad that is player 1: pad 0, else the first to send input (`lock`).
     private var primaryPad: UInt8?
     /// Seats asked for and not answered yet: seat → pad (`lock`).
     private var pendingSeats: [UInt8: UInt8] = [:]
@@ -1195,13 +1195,16 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     // MARK: More players
 
-    /// The first pad to send input is player 1. Any other pad asks the console
+    /// Pad 0 (else the first pad to send input) is player 1. Any other pad asks the console
     /// to seat the next configured account as player 2-4; until it answers (or
     /// if it refuses) that pad stays merged into player 1, as before.
     private func askForSeat(_ num: UInt8) {
         guard num != Self.keyboardPadNumber else { return }
         lock.withLock {
             guard connected, let session else { return }
+            // Pad 0 (the player-1 light) is player 1, even when another pad's
+            // stick jitter reached us first - as long as that one isn't seated.
+            if num == 0, let p = primaryPad, p != 0, seats[p] == nil, !pendingSeats.values.contains(p) { primaryPad = 0 }
             guard let primary = primaryPad else { primaryPad = num; return }
             guard num != primary, seats[num] == nil, !pendingSeats.values.contains(num) else { return }
             let taken = Set(seats.values).union(pendingSeats.keys).union(refusedSeats)
