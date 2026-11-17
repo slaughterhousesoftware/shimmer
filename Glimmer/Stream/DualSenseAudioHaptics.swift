@@ -358,6 +358,10 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
     static func start(usbLocation: UInt32? = nil, excluding: Set<UInt32> = [],
                       onLost: @escaping @Sendable () -> Void) -> DualSenseAudioHaptics? {
         guard let (device, name) = findDevice(usbLocation: usbLocation, excluding: excluding) else { return nil }
+        // The pad's audio device volume scales the actuator channels too: at
+        // the MacBook's 0.0 (2026-11-16) haptics came out weak or not at all.
+        // Full volume while we drive it; the user's level back on stop.
+        let savedVolumes = DeviceVolume.raiseToFull(device)
         let engine = AVAudioEngine()
         guard let format = bind(engine, to: device) else { return nil }
         let shared = Shared(HapticsBuffer(outputRate: format.sampleRate))
@@ -385,6 +389,7 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
         do { try engine.start() } catch { return nil }
         let player = DualSenseAudioHaptics(engine: engine, source: source, format: format, shared: shared,
                                            deviceName: name, onLost: onLost)
+        player.restoreVolumes = { DeviceVolume.restore(device, savedVolumes) }
         // The engine posts a configuration change right after it starts on the
         // pad (and again if the device's format moves): restart it then, and
         // give up only when the pad is gone.
@@ -502,7 +507,12 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         engine.stop()
+        restoreVolumes?()
+        restoreVolumes = nil
     }
+
+    /// Puts the pad's audio device volume back (set by `start`).
+    var restoreVolumes: (() -> Void)?
 
     /// The first output device named like a DualSense with at least 4 channels
     /// - the one at `usbLocation` when given. A USB audio device's UID carries
@@ -567,5 +577,57 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
         guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, raw) == noErr else { return 0 }
         return UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
             .reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+}
+
+/// A CoreAudio device's output volume and mute, per element (0 = master).
+enum DeviceVolume {
+    typealias Saved = [(element: UInt32, volume: Float32?, mute: UInt32?)]
+
+    /// Every settable output volume on `device` to 1 and mute off; returns
+    /// what was there.
+    static func raiseToFull(_ device: AudioDeviceID) -> Saved {
+        var saved: Saved = []
+        for element: UInt32 in 0...4 {
+            let volume = get(device, kAudioDevicePropertyVolumeScalar, element, as: Float32.self)
+            let mute = get(device, kAudioDevicePropertyMute, element, as: UInt32.self)
+            guard volume != nil || mute != nil else { continue }
+            saved.append((element, volume, mute))
+            if volume != nil { set(device, kAudioDevicePropertyVolumeScalar, element, Float32(1)) }
+            if mute != nil { set(device, kAudioDevicePropertyMute, element, UInt32(0)) }
+        }
+        if let master = saved.first(where: { $0.element == 0 })?.volume, master < 1 {
+            Diag.notice("DualSense audio volume was \(Int(master * 100))% - full while the haptics play", "Controller")
+        }
+        return saved
+    }
+
+    static func restore(_ device: AudioDeviceID, _ saved: Saved) {
+        for entry in saved {
+            if let volume = entry.volume { set(device, kAudioDevicePropertyVolumeScalar, entry.element, volume) }
+            if let mute = entry.mute { set(device, kAudioDevicePropertyMute, entry.element, mute) }
+        }
+    }
+
+    private static func address(_ selector: AudioObjectPropertySelector, _ element: UInt32) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioDevicePropertyScopeOutput, mElement: element)
+    }
+
+    private static func get<T>(_ device: AudioDeviceID, _ selector: AudioObjectPropertySelector,
+                               _ element: UInt32, as: T.Type) -> T? where T: Numeric {
+        var a = address(selector, element)
+        var settable: DarwinBoolean = false
+        guard AudioObjectHasProperty(device, &a), AudioObjectIsPropertySettable(device, &a, &settable) == noErr,
+              settable.boolValue else { return nil }
+        var value: T = 0
+        var size = UInt32(MemoryLayout<T>.size)
+        return AudioObjectGetPropertyData(device, &a, 0, nil, &size, &value) == noErr ? value : nil
+    }
+
+    private static func set<T>(_ device: AudioDeviceID, _ selector: AudioObjectPropertySelector,
+                               _ element: UInt32, _ value: T) {
+        var a = address(selector, element)
+        var v = value
+        _ = AudioObjectSetPropertyData(device, &a, 0, nil, UInt32(MemoryLayout<T>.size), &v)
     }
 }
