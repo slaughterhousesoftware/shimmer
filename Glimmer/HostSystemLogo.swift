@@ -146,7 +146,7 @@ struct HostAvatar: View {
     /// Every mark is sized by one rule so none looks bigger than another:
     /// each asset is cropped to its own artwork (no built-in margin), then
     /// drawn at the same optical area - the geometric mean of its width and
-    /// height is half the disc - with its longest side capped at 64%, so a
+    /// height is 62% of the disc - with its longest side capped at 78%, so a
     /// wide PlayStation mark and a tall Tux carry the same weight as a round
     /// Fedora. A mark that is nearly all ink (Windows' four panes) still
     /// looks heavier than a line drawing (Tux, Debian's swirl), so each is
@@ -167,10 +167,10 @@ struct HostAvatar: View {
     }
 
     static func glyphFrame(aspect: CGFloat, size: CGFloat) -> CGSize {
-        let side = size * 0.5
+        let side = size * 0.62
         var width = side * aspect.squareRoot()
         var height = side / aspect.squareRoot()
-        let longest = max(width, height), cap = size * 0.64
+        let longest = max(width, height), cap = size * 0.78
         if longest > cap {
             width *= cap / longest
             height *= cap / longest
