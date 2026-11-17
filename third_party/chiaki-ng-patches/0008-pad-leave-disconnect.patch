@@ -1,0 +1,62 @@
+diff -ruN a/lib/include/chiaki/streamconnection.h b/lib/include/chiaki/streamconnection.h
+--- a/lib/include/chiaki/streamconnection.h
++++ b/lib/include/chiaki/streamconnection.h
+@@ -89,6 +89,7 @@
+ 	double measured_bitrate;
+ } ChiakiStreamConnection;
+ 
++CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_send_pad_disconnected(ChiakiStreamConnection *stream_connection, uint8_t pad);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_init(ChiakiStreamConnection *stream_connection, ChiakiSession *session, double packet_loss_max);
+ CHIAKI_EXPORT void chiaki_stream_connection_fini(ChiakiStreamConnection *stream_connection);
+ 
+diff -ruN a/lib/src/session.c b/lib/src/session.c
+--- a/lib/src/session.c
++++ b/lib/src/session.c
+@@ -395,7 +395,10 @@
+ 		chiaki_feedback_sender_remove_pad(&session->stream_connection.feedback_sender, pad);
+ 	chiaki_mutex_unlock(&session->stream_connection.feedback_sender_mutex);
+ 	uint8_t payload[1] = { pad };
+-	return chiaki_ctrl_send_message(&session->ctrl, 0x09, payload, sizeof(payload));
++	err = chiaki_ctrl_send_message(&session->ctrl, 0x09, payload, sizeof(payload));
++	// and the Takion side, as PXPlay and chiaki-ng-androidtv do on a leave
++	chiaki_stream_connection_send_pad_disconnected(&session->stream_connection, pad);
++	return err;
+ }
+ 
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_set_login_pin(ChiakiSession *session, const uint8_t *pin, size_t pin_size)
+diff -ruN a/lib/src/streamconnection.c b/lib/src/streamconnection.c
+--- a/lib/src/streamconnection.c
++++ b/lib/src/streamconnection.c
+@@ -1270,6 +1270,32 @@
+ 	return err;
+ }
+ 
++/**
++ * Shimmer: pad `pad` (1-3) disconnected, as PXPlay and chiaki-ng-androidtv
++ * send it after ctrl 0x09: controller_id set, connected=false, no type.
++ */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_send_pad_disconnected(ChiakiStreamConnection *stream_connection, uint8_t pad)
++{
++	tkproto_TakionMessage msg;
++	memset(&msg, 0, sizeof(msg));
++	msg.type = tkproto_TakionMessage_PayloadType_CONTROLLERCONNECTION;
++	msg.has_controller_connection_payload = true;
++	msg.controller_connection_payload.has_connected = true;
++	msg.controller_connection_payload.connected = false;
++	msg.controller_connection_payload.has_controller_id = true;
++	msg.controller_connection_payload.controller_id = pad;
++	msg.controller_connection_payload.has_controller_type = false;
++
++	uint8_t buf[256];
++	pb_ostream_t stream = pb_ostream_from_buffer(buf, sizeof(buf));
++	if(!pb_encode(&stream, tkproto_TakionMessage_fields, &msg))
++	{
++		CHIAKI_LOGE(stream_connection->log, "StreamConnection pad disconnect protobuf encoding failed");
++		return CHIAKI_ERR_UNKNOWN;
++	}
++	return chiaki_takion_send_message_data(&stream_connection->takion, 1, 1, buf, stream.bytes_written, NULL);
++}
++
+ static ChiakiErrorCode stream_connection_send_controller_connection(ChiakiStreamConnection *stream_connection)
+ {
+ 	ChiakiSession *session = stream_connection->session;
