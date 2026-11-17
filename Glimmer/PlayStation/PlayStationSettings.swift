@@ -19,6 +19,19 @@ final class PlayStationSettings {
 
     /// One console's settings - the same instance every time, so the
     /// settings page and the stream it starts agree.
+    /// The console users who play as players 2-4 when more controllers join,
+    /// as base64 PSN account IDs (8 bytes, little-endian - the form Remote
+    /// Play registration uses) in `PS5.extraPlayers`. Each must already be a
+    /// user on the console.
+    nonisolated static var extraPlayerAccounts: [UInt64] {
+        (UserDefaults.standard.stringArray(forKey: "PS5.extraPlayers") ?? []).compactMap(accountID(base64:))
+    }
+
+    nonisolated static func accountID(base64: String) -> UInt64? {
+        guard let data = Data(base64Encoded: base64), data.count == 8 else { return nil }
+        return data.enumerated().reduce(UInt64(0)) { $0 | UInt64($1.element) << (8 * UInt64($1.offset)) }
+    }
+
     static func forConsole(_ hostID: String) -> PlayStationSettings {
         if let known = byConsole[hostID] { return known }
         let made = PlayStationSettings(hostID: hostID)

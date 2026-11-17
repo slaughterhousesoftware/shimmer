@@ -63,6 +63,7 @@ extension AppModel {
         }
         let displayCanShowHDR = (NSScreen.main?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1
         options.codec = !s.hevc ? .h264 : (s.hdr && displayCanShowHDR ? .h265HDR : .h265)
+        options.extraPlayerAccounts = PlayStationSettings.extraPlayerAccounts
         return options
     }
 

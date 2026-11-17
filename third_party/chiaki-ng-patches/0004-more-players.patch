@@ -1,0 +1,480 @@
+diff -ruN a/lib/include/chiaki/feedback.h b/lib/include/chiaki/feedback.h
+--- a/lib/include/chiaki/feedback.h
++++ b/lib/include/chiaki/feedback.h
+@@ -95,6 +95,20 @@
+  * so every event needs a packet of its own.
+  * @return true if any event was pushed
+  */
++/**
++ * Shimmer: a player joining (or leaving) as pad `pad` (1-3), as the history's
++ * presence event [0x80|pad, 0xbf] (joined) / [0x80|pad, 0x9f] (left).
++ */
++CHIAKI_EXPORT void chiaki_feedback_history_event_set_presence(ChiakiFeedbackHistoryEvent *event, uint8_t pad, bool joined);
++
++/**
++ * Shimmer: record_state for pad `pad` (0-3): every event carries the pad in
++ * the low two bits of its first byte.
++ */
++CHIAKI_EXPORT bool chiaki_feedback_history_buffer_record_state_pad(ChiakiFeedbackHistoryBuffer *feedback_history_buffer, ChiakiLog *log,
++		const ChiakiControllerState *state_prev, const ChiakiControllerState *state_now, uint8_t pad,
++		ChiakiFeedbackHistoryEventPushedCallback event_pushed, void *event_pushed_user);
++
+ CHIAKI_EXPORT bool chiaki_feedback_history_buffer_record_state(ChiakiFeedbackHistoryBuffer *feedback_history_buffer, ChiakiLog *log,
+ 		const ChiakiControllerState *state_prev, const ChiakiControllerState *state_now,
+ 		ChiakiFeedbackHistoryEventPushedCallback event_pushed, void *event_pushed_user);
+diff -ruN a/lib/include/chiaki/feedbacksender.h b/lib/include/chiaki/feedbacksender.h
+--- a/lib/include/chiaki/feedbacksender.h
++++ b/lib/include/chiaki/feedbacksender.h
+@@ -10,6 +10,7 @@
+ 
+ #define CHIAKI_FEEDBACK_HISTORY_PACKET_BUF_SIZE 0x300
+ #define CHIAKI_FEEDBACK_HISTORY_PACKET_QUEUE_SIZE 0x40
++#define CHIAKI_FEEDBACK_SENDER_PADS 4
+ 
+ #ifdef __cplusplus
+ extern "C" {
+@@ -46,6 +47,12 @@
+ 	ChiakiControllerState controller_state;
+ 	bool controller_state_changed;
+ 	bool history_dirty;
++	// Shimmer: pads 1-3 (more players, seated with chiaki_session_join_user); index 0 unused
++	bool pad_active[CHIAKI_FEEDBACK_SENDER_PADS];
++	bool pad_changed[CHIAKI_FEEDBACK_SENDER_PADS];
++	ChiakiControllerState pad_state[CHIAKI_FEEDBACK_SENDER_PADS];
++	ChiakiControllerState pad_state_prev[CHIAKI_FEEDBACK_SENDER_PADS];
++	ChiakiControllerState pad_history_prev[CHIAKI_FEEDBACK_SENDER_PADS];
+ 	ChiakiMutex state_mutex;
+ 	ChiakiCond state_cond;
+ } ChiakiFeedbackSender;
+@@ -53,6 +60,10 @@
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_feedback_sender_init(ChiakiFeedbackSender *feedback_sender, ChiakiTakion *takion);
+ CHIAKI_EXPORT void chiaki_feedback_sender_fini(ChiakiFeedbackSender *feedback_sender);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_feedback_sender_set_controller_state(ChiakiFeedbackSender *feedback_sender, ChiakiControllerState *state);
++/** Shimmer: the state of pad `pad` (0-3). A pad 1-3 announces itself (presence) on its first state. */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_feedback_sender_set_controller_state_pad(ChiakiFeedbackSender *feedback_sender, uint8_t pad, ChiakiControllerState *state);
++/** Shimmer: pad `pad` (1-3) is gone: release everything it held and say it left. */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_feedback_sender_remove_pad(ChiakiFeedbackSender *feedback_sender, uint8_t pad);
+ 
+ #ifdef __cplusplus
+ }
+diff -ruN a/lib/include/chiaki/session.h b/lib/include/chiaki/session.h
+--- a/lib/include/chiaki/session.h
++++ b/lib/include/chiaki/session.h
+@@ -137,16 +137,33 @@
+ 	uint8_t unknown;
+ 	uint8_t left; // low-frequency
+ 	uint8_t right; // high-frequency
++	uint8_t pad; // Shimmer: which player's pad (0-3)
+ } ChiakiRumbleEvent;
+ 
+ typedef struct chiaki_trigger_effects_event_t
+ {
++	uint8_t pad; // Shimmer: which player's pad (0-3)
+ 	uint8_t type_left;
+ 	uint8_t type_right;
+ 	uint8_t left[10];
+ 	uint8_t right[10];
+ } ChiakiTriggerEffectsEvent;
+ 
++/**
++ * Shimmer: the console's answer about another player's pad (ctrl messages).
++ * message 0x8068: user join reply, status 0 seated, 3 passcode needed, else refused.
++ * message 0x64: the console asks for that user's passcode.
++ * message 0x61: the console has no user for that account.
++ * message 0x0a: the console dropped the pad.
++ * message 0x8009 / 0x8008: pad leave / join reply.
++ */
++typedef struct chiaki_pad_join_event_t
++{
++	uint16_t message;
++	uint8_t pad;
++	uint8_t status;
++} ChiakiPadJoinEvent;
++
+ typedef struct chiaki_video_fec_failure_event_t
+ {
+ 	int32_t frame_index;
+@@ -171,6 +188,7 @@
+ 	CHIAKI_EVENT_HAPTIC_INTENSITY,
+ 	CHIAKI_EVENT_TRIGGER_INTENSITY,
+ 	CHIAKI_EVENT_VIDEO_FEC_FAILURE,
++	CHIAKI_EVENT_PAD_JOIN, // Shimmer
+ } ChiakiEventType;
+ 
+ typedef struct chiaki_event_t
+@@ -196,6 +214,7 @@
+ 		ChiakiDualSenseEffectIntensity intensity;
+ 		char server_nickname[0x20];
+ 		ChiakiVideoFecFailureEvent video_fec_failure;
++		ChiakiPadJoinEvent pad_join;
+ 	};
+ } ChiakiEvent;
+ 
+@@ -296,6 +315,14 @@
+ 
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_request_idr(ChiakiSession *session);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_set_controller_state(ChiakiSession *session, ChiakiControllerState *state);
++/** Shimmer: another player's pad (1-3; 0 is chiaki_session_set_controller_state). Seat it first with chiaki_session_join_user. */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_set_controller_state_pad(ChiakiSession *session, uint8_t pad, ChiakiControllerState *state);
++/** Shimmer: ask the PS5 to seat the console user with PSN account `account_id` on pad `pad` (ctrl 0x68). */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_join_user(ChiakiSession *session, uint8_t pad, uint64_t account_id);
++/** Shimmer: answer the console's passcode request for pad `pad` (ctrl 0x8064, 4 digits). */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_answer_user_passcode(ChiakiSession *session, uint8_t pad, const char *passcode);
++/** Shimmer: pad `pad` (1-3) leaves: its buttons released, the console told (ctrl 0x09). */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_leave_pad(ChiakiSession *session, uint8_t pad);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_set_login_pin(ChiakiSession *session, const uint8_t *pin, size_t pin_size);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_set_stream_connection_switch_received(ChiakiSession *session);
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_goto_bed(ChiakiSession *session);
+diff -ruN a/lib/include/chiaki/takion.h b/lib/include/chiaki/takion.h
+--- a/lib/include/chiaki/takion.h
++++ b/lib/include/chiaki/takion.h
+@@ -282,6 +282,8 @@
+  * Thread-safe while Takion is running.
+  */
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_send_feedback_state(ChiakiTakion *takion, ChiakiSeqNum16 seq_num, ChiakiFeedbackState *feedback_state);
++/** Shimmer: the feedback state of pad `pad` (0-3), stamped into its first byte (0xa0|pad). */
++CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_send_feedback_state_pad(ChiakiTakion *takion, ChiakiSeqNum16 seq_num, ChiakiFeedbackState *feedback_state, uint8_t pad);
+ 
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_send_mic_packet(ChiakiTakion *takion, uint8_t *audio_packet, size_t packet_size, bool ps5);
+ /**
+diff -ruN a/lib/src/ctrl.c b/lib/src/ctrl.c
+--- a/lib/src/ctrl.c
++++ b/lib/src/ctrl.c
+@@ -891,6 +891,24 @@
+ 		case CTRL_MESSAGE_TYPE_SWITCH_TO_STREAM_CONNECTION:
+ 			ctrl_message_received_switch_to_stream_connection(ctrl, payload, payload_size);
+ 			break;
++		// Shimmer: another player's pad (see ChiakiPadJoinEvent)
++		case 0x8068:
++		case 0x8008:
++		case 0x8009:
++		case 0x64:
++		case 0x61:
++		case 0x0a:
++		{
++			ChiakiEvent event = { 0 };
++			event.type = CHIAKI_EVENT_PAD_JOIN;
++			event.pad_join.message = msg_type;
++			event.pad_join.pad = payload_size > 0 ? payload[0] : 0;
++			event.pad_join.status = payload_size > 1 && (msg_type == 0x8068 || msg_type == 0x8008 || msg_type == 0x8009) ? payload[1] : 0;
++			CHIAKI_LOGI(ctrl->session->log, "Ctrl pad message %#x pad %u status %u", (unsigned)msg_type,
++					(unsigned)event.pad_join.pad, (unsigned)event.pad_join.status);
++			chiaki_session_send_event(ctrl->session, &event);
++			break;
++		}
+ 		default:
+ 			// CHIAKI_LOGW(ctrl->session->log, "Received Ctrl Message with unknown type %#x", msg_type);
+ 			chiaki_log_hexdump(ctrl->session->log, CHIAKI_LOG_WARNING, payload, payload_size);
+diff -ruN a/lib/src/feedback.c b/lib/src/feedback.c
+--- a/lib/src/feedback.c
++++ b/lib/src/feedback.c
+@@ -214,10 +214,13 @@
+ 	ChiakiFeedbackHistoryEventPushedCallback event_pushed;
+ 	void *event_pushed_user;
+ 	bool recorded;
++	uint8_t pad;
+ } HistoryRecorder;
+ 
+ static void history_recorder_push(HistoryRecorder *recorder, ChiakiFeedbackHistoryEvent *event)
+ {
++	// Shimmer: which player's pad (0-3), in the low two bits of the first byte
++	event->buf[0] |= recorder->pad & 0x3;
+ 	chiaki_feedback_history_buffer_push(recorder->buffer, event);
+ 	recorder->recorded = true;
+ 	if(recorder->event_pushed)
+@@ -259,11 +262,26 @@
+ 	history_recorder_push(recorder, &event);
+ }
+ 
++CHIAKI_EXPORT void chiaki_feedback_history_event_set_presence(ChiakiFeedbackHistoryEvent *event, uint8_t pad, bool joined)
++{
++	event->len = 2;
++	event->buf[0] = 0x80 | (pad & 0x3);
++	event->buf[1] = joined ? 0xbf : 0x9f;
++}
++
+ CHIAKI_EXPORT bool chiaki_feedback_history_buffer_record_state(ChiakiFeedbackHistoryBuffer *feedback_history_buffer, ChiakiLog *log,
+ 		const ChiakiControllerState *state_prev, const ChiakiControllerState *state_now,
+ 		ChiakiFeedbackHistoryEventPushedCallback event_pushed, void *event_pushed_user)
+ {
+-	HistoryRecorder recorder = { feedback_history_buffer, log, event_pushed, event_pushed_user, false };
++	return chiaki_feedback_history_buffer_record_state_pad(feedback_history_buffer, log, state_prev, state_now, 0,
++			event_pushed, event_pushed_user);
++}
++
++CHIAKI_EXPORT bool chiaki_feedback_history_buffer_record_state_pad(ChiakiFeedbackHistoryBuffer *feedback_history_buffer, ChiakiLog *log,
++		const ChiakiControllerState *state_prev, const ChiakiControllerState *state_now, uint8_t pad,
++		ChiakiFeedbackHistoryEventPushedCallback event_pushed, void *event_pushed_user)
++{
++	HistoryRecorder recorder = { feedback_history_buffer, log, event_pushed, event_pushed_user, false, pad };
+ 
+ 	// Releases go before touch changes: when a touchpad click and its finger are released
+ 	// in one state change, the finger must not lift while the click is still held.
+diff -ruN a/lib/src/feedbacksender.c b/lib/src/feedbacksender.c
+--- a/lib/src/feedbacksender.c
++++ b/lib/src/feedbacksender.c
+@@ -55,6 +55,14 @@
+ 	feedback_sender->history_last_seq_num = 0;
+ 	feedback_sender->history_last_sent_ms = 0;
+ 	feedback_sender->history_tail_resends = FEEDBACK_HISTORY_TAIL_COUNT;
++	for(size_t i = 0; i < CHIAKI_FEEDBACK_SENDER_PADS; i++)
++	{
++		feedback_sender->pad_active[i] = false;
++		feedback_sender->pad_changed[i] = false;
++		chiaki_controller_state_set_idle(&feedback_sender->pad_state[i]);
++		chiaki_controller_state_set_idle(&feedback_sender->pad_state_prev[i]);
++		chiaki_controller_state_set_idle(&feedback_sender->pad_history_prev[i]);
++	}
+ 	ChiakiErrorCode err = chiaki_feedback_history_buffer_init(&feedback_sender->history_buf, FEEDBACK_HISTORY_BUFFER_SIZE);
+ 	if(err != CHIAKI_ERR_SUCCESS)
+ 		return err;
+@@ -118,6 +126,72 @@
+ 	return CHIAKI_ERR_SUCCESS;
+ }
+ 
++static void feedback_sender_history_event_pushed(void *user);
++
++CHIAKI_EXPORT ChiakiErrorCode chiaki_feedback_sender_set_controller_state_pad(ChiakiFeedbackSender *feedback_sender, uint8_t pad, ChiakiControllerState *state)
++{
++	if(pad == 0)
++		return chiaki_feedback_sender_set_controller_state(feedback_sender, state);
++	if(pad >= CHIAKI_FEEDBACK_SENDER_PADS)
++		return CHIAKI_ERR_INVALID_DATA;
++	ChiakiErrorCode err = chiaki_mutex_lock(&feedback_sender->state_mutex);
++	if(err != CHIAKI_ERR_SUCCESS)
++		return err;
++	if(!feedback_sender->pad_active[pad])
++	{
++		// the pad joins: a presence event first, then its state from idle
++		feedback_sender->pad_active[pad] = true;
++		chiaki_controller_state_set_idle(&feedback_sender->pad_history_prev[pad]);
++		chiaki_controller_state_set_idle(&feedback_sender->pad_state_prev[pad]);
++		ChiakiFeedbackHistoryEvent event;
++		chiaki_feedback_history_event_set_presence(&event, pad, true);
++		chiaki_feedback_history_buffer_push(&feedback_sender->history_buf, &event);
++		feedback_sender_history_event_pushed(feedback_sender);
++		feedback_sender->pad_changed[pad] = true;
++	}
++	else if(chiaki_controller_state_equals(&feedback_sender->pad_state[pad], state))
++	{
++		chiaki_mutex_unlock(&feedback_sender->state_mutex);
++		return CHIAKI_ERR_SUCCESS;
++	}
++	feedback_sender->pad_state[pad] = *state;
++	chiaki_feedback_history_buffer_record_state_pad(&feedback_sender->history_buf, feedback_sender->log,
++			&feedback_sender->pad_history_prev[pad], state, pad, feedback_sender_history_event_pushed, feedback_sender);
++	feedback_sender->pad_history_prev[pad] = *state;
++	feedback_sender->pad_changed[pad] = true;
++	chiaki_mutex_unlock(&feedback_sender->state_mutex);
++	chiaki_cond_signal(&feedback_sender->state_cond);
++	return CHIAKI_ERR_SUCCESS;
++}
++
++CHIAKI_EXPORT ChiakiErrorCode chiaki_feedback_sender_remove_pad(ChiakiFeedbackSender *feedback_sender, uint8_t pad)
++{
++	if(pad == 0 || pad >= CHIAKI_FEEDBACK_SENDER_PADS)
++		return CHIAKI_ERR_INVALID_DATA;
++	ChiakiErrorCode err = chiaki_mutex_lock(&feedback_sender->state_mutex);
++	if(err != CHIAKI_ERR_SUCCESS)
++		return err;
++	if(feedback_sender->pad_active[pad])
++	{
++		// release whatever it held, then say it left
++		ChiakiControllerState idle;
++		chiaki_controller_state_set_idle(&idle);
++		chiaki_feedback_history_buffer_record_state_pad(&feedback_sender->history_buf, feedback_sender->log,
++				&feedback_sender->pad_history_prev[pad], &idle, pad, feedback_sender_history_event_pushed, feedback_sender);
++		ChiakiFeedbackHistoryEvent event;
++		chiaki_feedback_history_event_set_presence(&event, pad, false);
++		chiaki_feedback_history_buffer_push(&feedback_sender->history_buf, &event);
++		feedback_sender_history_event_pushed(feedback_sender);
++		feedback_sender->pad_active[pad] = false;
++		feedback_sender->pad_changed[pad] = false;
++		feedback_sender->pad_state[pad] = idle;
++		feedback_sender->pad_history_prev[pad] = idle;
++	}
++	chiaki_mutex_unlock(&feedback_sender->state_mutex);
++	chiaki_cond_signal(&feedback_sender->state_cond);
++	return CHIAKI_ERR_SUCCESS;
++}
++
+ static bool controller_state_equals_for_feedback_state(ChiakiControllerState *a, ChiakiControllerState *b)
+ {
+ 	if(!(a->left_x == b->left_x
+@@ -140,8 +214,15 @@
+ 	return true;
+ }
+ 
++static void feedback_sender_send_state_pad(ChiakiFeedbackSender *feedback_sender, const ChiakiControllerState *state, uint8_t pad);
++
+ static void feedback_sender_send_state(ChiakiFeedbackSender *feedback_sender, const ChiakiControllerState *state)
+ {
++	feedback_sender_send_state_pad(feedback_sender, state, 0);
++}
++
++static void feedback_sender_send_state_pad(ChiakiFeedbackSender *feedback_sender, const ChiakiControllerState *state, uint8_t pad)
++{
+ 	ChiakiFeedbackState feedback_state;
+ 	feedback_state.left_x = state->left_x;
+ 	feedback_state.left_y = state->left_y;
+@@ -159,7 +240,7 @@
+ 	feedback_state.orient_z = state->orient_z;
+ 	feedback_state.orient_w = state->orient_w;
+ 
+-	ChiakiErrorCode err = chiaki_takion_send_feedback_state(feedback_sender->takion, feedback_sender->state_seq_num++, &feedback_state);
++	ChiakiErrorCode err = chiaki_takion_send_feedback_state_pad(feedback_sender->takion, feedback_sender->state_seq_num++, &feedback_state, pad);
+ 	if(err != CHIAKI_ERR_SUCCESS)
+ 		CHIAKI_LOGE(feedback_sender->log, "FeedbackSender failed to send Feedback State");
+ }
+@@ -237,8 +318,12 @@
+ static bool state_cond_check(void *user)
+ {
+ 	ChiakiFeedbackSender *feedback_sender = user;
+-	return feedback_sender->should_stop
+-		|| feedback_sender->controller_state_changed;
++	if(feedback_sender->should_stop || feedback_sender->controller_state_changed)
++		return true;
++	for(size_t i = 1; i < CHIAKI_FEEDBACK_SENDER_PADS; i++)
++		if(feedback_sender->pad_changed[i])
++			return true;
++	return false;
+ }
+ 
+ static void *feedback_sender_thread_func(void *user)
+@@ -331,10 +416,27 @@
+ 			feedback_sender->history_tail_resends++;
+ 			send_feedback_history = true;
+ 		}
++		// Shimmer: the other players' pads, each in its own state packet
++		bool send_pad[CHIAKI_FEEDBACK_SENDER_PADS] = { false };
++		ChiakiControllerState pad_now[CHIAKI_FEEDBACK_SENDER_PADS];
++		bool pad_timeout = now_ms - last_feedback_state_ms >= FEEDBACK_STATE_TIMEOUT_MAX_MS;
++		for(size_t i = 1; i < CHIAKI_FEEDBACK_SENDER_PADS; i++)
++		{
++			if(!feedback_sender->pad_active[i])
++				continue;
++			pad_now[i] = feedback_sender->pad_state[i];
++			send_pad[i] = pad_timeout
++				|| (feedback_sender->pad_changed[i]
++					&& !controller_state_equals_for_feedback_state(&pad_now[i], &feedback_sender->pad_state_prev[i]));
++			feedback_sender->pad_changed[i] = false;
++		}
+ 		chiaki_mutex_unlock(&feedback_sender->state_mutex);
+ 
+ 		if(send_feedback_state)
+ 			feedback_sender_send_state(feedback_sender, &state_now);
++		for(size_t i = 1; i < CHIAKI_FEEDBACK_SENDER_PADS; i++)
++			if(send_pad[i])
++				feedback_sender_send_state_pad(feedback_sender, &pad_now[i], (uint8_t)i);
+ 
+ 		if(send_feedback_history)
+ 			feedback_sender_send_history_packet(feedback_sender, history_packet_seq_num, history_event_count, history_buf, history_buf_size);
+@@ -342,6 +444,9 @@
+ 		err = chiaki_mutex_lock(&feedback_sender->state_mutex);
+ 		if(err != CHIAKI_ERR_SUCCESS)
+ 			return NULL;
++		for(size_t i = 1; i < CHIAKI_FEEDBACK_SENDER_PADS; i++)
++			if(send_pad[i])
++				feedback_sender->pad_state_prev[i] = pad_now[i];
+ 		if(send_feedback_state)
+ 		{
+ 			feedback_sender->controller_state_prev = state_now;
+diff -ruN a/lib/src/session.c b/lib/src/session.c
+--- a/lib/src/session.c
++++ b/lib/src/session.c
+@@ -353,6 +353,51 @@
+ 	return CHIAKI_ERR_SUCCESS;
+ }
+ 
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_set_controller_state_pad(ChiakiSession *session, uint8_t pad, ChiakiControllerState *state)
++{
++	if(pad == 0)
++		return chiaki_session_set_controller_state(session, state);
++	ChiakiErrorCode err = chiaki_mutex_lock(&session->stream_connection.feedback_sender_mutex);
++	if(err != CHIAKI_ERR_SUCCESS)
++		return err;
++	if(session->stream_connection.feedback_sender_active)
++		err = chiaki_feedback_sender_set_controller_state_pad(&session->stream_connection.feedback_sender, pad, state);
++	chiaki_mutex_unlock(&session->stream_connection.feedback_sender_mutex);
++	return err;
++}
++
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_join_user(ChiakiSession *session, uint8_t pad, uint64_t account_id)
++{
++	uint8_t payload[0x10] = { 0 };
++	for(size_t i = 0; i < 8; i++)
++		payload[i] = (uint8_t)(account_id >> (8 * i));
++	payload[8] = pad;
++	payload[9] = 3; // DualShock 4 / DualSense
++	return chiaki_ctrl_send_message(&session->ctrl, 0x68, payload, sizeof(payload));
++}
++
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_answer_user_passcode(ChiakiSession *session, uint8_t pad, const char *passcode)
++{
++	if(!passcode || strlen(passcode) != 4)
++		return CHIAKI_ERR_INVALID_DATA;
++	uint8_t payload[5] = { pad, (uint8_t)passcode[0], (uint8_t)passcode[1], (uint8_t)passcode[2], (uint8_t)passcode[3] };
++	return chiaki_ctrl_send_message(&session->ctrl, 0x8064, payload, sizeof(payload));
++}
++
++CHIAKI_EXPORT ChiakiErrorCode chiaki_session_leave_pad(ChiakiSession *session, uint8_t pad)
++{
++	if(pad == 0)
++		return CHIAKI_ERR_INVALID_DATA;
++	ChiakiErrorCode err = chiaki_mutex_lock(&session->stream_connection.feedback_sender_mutex);
++	if(err != CHIAKI_ERR_SUCCESS)
++		return err;
++	if(session->stream_connection.feedback_sender_active)
++		chiaki_feedback_sender_remove_pad(&session->stream_connection.feedback_sender, pad);
++	chiaki_mutex_unlock(&session->stream_connection.feedback_sender_mutex);
++	uint8_t payload[1] = { pad };
++	return chiaki_ctrl_send_message(&session->ctrl, 0x09, payload, sizeof(payload));
++}
++
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_session_set_login_pin(ChiakiSession *session, const uint8_t *pin, size_t pin_size)
+ {
+ 	uint8_t *buf = malloc(pin_size);
+diff -ruN a/lib/src/streamconnection.c b/lib/src/streamconnection.c
+--- a/lib/src/streamconnection.c
++++ b/lib/src/streamconnection.c
+@@ -579,6 +579,8 @@
+ 	ChiakiEvent event = { 0 };
+ 	event.type = CHIAKI_EVENT_RUMBLE;
+ 	event.rumble.unknown = buf[0];
++	// Shimmer: Takion 20 names the pad at byte 8
++	event.rumble.pad = stream_connection->takion.version >= 20 && buf_size >= 9 ? (buf[8] & 0x3) : 0;
+ 	event.rumble.left = buf[1];
+ 	event.rumble.right = buf[2];
+ 	chiaki_session_send_event(stream_connection->session, &event);
+@@ -601,6 +603,8 @@
+ 	}
+ 	ChiakiEvent event = { 0 };
+ 	event.type = CHIAKI_EVENT_TRIGGER_EFFECTS;
++	// Shimmer: Takion 16+ names the pad in the first byte
++	event.trigger_effects.pad = stream_connection->takion.version >= 16 ? (buf[0] & 0x3) : 0;
+ 	event.trigger_effects.type_left = buf[1];
+ 	event.trigger_effects.type_right = buf[2];
+ 	memcpy(&event.trigger_effects.left, buf + 5, 10);
+diff -ruN a/lib/src/takion.c b/lib/src/takion.c
+--- a/lib/src/takion.c
++++ b/lib/src/takion.c
+@@ -949,6 +949,11 @@
+ 
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_send_feedback_state(ChiakiTakion *takion, ChiakiSeqNum16 seq_num, ChiakiFeedbackState *feedback_state)
+ {
++	return chiaki_takion_send_feedback_state_pad(takion, seq_num, feedback_state, 0);
++}
++
++CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_send_feedback_state_pad(ChiakiTakion *takion, ChiakiSeqNum16 seq_num, ChiakiFeedbackState *feedback_state, uint8_t pad)
++{
+ 	uint8_t buf[0xc + CHIAKI_TAKION_EXT_HEADER_SIZE + CHIAKI_FEEDBACK_STATE_BUF_SIZE_MAX];
+ 	size_t ext = takion->ext_size;
+ 	buf[0] = TAKION_PACKET_TYPE_FEEDBACK_STATE;
+@@ -970,6 +975,7 @@
+ 		buf_sz = 0xc + ext + CHIAKI_FEEDBACK_STATE_BUF_SIZE_V12;
+ 		chiaki_feedback_state_format_v12(h + 0xc, feedback_state);
+ 	}
++	h[0xc] |= pad & 0x3; // Shimmer: which player's pad (0xa0|pad)
+ 	return takion_send_feedback_packet(takion, buf, buf_sz, ext);
+ }
+ 

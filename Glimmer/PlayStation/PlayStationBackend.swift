@@ -32,6 +32,9 @@ struct PlayStationStreamOptions: Sendable, Equatable {
     /// Keep the bitrate: report no packet loss, so the console never lowers
     /// it (PXPlay's manual mode sends no loss reports at all).
     var holdBitrate = false
+    /// PSN account IDs of the console users who play as players 2-4 when a
+    /// second (third, fourth) controller joins (`PlayStationSettings.extraPlayerAccounts`).
+    var extraPlayerAccounts: [UInt64] = []
     /// Everything else from the PlayStation settings tab.
     var settings = PlayStationSettings.Snapshot()
 
@@ -87,6 +90,17 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     // controller, so every connected pad is merged into it (buttons OR'd,
     // sticks by largest deflection, motion from the first pad that has any).
     private var pads: [UInt8: ChiakiControllerState] = [:]
+    /// More players: a pad the console seated as player 2-4 plays on its own
+    /// seat (1-3) instead of being merged into player 1 (`lock`). The PS5
+    /// seats a console user by PSN account (ctrl 0x68); one it refuses (no
+    /// such user on the console, a passcode) stays merged.
+    private var seats: [UInt8: UInt8] = [:]
+    /// The pad that is player 1: the first to send input (`lock`).
+    private var primaryPad: UInt8?
+    /// Seats asked for and not answered yet: seat → pad (`lock`).
+    private var pendingSeats: [UInt8: UInt8] = [:]
+    /// Seats the console refused this session; not asked again (`lock`).
+    private var refusedSeats: Set<UInt8> = []
     private var touchIDs: [UInt8: [UInt32: Int8]] = [:]
     /// Each pad's attitude, from its gyro and accelerometer (chiaki-ng's
     /// Madgwick tracker). The PS5 reads the pad's orientation from the
@@ -588,7 +602,14 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             }
         case CHIAKI_EVENT_RUMBLE:
             guard ControllerFocus.allows(focusID) else { break }
+            if let slot = otherPlayerPad(seat: event.rumble.pad) {
+                lock.withLock { self.events }?.rumble(controller: UInt16(slot), lowFreq: UInt16(event.rumble.left) * 257,
+                                                       highFreq: UInt16(event.rumble.right) * 257)
+                break
+            }
             handleRumble(left: event.rumble.left, right: event.rumble.right)
+        case CHIAKI_EVENT_PAD_JOIN:
+            handlePadJoin(message: event.pad_join.message, seat: event.pad_join.pad, status: event.pad_join.status)
         case CHIAKI_EVENT_TRIGGER_EFFECTS:
             guard ControllerFocus.allows(focusID) else {
                 lock.withLock { deferredTriggerEffect = event.trigger_effects }
@@ -994,9 +1015,11 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
               lock.withLock({ triggerNibble }) != Self.intensityOff & 0xF0 else { return }
         let left = withUnsafeBytes(of: effect.left) { Array($0) }
         let right = withUnsafeBytes(of: effect.right) { Array($0) }
-        let events = lock.withLock { self.events }
+        let (events, primary) = lock.withLock { (self.events, primaryPad) }
+        // Player 2-4's effect to their own pad; player 1's to the first pad.
+        let pad = otherPlayerPad(seat: effect.pad) ?? primary ?? 0
         // 0x04 | 0x08: both trigger blocks (DS_EFFECT_RIGHT/LEFT_TRIGGER).
-        events?.setAdaptiveTriggers(controller: 0, eventFlags: 0x0C,
+        events?.setAdaptiveTriggers(controller: UInt16(pad), eventFlags: 0x0C,
                                     typeLeft: effect.type_left, typeRight: effect.type_right,
                                     left: left, right: right)
         let types = (effect.type_left, effect.type_right)
@@ -1098,10 +1121,15 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         defer { lock.unlock() }
         guard connected, let session else { return -2 }
         var merged = Self.idlePad
-        for num in pads.keys.sorted() {
+        for num in pads.keys.sorted() where seats[num] == nil {
             var a = pads[num]!
             var b = merged
             chiaki_controller_state_or(&merged, &a, &b)
+        }
+        // Players 2-4, each on the seat the console gave them.
+        for (num, seat) in seats {
+            var state = pads[num] ?? Self.idlePad
+            chiaki_session_set_controller_state_pad(session, seat, &state)
         }
         return chiaki_session_set_controller_state(session, &merged) == CHIAKI_ERR_SUCCESS ? 0 : -1
     }
@@ -1147,6 +1175,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             return pressed && !wasHeld && connected ? microphone : nil
         }
         mic?.toggle()
+        leaveSeats(activeMask: UInt16(bitPattern: mask))
+        askForSeat(padNum)
         updatePad(padNum, kind: "button/stick") { pad in
             let analogTriggers = (analog.leftTrigger > 0 ? CHIAKI_CONTROLLER_ANALOG_BUTTON_L2.rawValue : 0)
                 | (analog.rightTrigger > 0 ? CHIAKI_CONTROLLER_ANALOG_BUTTON_R2.rawValue : 0)
@@ -1162,6 +1192,79 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     }
 
     func sendControllerArrival(num: UInt8, mask: UInt16, type: UInt8, supportedButtons: UInt32, caps: UInt16) -> Int32 { 0 }
+
+    // MARK: More players
+
+    /// The first pad to send input is player 1. Any other pad asks the console
+    /// to seat the next configured account as player 2-4; until it answers (or
+    /// if it refuses) that pad stays merged into player 1, as before.
+    private func askForSeat(_ num: UInt8) {
+        guard num != Self.keyboardPadNumber else { return }
+        lock.withLock {
+            guard connected, let session else { return }
+            guard let primary = primaryPad else { primaryPad = num; return }
+            guard num != primary, seats[num] == nil, !pendingSeats.values.contains(num) else { return }
+            let taken = Set(seats.values).union(pendingSeats.keys).union(refusedSeats)
+            for (i, account) in options.extraPlayerAccounts.prefix(3).enumerated() {
+                let seat = UInt8(i + 1)
+                guard !taken.contains(seat) else { continue }
+                pendingSeats[seat] = num
+                let rc = chiaki_session_join_user(session, seat, account)
+                Diag.notice("PS5: controller \(num) asks to play as player \(seat + 1) (rc \(rc.rawValue))", Self.logCategory)
+                return
+            }
+        }
+    }
+
+    /// A seated pad that left the stream (unplugged, asleep): its seat is
+    /// given back and the console told.
+    private func leaveSeats(activeMask: UInt16) {
+        lock.withLock {
+            guard let session else { return }
+            for (num, seat) in seats where num < 16 && activeMask & (1 << UInt16(num)) == 0 {
+                chiaki_session_leave_pad(session, seat)
+                seats[num] = nil
+                pads[num] = nil
+                Diag.notice("PS5: player \(seat + 1)'s controller left", Self.logCategory)
+            }
+        }
+    }
+
+    /// The pad playing as player 2-4 on `seat`; nil for player 1 (or a seat
+    /// nobody holds - a Takion byte the console fills differently).
+    private func otherPlayerPad(seat: UInt8) -> UInt8? {
+        guard seat != 0 else { return nil }
+        return lock.withLock { seats.first { $0.value == seat }?.key }
+    }
+
+    /// The console's answers about players 2-4 (ctrl messages).
+    private func handlePadJoin(message: UInt16, seat: UInt8, status: UInt8) {
+        let player = Int(seat) + 1
+        switch message {
+        case 0x8068 where status == 0:
+            let seated = lock.withLock { () -> UInt8? in
+                guard let num = pendingSeats.removeValue(forKey: seat) else { return nil }
+                seats[num] = seat
+                return num
+            }
+            if let seated { Diag.notice("PS5: controller \(seated) plays as player \(player)", Self.logCategory) }
+            _ = pushPad()
+        case 0x0a:
+            lock.withLock { if let num = seats.first(where: { $0.value == seat })?.key { seats[num] = nil } }
+            Diag.notice("PS5: the console dropped player \(player)", Self.logCategory)
+        case 0x8068, 0x61, 0x64:
+            let why = message == 0x61 ? "has no user for that account"
+                : message == 0x64 || status == 3 ? "wants that user's passcode, which Shimmer can't enter yet"
+                : "refused (status \(status))"
+            lock.withLock {
+                pendingSeats[seat] = nil
+                refusedSeats.insert(seat)
+            }
+            Diag.error("PS5: player \(player) can't join - the console \(why); that controller stays player 1", Self.logCategory)
+        default:
+            Diag.info("PS5: pad message 0x\(String(message, radix: 16)) pad \(seat) status \(status)", Self.logCategory)
+        }
+    }
 
     func sendControllerTouch(num: UInt8, eventType: UInt8, touchpadIndex: UInt8,
                              pointerId: UInt32, x: Float, y: Float, pressure: Float) -> Int32 {

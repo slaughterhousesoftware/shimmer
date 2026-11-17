@@ -419,6 +419,10 @@ static void event_cb(ChiakiEvent *event, void *user)
 			fprintf(stderr, "** trigger effects L type %u R type %u\n",
 				event->trigger_effects.type_left, event->trigger_effects.type_right);
 			break;
+		case CHIAKI_EVENT_PAD_JOIN:
+			fprintf(stderr, "** pad message %#x pad %u status %u\n", (unsigned)event->pad_join.message,
+					(unsigned)event->pad_join.pad, (unsigned)event->pad_join.status);
+			break;
 		case CHIAKI_EVENT_QUIT:
 			snprintf(st->quit_reason, sizeof(st->quit_reason), "%s%s%s",
 				chiaki_quit_reason_string(event->quit.reason),
@@ -967,6 +971,42 @@ static int cmd_drive(int argc, char **argv)
 			chiaki_session_set_controller_state(&session, &idle);
 			usleep(120000);
 			printf("ok %s %s %d\n", cmd, arg, ms);
+		}
+		else if(!strcmp(cmd, "join") && n >= 2)
+		{
+			// join PAD ACCOUNT_ID(decimal): seat another console user on pad PAD (ctrl 0x68)
+			unsigned pad = 0; unsigned long long account = 0;
+			sscanf(line, "%*s %u %llu", &pad, &account);
+			ChiakiErrorCode e = chiaki_session_join_user(&session, (uint8_t)pad, (uint64_t)account);
+			printf("ok join pad %u err %d\n", pad, (int)e);
+		}
+		else if(!strcmp(cmd, "passcode") && n >= 2)
+		{
+			// passcode PAD 1234
+			unsigned pad = 0; char code[8] = {0};
+			sscanf(line, "%*s %u %7s", &pad, code);
+			ChiakiErrorCode e = chiaki_session_answer_user_passcode(&session, (uint8_t)pad, code);
+			printf("ok passcode pad %u err %d\n", pad, (int)e);
+		}
+		else if(!strcmp(cmd, "leave") && n >= 2)
+		{
+			ChiakiErrorCode e = chiaki_session_leave_pad(&session, (uint8_t)atoi(arg));
+			printf("ok leave pad %d err %d\n", atoi(arg), (int)e);
+		}
+		else if(!strcmp(cmd, "padpress") && n >= 2)
+		{
+			// padpress PAD BUTTON [MS]: tap a button on another player's pad
+			unsigned pad = 0; char name[32] = {0}; int hold = 150;
+			sscanf(line, "%*s %u %31s %d", &pad, name, &hold);
+			uint32_t mask = button_mask(name);
+			if(!mask) { printf("error unknown button %s\n", name); fflush(stdout); continue; }
+			ChiakiControllerState cs = idle;
+			cs.buttons = mask;
+			chiaki_session_set_controller_state_pad(&session, (uint8_t)pad, &cs);
+			usleep((hold > 0 ? hold : 150) * 1000);
+			chiaki_session_set_controller_state_pad(&session, (uint8_t)pad, &idle);
+			usleep(120000);
+			printf("ok padpress %u %s %d\n", pad, name, hold);
 		}
 		else if(!strcmp(cmd, "mic") && n >= 2)
 		{
