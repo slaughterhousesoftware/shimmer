@@ -106,11 +106,14 @@ follows the same convention every Moonlight client uses. Thank you.
 
 ## Server operating-system icons
 
-The sidebar uses Bazzite's official press-kit mark, ChimeraOS's official artwork,
-Apple's `apple.logo` SF Symbol, and Linux/Windows marks from Simple Icons.
-See [host icon sources and licenses](docs/assets/host-icons/README.md) for the
-individual artwork sources, attribution, and license notices. These marks
-identify the selected platform; their owners do not endorse Shimmer.
+The sidebar's machine icons (Linux, PlayStation, Windows, Apple) are from
+[Font Awesome Free](https://fontawesome.com) by Fonticons, Inc., licensed
+under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The marks
+identify the platform; their owners do not endorse Shimmer.
+
+Earlier distribution-specific artwork (Bazzite's press-kit mark, ChimeraOS's
+artwork, Simple Icons marks) is still bundled for the icon picker; see
+[host icon sources and licenses](docs/assets/host-icons/README.md).
 
 ## MIT-licensed upstreams ported via moonlight-common-c
 

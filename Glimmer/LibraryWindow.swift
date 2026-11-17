@@ -347,26 +347,21 @@ struct ComputersTab: View {
     }
 
 
-    /// A machine's page as System Settings lays one out: a grouped Form whose
-    /// first box is the machine itself (its status and address, Stream /
-    /// Picture in Picture), then what to stream, Video (and Controller on a PS5), and last
-    /// what ending the stream does.
+    /// A machine's page as System Settings lays one out: a grouped Form that
+    /// opens on what Stream launches (the sidebar already names the machine
+    /// and its status), then Video (and Controller on a PS5), and last what
+    /// ending the stream does.
     private func machinePage(for host: Host) -> some View {
         let chosen = apps.first { $0.name == (chosenAppName ?? model.heroTargetAppName) } ?? apps.first
         return Form {
-            // Rex's header card on its own, then the stream's own rows.
             Section {
-                StreamHeader(host: host, app: chosen,
-                             address: model.selectedHostRouteAddress ?? model.dialAddress(for: host))
-            }
-            if !host.isPlayStation && apps.isEmpty {
-                Section {
+                if !host.isPlayStation && apps.isEmpty {
                     noAppsNotice(for: host)
+                } else {
+                    StreamRow(host: host, apps: apps, app: chosen, choose: { chosenAppName = $0 })
                 }
-            } else if apps.count > 1 {
-                Section {
-                    gamePicker(chosen: chosen)
-                }
+            } header: {
+                FormSectionHeader("Stream")
             }
             if host.isPlayStation {
                 PlayStationSettingsPane(settings: .forConsole(host.id))
@@ -386,17 +381,6 @@ struct ComputersTab: View {
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
-    }
-
-    /// Which of the PC's apps Stream launches, when it has more than one.
-    private func gamePicker(chosen: LibraryApp?) -> some View {
-        Picker("Game", selection: Binding(get: { chosen?.name ?? "" }, set: { chosenAppName = $0 })) {
-            ForEach(apps) { app in
-                Label { Text(app.name) } icon: { AppGlyphIcon(app: app) }
-                    .tag(app.name)
-            }
-        }
-        .disabled(model.isStreaming)
     }
 
     /// What ending a stream does to the machine. Off, a PC's game keeps
@@ -620,9 +604,9 @@ private struct NearbyPCRow: View {
 
 // MARK: - Sidebar row
 
-/// One machine: its round avatar (status on its corner), the name, and the
-/// address beneath - the shape of Tailscale's account rows (48pt plate, 6pt
-/// inset).
+/// One machine: its icon, the name, and its status beneath in words after a
+/// coloured dot, as System Settings › Network lists its services. The
+/// address and the full status are in the row's tooltip.
 private struct HostRow: View {
     let host: Host
     let address: String
@@ -632,22 +616,22 @@ private struct HostRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            HostAvatar(host: host, status: status, statusText: statusText)
+            HostAvatar(host: host)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(host.displayName)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
-                Text(address)
+                HostStatusText(text: statusText.components(separatedBy: " · ").first ?? statusText,
+                               status: status)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .frame(minHeight: SettingsMetrics.sidebarRowHeight)
+        .help("\(statusText)\n\(address)")
         // Tailscale's selected account: a flat grey plate (68,68,68 on its
         // dark sidebar) - the unemphasised selection colour.
         .background(
