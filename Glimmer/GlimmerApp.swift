@@ -199,8 +199,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// menu-bar-only to regular, and AppKit drops an activate() issued in the
     /// same turn as a policy change. Once up it is made key; a second look
     /// after the policy settles catches a window that still isn't.
+    /// Over another app's full screen too (Kevin, 2026-11-17: Settings should
+    /// come forward in its own stage, not stay put): becoming regular here
+    /// takes the user to Shimmer's desktop and stage, and becomeRegularApp's
+    /// hold keeps the full-screen rule from flipping Shimmer back to
+    /// menu-bar-only while that Space switch is still animating. (A stream
+    /// resumed from the menu bar still joins the full-screen Space.)
     @MainActor static func showMainWindow() {
-        if !MenuBarController.frontmostAppIsFullScreen() { StreamWindow.becomeRegularApp() }
+        StreamWindow.becomeRegularApp()
         NSApp.activate()
         openMainWindow?()
         for delay in [0.05, 0.4] {
