@@ -103,7 +103,11 @@ final class DualSenseHID: @unchecked Sendable {
     static let shared = DualSenseHID()
 
     let log = Logger(subsystem: "io.ugfugl.Glimmer", category: "DualSenseHID")
-    private let manager: IOHIDManager
+    /// Replaced when an open fails: a manager whose connection to the HID
+    /// service went bad (open rc 0x10000003, then 0xe00002c2 on every later
+    /// open - seen on the MacBook 2026-11-16) never recovers, which left every
+    /// stream after it with no trigger effects and no Bluetooth haptics.
+    private var manager: IOHIDManager
     let lock = NSLock()
 
     // All mutable state below is guarded by `lock`.
@@ -300,13 +304,39 @@ final class DualSenseHID: @unchecked Sendable {
     }
 
     private init() {
-        manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        manager = Self.makeManager()
+    }
+
+    private static func makeManager() -> IOHIDManager {
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         // Sony vendor 0x054C, DualSense (0x0CE6) + DualSense Edge (0x0DF2).
         let matches: [[String: Any]] = [
             [kIOHIDVendorIDKey: 0x054C, kIOHIDProductIDKey: 0x0CE6],
             [kIOHIDVendorIDKey: 0x054C, kIOHIDProductIDKey: 0x0DF2]
         ]
         IOHIDManagerSetDeviceMatchingMultiple(manager, matches as CFArray)
+        return manager
+    }
+
+    /// Hook `manager` up and open it (main thread). On failure: a fresh
+    /// manager, once.
+    private func openManager() -> IOReturn {
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
+        func attempt() -> IOReturn {
+            IOHIDManagerRegisterDeviceMatchingCallback(manager, Self.deviceMatched, ctx)
+            IOHIDManagerRegisterDeviceRemovalCallback(manager, Self.deviceRemoved, ctx)
+            IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+            return IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
+        let rc = attempt()
+        guard rc != kIOReturnSuccess else { return rc }
+        Diag.notice("DualSense HID open rc=0x\(String(UInt32(bitPattern: rc), radix: 16)) - trying a new HID manager", "Controller")
+        IOHIDManagerRegisterDeviceMatchingCallback(manager, nil, nil)
+        IOHIDManagerRegisterDeviceRemovalCallback(manager, nil, nil)
+        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+        IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        manager = Self.makeManager()
+        return attempt()
     }
 
     /// Opt-in gate (mirrors AppModel.rawHIDControllerEnabled). Read
@@ -358,16 +388,13 @@ final class DualSenseHID: @unchecked Sendable {
         // the Troubleshooting pane. Permission is requested explicitly from the
         // enable flow / a "Grant" button instead. Opening without the grant
         // succeeds but silently delivers no reports.
-        let ctx = Unmanaged.passUnretained(self).toOpaque()
         // DEVICE-level input-report callbacks (registered per matched device in
         // the DeviceMatching callback, each with its own buffer). The
         // MANAGER-level report callback traps in IOKit because it has no
         // per-device buffer to hand the device applier. Scheduled on the main
         // run loop so the trivial report decode and the ControllerForwarder
         // reads share one thread.
-        IOHIDManagerRegisterDeviceMatchingCallback(manager, Self.deviceMatched, ctx)
-        IOHIDManagerRegisterDeviceRemovalCallback(manager, Self.deviceRemoved, ctx)
-        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+
         // NON-exclusive (kIOHIDOptionsTypeNone): we never seize the pad - the
         // open is shared with gamecontrollerd so GCController keeps everything
         // it already provides (sticks/face/triggers/touchpad/rumble/light), and
@@ -375,7 +402,7 @@ final class DualSenseHID: @unchecked Sendable {
         // open still permits IOHIDDeviceSetReport(Output) - the adaptive-trigger
         // write path below - for an already-matched device (degrades to a clean
         // no-op if the write is refused; see writeOutputReport).
-        let rc = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        let rc = openManager()
         // The manager is reused across streams, and IOKit fires the matching
         // callback only for a pad it hasn't seen: after stop() closed it, a pad
         // that stayed connected never matched again, so every stream after the
