@@ -90,9 +90,7 @@ struct StreamRow: View {
     /// row is (the console's home screen, or how many apps the PC offers).
     private var subtitle: String {
         if streamingHere {
-            if case .streaming = model.streamPhase {
-                return model.activeStreamShorthand.map { "Streaming · \($0)" } ?? "Streaming"
-            }
+            if case .streaming = model.streamPhase { return "Streaming" }
             return model.hostStatusLine(for: host.id)
         }
         if model.isStreaming { return "Another stream is live" }
