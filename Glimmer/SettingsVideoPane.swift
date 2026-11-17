@@ -39,10 +39,7 @@ struct VideoPane: View {
             }
             .help("Automatic uses AV1 when the PC and this Mac both can, else HEVC.")
             .disabled(model.selectedHost == nil)
-            Toggle(isOn: $model.customHDR) {
-                Text("HDR")
-                Text("Brighter highlights, deeper colour.")
-            }
+            Toggle("HDR", isOn: $model.customHDR)
         }
         .onAppear { reloadCodec() }
         .onChange(of: model.selectedHost?.id) { _, _ in reloadCodec() }

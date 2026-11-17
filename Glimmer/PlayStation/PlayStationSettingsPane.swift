@@ -28,11 +28,9 @@ struct PlayStationSettingsPane: View {
                     .init(value: true, title: "HEVC"), .init(value: false, title: "H.264"),
                 ])
             }
-            Toggle(isOn: $settings.hdr) {
-                Text("HDR")
-                Text(settings.hevc ? "Brighter highlights, deeper colour." : "HDR needs HEVC.")
-            }
-            .disabled(!settings.hevc)
+            Toggle("HDR", isOn: $settings.hdr)
+                .disabled(!settings.hevc)
+                .help(settings.hevc ? "" : "HDR needs HEVC")
             SettingsRow("Presentation") {
                 SettingsSegmentedControl(selection: $settings.presentation, options: [
                     .init(value: .lowestLatency, title: "Lowest latency", symbol: "bolt"),
