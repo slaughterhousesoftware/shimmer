@@ -157,6 +157,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// `hapticsQueue` only.
     private let hapticsQueue = DispatchQueue(label: "Shimmer.PlayStation.haptics", qos: .userInteractive)
     private var hapticsTimer: DispatchSourceTimer?
+    /// "Looking again every second" logged once per gap (`lock`).
+    private var loggedNoActuators = false
     private var hapticsSum: (left: UInt64, right: UInt64, frames: Int) = (0, 0, 0)
     private var hapticsActive = false
     private var loggedHaptics = false
@@ -526,6 +528,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
         stopAudioHaptics(reason: "stream ended")
         stopOtherPlayersHaptics()
+        DualSenseHID.shared.onDevicesChanged = nil
         if lock.withLock({ () -> Bool in defer { retainedHID = false }; return retainedHID }) {
             DualSenseHID.shared.release()
         }
@@ -891,9 +894,26 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 self?.startAudioHaptics(bluetoothWait: bluetoothWait - 1)
             }
         } else {
-            Diag.info("PS5: no DualSense haptics output - haptics play as rumble", Self.logCategory)
-            hapticsQueue.async { [weak self] in self?.startHapticsTimer() }
+            if lock.withLock({ () -> Bool in defer { loggedNoActuators = true }; return !loggedNoActuators }) {
+                Diag.info("PS5: no DualSense haptics output yet - haptics play as rumble, looking again every second",
+                          Self.logCategory)
+            }
+            hapticsQueue.async { [weak self] in
+                guard let self, self.hapticsTimer == nil else { return }
+                self.startHapticsTimer()
+            }
+            // A pad that comes back late (Bluetooth can take a while, or a
+            // press of the PS button) still gets its haptics.
+            hapticsQueue.asyncAfter(deadline: .now() + 1) { [weak self] in self?.retryActuators() }
         }
+    }
+
+    /// Rumble stands in for the haptics: look for the pad's actuators again,
+    /// quietly, until they turn up or the stream ends.
+    private func retryActuators() {
+        guard options.settings.haptics == .actuators,
+              !lock.withLock({ stopped || audioHaptics != nil }) else { return }
+        startAudioHaptics(bluetoothWait: 0)
     }
 
     /// The pad changed transport mid-stream (USB cable in or out): follow it.
@@ -909,6 +929,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private func useActuators(_ player: DualSenseHapticsOutput) {
         let muted = lock.withLock { () -> Bool in
             audioHaptics = player
+            loggedNoActuators = false
             return hapticsNibble == Self.intensityOff & 0x0F
         }
         if muted { player.setGain(0) }
@@ -1156,6 +1177,11 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         DualSenseHID.shared.retain()
         lock.withLock { retainedHID = true }
         startAudioHaptics()
+        // The reader reconnected its pads (one came back on another transport
+        // without macOS saying so): look for the haptics output again.
+        DualSenseHID.shared.onDevicesChanged = { [weak self] in
+            self?.hapticsQueue.async { self?.retryActuators() }
+        }
         // Chat starts muted, so the mute light is lit, as on the console.
         DualSenseHID.shared.setMicLED(lit: true)
         // Every pad, whatever its slot, and again whenever one reconnects

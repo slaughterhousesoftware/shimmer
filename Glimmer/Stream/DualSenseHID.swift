@@ -194,6 +194,9 @@ final class DualSenseHID: @unchecked Sendable {
     /// change, with its slot: a movement inside GameController's deadzone
     /// fires no GameController handler, so this is what carries it.
     var onAxesChange: (@MainActor (UInt8) -> Void)?
+    /// Called on the main thread after the reader reconnected its pads (a
+    /// rebuild): the PS5 path looks for a haptics output again.
+    var onDevicesChanged: (() -> Void)?
 
     /// Total raw input reports received since the manager opened - a live
     /// "is the device delivering anything?" signal for the input test. Zero
@@ -435,6 +438,7 @@ final class DualSenseHID: @unchecked Sendable {
         if let known = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> {
             for device in known { registerDevice(device) }
         }
+        DispatchQueue.main.async { [weak self] in self?.startSelfCheck() }
         // NOTICE (was INFO): the open-rc + Input-Monitoring state is the one fact
         // that tells "are the DualSense centre buttons / battery actually
         // readable" - and it being INFO-only made the broken-quit-chord regression
@@ -448,7 +452,92 @@ final class DualSenseHID: @unchecked Sendable {
             + "- raw-HID centre buttons/battery \(buttonsState)", "Controller")
     }
 
+    // MARK: Self-check (pads that came and went without telling us)
+
+    /// While open, once a second: the DualSenses macOS has against the ones
+    /// we hold. A USB pad unplugged and back on Bluetooth produced neither a
+    /// removal nor a match callback (MacBook 2026-11-16): the reader kept the
+    /// dead USB device, tied the slot to it, and every trigger write was
+    /// refused while the Bluetooth pad sat unseen. A mismatch rebuilds.
+    private var selfCheckTimer: DispatchSourceTimer?
+
+    private func startSelfCheck() {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 1, repeating: 1)
+        timer.setEventHandler { [weak self] in self?.selfCheck() }
+        timer.resume()
+        selfCheckTimer = timer
+    }
+
+    /// Registry IDs of the DualSense HID services macOS has now.
+    static func liveServiceIDs() -> Set<UInt64> {
+        guard let match = IOServiceMatching(kIOHIDDeviceKey) as NSMutableDictionary? else { return [] }
+        match[kIOHIDVendorIDKey] = 0x054C
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, match, &iterator) == KERN_SUCCESS else { return [] }
+        defer { IOObjectRelease(iterator) }
+        var ids: Set<UInt64> = []
+        while case let service = IOIteratorNext(iterator), service != 0 {
+            defer { IOObjectRelease(service) }
+            let product = IORegistryEntryCreateCFProperty(service, kIOHIDProductIDKey as CFString,
+                                                          kCFAllocatorDefault, 0)?.takeRetainedValue() as? Int
+            guard product == 0x0CE6 || product == 0x0DF2 else { continue }
+            var id: UInt64 = 0
+            if IORegistryEntryGetRegistryEntryID(service, &id) == KERN_SUCCESS { ids.insert(id) }
+        }
+        return ids
+    }
+
+    private static func serviceID(_ device: IOHIDDevice) -> UInt64 {
+        var id: UInt64 = 0
+        let service = IOHIDDeviceGetService(device)
+        guard service != 0, IORegistryEntryGetRegistryEntryID(service, &id) == KERN_SUCCESS else { return 0 }
+        return id
+    }
+
+    private func selfCheck() {
+        lock.lock()
+        guard running else { lock.unlock(); return }
+        let held = Set(writeDevices.values.map { Self.serviceID($0.device) })
+        lock.unlock()
+        let live = Self.liveServiceIDs()
+        guard live != held else { return }
+        Diag.notice("DualSense HID: macOS has \(live.count) pad(s), the reader \(held.count) - reconnecting", "Controller")
+        rebuild()
+    }
+
+    /// Drop every device and the manager, and open a fresh one. Each slot's
+    /// last output (`slotOutputs`) stays and goes back to its pad once tied.
+    private func rebuild() {
+        lock.lock()
+        let registered = writeDevices.keys.compactMap { reportBuffers[$0] }
+        writeDevices.removeAll()
+        padInputs.removeAll()
+        slotDevices.removeAll()
+        bindVotes.removeAll()
+        padOutputs.removeAll()
+        padDirtyTriggers.removeAll()
+        lock.unlock()
+        for (device, buffer) in registered {
+            IOHIDDeviceRegisterInputReportCallback(device, buffer, bufLen, nil, nil)
+        }
+        IOHIDManagerRegisterDeviceMatchingCallback(manager, nil, nil)
+        IOHIDManagerRegisterDeviceRemovalCallback(manager, nil, nil)
+        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+        IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        manager = Self.makeManager()
+        let rc = openManager()
+        if let known = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> {
+            for device in known { registerDevice(device) }
+        }
+        Diag.notice("DualSense HID reopened rc=0x\(String(UInt32(bitPattern: rc), radix: 16)), "
+            + "\(lock.withLock { writeDevices.count }) pad(s)", "Controller")
+        onDevicesChanged?()
+    }
+
     private func stop() {
+        selfCheckTimer?.cancel()
+        selfCheckTimer = nil
         // Best-effort: park the triggers (and re-emit current light/rumble) so
         // a stream ending mid-effect doesn't strand a stiff trigger on the pad.
         // MUST run BEFORE IOHIDManagerClose - the SetReport needs the manager
@@ -527,7 +616,7 @@ final class DualSenseHID: @unchecked Sendable {
         lock.unlock()
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputReportCallback(device, buf, bufLen, Self.reportCallback, ctx)
-        log.info("DualSense HID device matched (transport=\(transport, privacy: .public))")
+        Diag.notice("DualSense HID device matched (\(transport))", "Controller")
     }
 
     private func unregisterDevice(_ device: IOHIDDevice) {
