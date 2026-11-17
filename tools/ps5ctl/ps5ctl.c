@@ -365,6 +365,21 @@ typedef struct
 	size_t params_len;
 } SessionState;
 
+// Players 2-4's haptics frames (patch 0005): counted per pad, with signal.
+static atomic_ulong g_pad_haptics[4], g_pad_haptics_signal[4];
+static void haptics_pad_frame_cb(uint8_t pad, uint8_t *buf, size_t size, void *user)
+{
+	(void)user;
+	if(pad > 3) return;
+	atomic_fetch_add(&g_pad_haptics[pad], 1);
+	int16_t *s = (int16_t *)buf;
+	for(size_t i = 0; i < size / 2; i++)
+		if(s[i] > 300 || s[i] < -300) { atomic_fetch_add(&g_pad_haptics_signal[pad], 1); break; }
+	static unsigned long last;
+	unsigned long n = atomic_load(&g_pad_haptics[pad]);
+	if(n - last >= 100) { last = n; fprintf(stderr, "** pad %u haptics frames %lu (signal %lu)\n", pad, n, atomic_load(&g_pad_haptics_signal[pad])); }
+}
+
 static void event_cb(ChiakiEvent *event, void *user)
 {
 	SessionState *st = user;
@@ -402,7 +417,7 @@ static void event_cb(ChiakiEvent *event, void *user)
 				fflush(st->events_out);
 			}
 			if(g_verbose)
-				fprintf(stderr, "** rumble %u/%u\n", event->rumble.left, event->rumble.right);
+				fprintf(stderr, "** rumble pad %u %u/%u\n", event->rumble.pad, event->rumble.left, event->rumble.right);
 			break;
 		case CHIAKI_EVENT_TRIGGER_EFFECTS:
 			atomic_fetch_add(&st->trigger_events, 1);
@@ -416,8 +431,8 @@ static void event_cb(ChiakiEvent *event, void *user)
 				fprintf(st->events_out, "\n");
 				fflush(st->events_out);
 			}
-			fprintf(stderr, "** trigger effects L type %u R type %u\n",
-				event->trigger_effects.type_left, event->trigger_effects.type_right);
+			fprintf(stderr, "** trigger effects pad %u target %#x L type %u R type %u\n", event->trigger_effects.pad,
+				event->trigger_effects.target, event->trigger_effects.type_left, event->trigger_effects.type_right);
 			break;
 		case CHIAKI_EVENT_PAD_JOIN:
 			fprintf(stderr, "** pad message %#x pad %u status %u\n", (unsigned)event->pad_join.message,
@@ -765,6 +780,7 @@ static int cmd_stream(int argc, char **argv)
 	{
 		ChiakiAudioSink haptics_sink = { .user = &st, .frame_cb = haptics_frame_cb };
 		chiaki_session_set_haptics_sink(&session, &haptics_sink);
+		session.haptics_pad_cb = haptics_pad_frame_cb;
 	}
 	chiaki_session_set_video_sample_cb(&session, video_cb, &st);
 	ChiakiAudioSink audio_sink = { .user = &st, .header_cb = audio_header_cb, .frame_cb = audio_frame_cb };
