@@ -143,13 +143,12 @@ extension DualSenseHID {
     @discardableResult
     func writeToAll(_ effects: (DualSenseOutputState) -> [UInt8]?) -> Bool {
         lock.lock()
-        let state = outputState
-        let devices = writeDevices
+        let jobs = writeDevices.map { (entry: $0.value, state: padOutputs[$0.key] ?? outputState) }
         lock.unlock()
-        guard let bytes = effects(state) else { return true }
         var ok = true
-        for (_, entry) in devices {
-            ok = writeOutputReport(to: entry.device, bluetooth: entry.bluetooth, effects: bytes) && ok
+        for job in jobs {
+            guard let bytes = effects(job.state) else { continue }
+            ok = writeOutputReport(to: job.entry.device, bluetooth: job.entry.bluetooth, effects: bytes) && ok
         }
         return ok
     }
@@ -159,14 +158,14 @@ extension DualSenseHID {
     /// rumble mode, and plays haptics again, once it drops back to zero.
     func setRumble(left: UInt8, right: UInt8) {
         lock.lock()
-        outputState.rumbleLeft = left; outputState.rumbleRight = right
+        mutateOutput(slot: nil) { $0.rumbleLeft = left; $0.rumbleRight = right }
         lock.unlock()
         scheduleWrite()
     }
 
     var isRumbling: Bool {
         lock.lock(); defer { lock.unlock() }
-        return outputState.rumbleLeft != 0 || outputState.rumbleRight != 0
+        return ([outputState] + padOutputs.values).contains { $0.rumbleLeft != 0 || $0.rumbleRight != 0 }
     }
 
     // MARK: PS5 feedback
@@ -178,8 +177,7 @@ extension DualSenseHID {
     /// the haptics stream a slot on the link.
     func setAudioHapticsMode(_ on: Bool, keepAliveEvery seconds: Double = 1, padFilter: Bool = true) {
         lock.lock()
-        outputState.audioHaptics = on
-        outputState.hapticsFilter = padFilter
+        mutateOutput(slot: nil) { $0.audioHaptics = on; $0.hapticsFilter = padFilter }
         lock.unlock()
         writeQueue.async { [weak self] in
             guard let self else { return }
@@ -228,7 +226,7 @@ extension DualSenseHID {
     func setMicLED(lit: Bool?) {
         lock.lock()
         let changed = outputState.micLED != lit
-        outputState.micLED = lit
+        mutateOutput(slot: nil) { $0.micLED = lit }
         lock.unlock()
         if changed { scheduleWrite() }
     }
@@ -238,7 +236,7 @@ extension DualSenseHID {
     /// high nibble (0x00, 0x60, 0x90) - chiaki-ng's mapping.
     func setIntensity(haptics: UInt8, triggers: UInt8) {
         lock.lock()
-        outputState.intensity = (triggers & 0xF0) | (haptics & 0x0F)
+        mutateOutput(slot: nil) { $0.intensity = (triggers & 0xF0) | (haptics & 0x0F) }
         lock.unlock()
         scheduleWrite()
     }

@@ -141,6 +141,15 @@ final class DualSenseHID: @unchecked Sendable {
     /// them to zero. ControllerHaptics feeds lightbar/rumble here when raw-HID
     /// is live; setAdaptiveTriggers feeds the trigger blocks. Lock-guarded.
     var outputState = DualSenseOutputState()
+    /// Each pad's own OUTPUT state, by device. Rumble, light bar and triggers
+    /// for one player go to that player's pad only (`targets(forSlot:)`);
+    /// settings for every pad (console intensity, audio haptics, mic light)
+    /// change `outputState` and every pad alike. A pad that connects starts
+    /// from `outputState`.
+    var padOutputs: [UnsafeMutableRawPointer: DualSenseOutputState] = [:]
+    /// Per pad, which trigger blocks changed since they were last written
+    /// (valid_flag0 bits: right 0x04, left 0x08).
+    var padDirtyTriggers: [UnsafeMutableRawPointer: UInt8] = [:]
     /// Latch so the "SetReport refused" breadcrumb logs once, not per write
     /// (host re-arms triggers can arrive at frame rate).
     private var loggedWriteFailure = false
@@ -392,10 +401,11 @@ final class DualSenseHID: @unchecked Sendable {
         batteryLocked = nil
         reportCountLocked = 0
         outputState = DualSenseOutputState()
+        padOutputs.removeAll()
+        padDirtyTriggers.removeAll()
         // A request the pad never confirmed would time the next session's
         // first write from this one.
         triggerRequestedAt = 0
-        dirtyTriggers = 0
         lock.unlock()
         log.info("DualSense HID closed")
     }
@@ -437,7 +447,8 @@ final class DualSenseHID: @unchecked Sendable {
         // device deallocation. (The `key` opaque pointer is only an identity
         // token, NOT the retain; do not switch this value to Unmanaged.)
         writeDevices[key] = (device: device, bluetooth: isBluetooth)
-        dirtyTriggers = Self.bothTriggers    // a pad that (re)connects gets the current effects
+        padOutputs[key] = outputState
+        padDirtyTriggers[key] = Self.bothTriggers    // a pad that (re)connects gets the current effects
         lock.unlock()
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputReportCallback(device, buf, bufLen, Self.reportCallback, ctx)
@@ -449,6 +460,8 @@ final class DualSenseHID: @unchecked Sendable {
         lock.lock()
         let known = writeDevices.removeValue(forKey: key) != nil ? reportBuffers[key] : nil
         padInputs[key] = nil
+        padOutputs[key] = nil
+        padDirtyTriggers[key] = nil
         for (slot, device) in slotDevices where device == key { slotDevices[slot] = nil }
         lock.unlock()
         // The buffer stays allocated (see reportBuffers): a report already
@@ -512,30 +525,34 @@ final class DualSenseHID: @unchecked Sendable {
     /// DualSense-native mode bytes and `left`/`right` are the 10 param bytes -
     /// passed straight through (moonlight-qt's shape). A no-op when no device is
     /// open or the write is refused.
-    func setAdaptiveTriggers(eventFlags: UInt8, typeLeft: UInt8, typeRight: UInt8,
+    func setAdaptiveTriggers(slot: UInt8?, eventFlags: UInt8, typeLeft: UInt8, typeRight: UInt8,
                              left: [UInt8], right: [UInt8]) {
         // DS_EFFECT_RIGHT_TRIGGER 0x04 / DS_EFFECT_LEFT_TRIGGER 0x08.
         let wantRight = (eventFlags & 0x04) != 0
         let wantLeft = (eventFlags & 0x08) != 0
         guard wantRight || wantLeft else { return }
+        let leftBlock = Self.triggerBlock(mode: typeLeft, params: left)
+        let rightBlock = Self.triggerBlock(mode: typeRight, params: right)
         lock.lock()
-        // Per side: the console sends both triggers in every message, and
-        // asserting an unchanged side restarts its effect (Sony's app flags
-        // only the side a request changes).
-        var sides: UInt8 = 0
-        if wantLeft {
-            let block = Self.triggerBlock(mode: typeLeft, params: left)
-            if block != outputState.leftTrigger { outputState.leftTrigger = block; sides |= Self.flagLeftTrigger }
+        // Per side and per pad: the console sends both triggers in every
+        // message, and asserting an unchanged side restarts its effect (Sony's
+        // app flags only the side a request changes).
+        if slot == nil {
+            if wantLeft { outputState.leftTrigger = leftBlock }
+            if wantRight { outputState.rightTrigger = rightBlock }
         }
-        if wantRight {
-            let block = Self.triggerBlock(mode: typeRight, params: right)
-            if block != outputState.rightTrigger { outputState.rightTrigger = block; sides |= Self.flagRightTrigger }
+        var changed = false
+        for key in targets(forSlot: slot) {
+            var state = padOutputs[key] ?? outputState
+            var sides: UInt8 = 0
+            if wantLeft, state.leftTrigger != leftBlock { state.leftTrigger = leftBlock; sides |= Self.flagLeftTrigger }
+            if wantRight, state.rightTrigger != rightBlock { state.rightTrigger = rightBlock; sides |= Self.flagRightTrigger }
+            padOutputs[key] = state
+            if sides != 0 { padDirtyTriggers[key, default: 0] |= sides; changed = true }
         }
-        let changed = sides != 0
         triggerUpdates += 1
         if changed {
             triggerChanges += 1
-            dirtyTriggers |= sides
             if triggerRequestedAt == 0 { triggerRequestedAt = DispatchTime.now().uptimeNanoseconds }
         }
         lock.unlock()
@@ -546,15 +563,39 @@ final class DualSenseHID: @unchecked Sendable {
         if changed { scheduleWrite() }
     }
 
+    /// The pads a request for `slot` goes to (`lock` held): nil, every pad;
+    /// a slot tied to its pad, that pad; a slot not tied yet, every pad no
+    /// other slot has claimed (with one pad, that pad).
+    func targets(forSlot slot: UInt8?) -> [UnsafeMutableRawPointer] {
+        let all = Array(writeDevices.keys)
+        guard let slot else { return all }
+        if let bound = slotDevices[slot], writeDevices[bound] != nil { return [bound] }
+        let claimed = Set(slotDevices.filter { $0.key != slot }.map(\.value))
+        return all.filter { !claimed.contains($0) }
+    }
+
+    /// Change the OUTPUT state of `slot`'s pad(s) (`lock` held); nil changes
+    /// every pad and the state a new pad starts from.
+    func mutateOutput(slot: UInt8?, _ body: (inout DualSenseOutputState) -> Void) {
+        if slot == nil { body(&outputState) }
+        for key in targets(forSlot: slot) {
+            var state = padOutputs[key] ?? outputState
+            body(&state)
+            padOutputs[key] = state
+        }
+    }
+
     /// Feed the host's latest lightbar color into the merged output state
     /// (called by ControllerHaptics when raw-HID is live). Does NOT itself
     /// write - the lightbar still rides GameController's GCDeviceLight; this
     /// only keeps our merge current so an adaptive-trigger write re-emits the
     /// right color instead of blanking the bar.
-    func setLightbarState(red: UInt8, green: UInt8, blue: UInt8) {
+    func setLightbarState(slot: UInt8? = nil, red: UInt8, green: UInt8, blue: UInt8) {
         lock.lock()
-        outputState.lightR = red; outputState.lightG = green; outputState.lightB = blue
-        outputState.lightSet = true
+        mutateOutput(slot: slot) {
+            $0.lightR = red; $0.lightG = green; $0.lightB = blue
+            $0.lightSet = true
+        }
         lock.unlock()
     }
 
@@ -563,11 +604,13 @@ final class DualSenseHID: @unchecked Sendable {
     /// setLightbarState - rumble itself still rides GameController haptics, but
     /// a trigger write has to carry it: a report without the rumble bits drops
     /// the pad out of rumble mode and would silence GameController's motors.
-    func setRumbleState(left: UInt8, right: UInt8) {
+    func setRumbleState(slot: UInt8? = nil, left: UInt8, right: UInt8) {
         lock.lock()
-        let wasOn = outputState.rumbleLeft != 0 || outputState.rumbleRight != 0
-        outputState.rumbleLeft = left; outputState.rumbleRight = right
-        let stopped = wasOn && left == 0 && right == 0
+        var stopped = false
+        mutateOutput(slot: slot) {
+            if ($0.rumbleLeft != 0 || $0.rumbleRight != 0) && left == 0 && right == 0 { stopped = true }
+            $0.rumbleLeft = left; $0.rumbleRight = right
+        }
         let devices = !writeDevices.isEmpty
         lock.unlock()
         // A trigger write taken just before the stop may still carry the old
@@ -581,9 +624,11 @@ final class DualSenseHID: @unchecked Sendable {
     private func resetTriggersBeforeClose() {
         lock.lock()
         let hadDevice = !writeDevices.isEmpty
-        outputState.leftTrigger = [UInt8](repeating: 0, count: 11)
-        outputState.rightTrigger = [UInt8](repeating: 0, count: 11)
-        dirtyTriggers = Self.bothTriggers
+        mutateOutput(slot: nil) {
+            $0.leftTrigger = [UInt8](repeating: 0, count: 11)
+            $0.rightTrigger = [UInt8](repeating: 0, count: 11)
+        }
+        for key in writeDevices.keys { padDirtyTriggers[key] = Self.bothTriggers }
         lock.unlock()
         guard hadDevice else { return }
         // Synchronous on the write queue so it completes before the manager
@@ -617,9 +662,6 @@ final class DualSenseHID: @unchecked Sendable {
     /// (session breadcrumbs; `lock`).
     var triggerUpdates = 0
     var triggerChanges = 0
-    /// Which trigger blocks changed since they were last written, as the
-    /// report's valid_flag0 bits (right 0x04, left 0x08; `lock`).
-    var dirtyTriggers: UInt8 = 0
     static let bothTriggers: UInt8 = flagRightTrigger | flagLeftTrigger
     /// Trigger latency breadcrumbs (`lock`): when the oldest unapplied change
     /// arrived, when its write finished, and the pad's own trigger-status
@@ -691,14 +733,26 @@ final class DualSenseHID: @unchecked Sendable {
     /// light-bar or mute-light write must not carry them.
     func writeCurrentOutput() {
         lock.lock()
-        let triggers = dirtyTriggers
-        dirtyTriggers = 0
+        var jobs: [(key: UnsafeMutableRawPointer, device: IOHIDDevice, bluetooth: Bool,
+                    state: DualSenseOutputState, triggers: UInt8)] = []
+        for (key, entry) in writeDevices {
+            jobs.append((key, entry.device, entry.bluetooth, padOutputs[key] ?? outputState, padDirtyTriggers[key] ?? 0))
+            padDirtyTriggers[key] = 0
+        }
         lock.unlock()
-        let ok = writeToAll { Self.effectsState($0, triggerFlags: triggers) }
-        if triggers != 0 {
+        var wroteTriggers = false
+        var allOK = true
+        for job in jobs {
+            let ok = writeOutputReport(to: job.device, bluetooth: job.bluetooth,
+                                       effects: Self.effectsState(job.state, triggerFlags: job.triggers))
+            allOK = allOK && ok
+            guard job.triggers != 0 else { continue }
+            wroteTriggers = true
+            if !ok { lock.withLock { padDirtyTriggers[job.key, default: 0] |= job.triggers } }
+        }
+        if wroteTriggers, allOK {
             lock.lock()
-            if !ok { dirtyTriggers |= triggers }
-            if ok, triggerRequestedAt != 0, triggerWriteMs.count < 10_000 {
+            if triggerRequestedAt != 0, triggerWriteMs.count < 10_000 {
                 triggerWriteMs.append(Double(DispatchTime.now().uptimeNanoseconds &- triggerRequestedAt) / 1e6)
             }
             lock.unlock()

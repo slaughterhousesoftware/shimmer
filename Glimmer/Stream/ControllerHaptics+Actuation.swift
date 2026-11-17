@@ -22,7 +22,7 @@ extension ControllerHaptics {
         // write re-emits the live rumble instead of zeroing it. Merge-only - the
         // motors themselves still ride GameController haptics below; this just
         // mirrors the latest value (16-bit wire → 8-bit report) for the merge.
-        mirrorRumbleToHID(pad: pad, lowFreq: lowFreq, highFreq: highFreq)
+        mirrorRumbleToHID(pad: pad, slot: slot, lowFreq: lowFreq, highFreq: highFreq)
         if lowFreq == 0 && highFreq == 0 {
             // (0,0) idles whatever BODY players exist - the trigger localities
             // are a separate wire channel, so zeroing them here would cut live
@@ -135,7 +135,7 @@ extension ControllerHaptics {
         guard let pad = pads[slot], let light = pad.controller?.light else { return }
         // Mirror to DualSenseHID's merge (see apply()): so an adaptive-trigger
         // OUTPUT report re-emits this color rather than blanking the light bar.
-        mirrorLightToHID(pad: pad, red: red, green: green, blue: blue)
+        mirrorLightToHID(pad: pad, slot: slot, red: red, green: green, blue: blue)
         light.color = GCColor(red: Float(red) / 255.0,
                               green: Float(green) / 255.0,
                               blue: Float(blue) / 255.0)
@@ -342,16 +342,16 @@ extension ControllerHaptics {
             && pad.controller?.extendedGamepad is GCDualSenseGamepad
     }
 
-    func mirrorRumbleToHID(pad: PadHaptics, lowFreq: UInt16, highFreq: UInt16) {
+    func mirrorRumbleToHID(pad: PadHaptics, slot: UInt8, lowFreq: UInt16, highFreq: UInt16) {
         guard hidMergeActive(pad: pad) else { return }
         // 16-bit wire → 8-bit report byte (the DS5EffectsState motor field).
-        DualSenseHID.shared.setRumbleState(left: UInt8(lowFreq >> 8),
+        DualSenseHID.shared.setRumbleState(slot: slot, left: UInt8(lowFreq >> 8),
                                            right: UInt8(highFreq >> 8))
     }
 
-    func mirrorLightToHID(pad: PadHaptics, red: UInt8, green: UInt8, blue: UInt8) {
+    func mirrorLightToHID(pad: PadHaptics, slot: UInt8, red: UInt8, green: UInt8, blue: UInt8) {
         guard hidMergeActive(pad: pad) else { return }
-        DualSenseHID.shared.setLightbarState(red: red, green: green, blue: blue)
+        DualSenseHID.shared.setLightbarState(slot: slot, red: red, green: green, blue: blue)
     }
 
     // MARK: - Per-pad state
