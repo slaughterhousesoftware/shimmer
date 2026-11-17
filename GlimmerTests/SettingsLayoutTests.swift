@@ -23,16 +23,6 @@ struct SettingsLayoutTests {
         #expect(SettingsMetrics.windowWidth == 600)
         #expect(SettingsTab.computers.windowHeight == CGFloat(528 - 32))
     }
-    /// A machine's page fits beside the sidebar: gutter, control and the
-    /// bitrate readout ("100 Mbps") inside the detail's margins.
-    @Test func machinePageFitsBesideTheSidebar() {
-        let page = SettingsMetrics.windowWidth - SettingsMetrics.serversSidebarWidth - 1
-        let row = SettingsMetrics.serversPageLeading + SettingsMetrics.serversLabelGutter
-            + SettingsMetrics.labelGap + SettingsMetrics.serversControlWidth
-            + 10 + 64 + SettingsMetrics.serversPageTrailing
-        #expect(row <= page)
-        #expect(SettingsMetrics.serversLabelGutter >= 84)  // "Presentation:"
-    }
     @Test func bitrateStops() {
         #expect(BitrateSlider.stopsMbps == [5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300])
         #expect(BitrateSlider.nearestStopIndex(mbps: 100, maxMbps: 100) == 8)

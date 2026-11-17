@@ -73,42 +73,57 @@ struct StreamPane: View {
         if fps != model.customFPS { model.customFPS = fps }
     }
 
+    /// Rows of the page's Video section (a grouped Form, System Settings style).
     var body: some View {
         @Bindable var model = model
-        VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
-            // Size and rate on one row, as the PS5's page has them.
-            SettingsField("Quality") {
-                HStack(spacing: 8) {
-                    CompactPopup(selection: resolutionSelection,
-                                 ResolutionChoice.all.map { (resolutionLabel($0), $0) })
-                    .accessibilityLabel("Resolution")
-                    CompactPopup(selection: frameRateSelection,
-                                 FrameRateChoice.all.map { (frameRateLabel($0), $0) })
-                    .accessibilityLabel("Frame rate")
-                }
-                if frameRateSelection.wrappedValue == .custom {
-                    HStack(spacing: 6) {
-                        TextField("", value: $model.customFPS, format: .number)
-                            .frame(width: 72).multilineTextAlignment(.trailing).monospacedDigit()
-                            .onChange(of: model.customFPS) { _, _ in clampCustomFPS() }
-                        Text("Hz").foregroundStyle(.secondary)
-                    }
+        Picker("Resolution", selection: resolutionSelection) {
+            ForEach(ResolutionChoice.all, id: \.self) { Text(resolutionLabel($0)).tag($0) }
+        }
+        Picker("Frame rate", selection: frameRateSelection) {
+            ForEach(FrameRateChoice.all, id: \.self) { Text(frameRateLabel($0)).tag($0) }
+        }
+        if frameRateSelection.wrappedValue == .custom {
+            LabeledContent("Custom frame rate") {
+                HStack(spacing: 4) {
+                    TextField("", value: $model.customFPS, format: .number)
+                        .labelsHidden()
+                        .frame(width: 56).multilineTextAlignment(.trailing).monospacedDigit()
+                        .onChange(of: model.customFPS) { _, _ in clampCustomFPS() }
+                    Text("Hz").foregroundStyle(.secondary)
                 }
             }
+        }
+        BitrateMenu(automatic: $model.bitrateAuto, mbps: $model.manualBitrateMbps,
+                    automaticMbps: model.recommendedBitrateMbpsNow,
+                    maxMbps: BitrateSlider.stopsMbps.last ?? 300)
+    }
+}
 
-            SettingsField("Bitrate") {
-                Toggle("Set automatically", isOn: $model.bitrateAuto)
-                HStack(spacing: 10) {
-                    BitrateSlider(mbps: model.effectiveBitrateKbps / 1000,
-                                  maxMbps: BitrateScale.stepsMbps.last ?? 300) { model.manualBitrateMbps = $0 }
-                        .settingsControl()
-                        .disabled(model.bitrateAuto)
-                    Text("\(model.effectiveBitrateKbps / 1000) Mbps")
-                        .monospacedDigit()
-                        .foregroundStyle(model.bitrateAuto ? .secondary : .primary)
+/// Bitrate as System Settings would offer it: one popup, Automatic (with what
+/// it works out to) and then the slider's old snap points.
+struct BitrateMenu: View {
+    @Binding var automatic: Bool
+    @Binding var mbps: Int
+    let automaticMbps: Int
+    let maxMbps: Int
+
+    private var stops: [Int] { BitrateSlider.stopsMbps.filter { $0 <= maxMbps } }
+
+    var body: some View {
+        Picker("Bitrate", selection: Binding<Int>(
+            get: { automatic ? 0 : (stops.min { abs($0 - mbps) < abs($1 - mbps) } ?? mbps) },
+            set: { value in
+                if value == 0 {
+                    automatic = true
+                } else {
+                    // Off first: turning automatic off seeds its own value.
+                    automatic = false
+                    mbps = value
                 }
-            }
-
+            })) {
+            Text("Automatic (\(automaticMbps) Mbps)").tag(0)
+            Divider()
+            ForEach(stops, id: \.self) { Text("\($0) Mbps").tag($0) }
         }
     }
 }

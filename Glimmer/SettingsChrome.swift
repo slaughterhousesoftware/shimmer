@@ -196,17 +196,8 @@ enum SettingsMetrics {
     /// recorders, the stats row editor, the DualSense panel.
     static let wideControlWidth: CGFloat = 460
 
-    /// Servers: the sidebar, and a machine's page beside it - the same rows
-    /// in the 409 pt left over, with a gutter sized to its own labels (the
-    /// longest is "Presentation:") and narrower controls.
+    /// Servers: the machine list beside a machine's page.
     static let serversSidebarWidth: CGFloat = 190
-    static let serversPageLeading: CGFloat = 8
-    static let serversPageTrailing: CGFloat = 16
-    static let serversLabelGutter: CGFloat = 92
-    static let serversControlWidth: CGFloat = 196
-    /// Between a machine page's groups: tighter than a settings tab's 22 so a
-    /// PS5's whole page fits the window without scrolling.
-    static let serversRowSpacing: CGFloat = 16
 }
 
 extension EnvironmentValues {
@@ -417,110 +408,12 @@ struct BitrateSlider: View {
     }
 }
 
-/// macOS's own popup, as wide as the value it shows. AppKit's sizes to its
-/// WIDEST item and, on macOS 26, leaves ~18 pt between the text and the
-/// arrows - a "60 Hz" popup sized for "Custom…" read as half empty. Every
-/// popup on a machine's page is one of these, so they all match.
-struct CompactPopup<Value: Hashable>: View {
-    struct Option {
-        let title: String
-        let value: Value
-        var image: NSImage? = nil
-    }
-
-    @Binding var selection: Value
-    let options: [Option]
-
-    init(selection: Binding<Value>, options: [Option]) {
-        _selection = selection
-        self.options = options
-    }
-
-    /// Plain titled options.
-    init(selection: Binding<Value>, _ pairs: [(String, Value)]) {
-        self.init(selection: selection, options: pairs.map { Option(title: $0.0, value: $0.1) })
-    }
-
+/// A grouped Form's section heading, pulled up: macOS leaves ~38 pt between
+/// one box and the next heading, System Settings about 20.
+struct FormSectionHeader: View {
+    let title: String
+    init(_ title: String) { self.title = title }
     var body: some View {
-        CompactPopupRepresentable(selection: $selection, options: options).fixedSize()
-    }
-}
-
-private struct CompactPopupRepresentable<Value: Hashable>: NSViewRepresentable {
-    @Binding var selection: Value
-    let options: [CompactPopup<Value>.Option]
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeNSView(context: Context) -> NSPopUpButton {
-        let button = CompactPopUpButton(frame: .zero, pullsDown: false)
-        button.target = context.coordinator
-        button.action = #selector(Coordinator.picked(_:))
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        return button
-    }
-
-    func updateNSView(_ button: NSPopUpButton, context: Context) {
-        context.coordinator.parent = self
-        let titles = options.map(\.title)
-        // Rebuilt only when the titles change: images are made fresh on
-        // every SwiftUI update, and rebuilding would close an open menu.
-        if button.itemTitles != titles {
-            button.removeAllItems()
-            for option in options {
-                button.addItem(withTitle: option.title)
-                button.lastItem?.image = option.image
-            }
-        }
-        if let index = options.firstIndex(where: { $0.value == selection }) {
-            if button.indexOfSelectedItem != index { button.selectItem(at: index) }
-        } else {
-            button.select(nil)
-        }
-        button.isEnabled = context.environment.isEnabled
-        button.invalidateIntrinsicContentSize()
-    }
-
-    final class Coordinator: NSObject {
-        var parent: CompactPopupRepresentable
-        init(_ parent: CompactPopupRepresentable) { self.parent = parent }
-        @objc func picked(_ sender: NSPopUpButton) {
-            let index = sender.indexOfSelectedItem
-            guard parent.options.indices.contains(index) else { return }
-            parent.selection = parent.options[index].value
-            sender.invalidateIntrinsicContentSize()
-        }
-    }
-}
-
-/// Sized to its selected title (and icon), the arrows close beside it.
-/// (macOS 26's popup ignores its cell's cellSize; the button's own size is
-/// what counts.)
-final class CompactPopUpButton: NSPopUpButton {
-    static let chrome: CGFloat = 12 + 8 + 8 + 8   // in, gap, arrows, out
-
-    override var intrinsicContentSize: NSSize {
-        var size = super.intrinsicContentSize
-        let font = self.font ?? .systemFont(ofSize: NSFont.systemFontSize)
-        var content = ceil(((titleOfSelectedItem ?? "") as NSString).size(withAttributes: [.font: font]).width)
-        if let image = selectedItem?.image { content += image.size.width + 4 }
-        size.width = min(size.width, content + Self.chrome)
-        return size
-    }
-}
-
-extension LibraryApp {
-    /// The app's glyph for an AppKit menu: template, on the text line.
-    var menuImage: NSImage? {
-        let image: NSImage?
-        switch glyph {
-        case .symbol(let name): image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
-        case .asset(let name):
-            image = NSImage(named: name)?.copy() as? NSImage
-            image?.size = NSSize(width: 14, height: 14)
-        }
-        image?.isTemplate = true
-        return image
+        Text(title).padding(.top, -14)
     }
 }

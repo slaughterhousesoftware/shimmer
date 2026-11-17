@@ -335,44 +335,10 @@ struct ComputersTab: View {
             }
             .id(target.id)
         } else if let host = model.selectedHost {
-            ScrollView {
-                VStack(spacing: 0) {
-                    hostTitle(for: host)
-                        .padding(.top, 14)
-                        .padding(.horizontal, 16)
-                    Group {
-                        if !host.isPlayStation && apps.isEmpty {
-                            noAppsNotice(for: host)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        } else {
-                            StreamCard(host: host, apps: apps, chosenAppName: $chosenAppName)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                    VStack(alignment: .leading, spacing: SettingsMetrics.serversRowSpacing) {
-                        if host.isPlayStation {
-                            PlayStationSettingsPane(settings: .forConsole(host.id))
-                        } else {
-                            StreamPane()
-                            VideoPane()
-                        }
-                        SettingsField { endOfStreamToggle(for: host) }
-                    }
-                    .padding(.leading, SettingsMetrics.serversPageLeading)
-                    .padding(.trailing, SettingsMetrics.serversPageTrailing)
-                    .padding(.top, 18)
-                    .padding(.bottom, 16)
-                    // Each machine's page has its own view state: a value
-                    // half-typed on one PC must not commit into the next.
-                    .id(host.id)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            // The page is narrower than a settings tab: its own gutter and
-            // control width (SettingsMetrics.servers*).
-            .environment(\.settingsLabelGutter, SettingsMetrics.serversLabelGutter)
-            .environment(\.settingsControlWidth, SettingsMetrics.serversControlWidth)
+            machinePage(for: host)
+                // Each machine's page has its own view state: a value
+                // half-typed on one PC must not commit into the next.
+                .id(host.id)
         } else {
             ContentUnavailableView("No PC selected",
                                    systemImage: "display",
@@ -381,22 +347,41 @@ struct ComputersTab: View {
     }
 
 
-    /// The machine's name and address over its settings, as Tailscale titles
-    /// an account. Right-click for Rename / Remove.
-    private func hostTitle(for host: Host) -> some View {
-        VStack(spacing: 2) {
-            Text(host.displayName)
-                .font(.system(size: 18, weight: .semibold))
-                .lineLimit(1)
-            Text(model.selectedHostRouteAddress ?? model.dialAddress(for: host))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
+    /// A machine's page as System Settings lays one out: a grouped Form whose
+    /// first box is the machine itself (Stream / Picture in Picture), what to
+    /// stream and what ending it does; then Video (and Controller on a PS5).
+    private func machinePage(for host: Host) -> some View {
+        let chosen = apps.first { $0.name == (chosenAppName ?? model.heroTargetAppName) } ?? apps.first
+        return Form {
+            Section {
+                StreamHeader(host: host, app: chosen,
+                             address: model.selectedHostRouteAddress ?? model.dialAddress(for: host))
+                if !host.isPlayStation && apps.isEmpty {
+                    noAppsNotice(for: host)
+                } else if apps.count > 1 {
+                    Picker("Game", selection: Binding(get: { chosen?.name ?? "" }, set: { chosenAppName = $0 })) {
+                        ForEach(apps) { app in
+                            Label { Text(app.name) } icon: { AppGlyphIcon(app: app) }
+                                .tag(app.name)
+                        }
+                    }
+                    .disabled(model.isStreaming)
+                }
+                endOfStreamToggle(for: host)
+            }
+            if host.isPlayStation {
+                PlayStationSettingsPane(settings: .forConsole(host.id))
+            } else {
+                Section {
+                    StreamPane()
+                    VideoPane()
+                } header: {
+                    FormSectionHeader("Video")
+                }
+            }
         }
-        .frame(maxWidth: .infinity)
-        .hostContextMenu(host)
+        .formStyle(.grouped)
+        .toggleStyle(.switch)
     }
 
     /// What ending a stream does to the machine. Off, a PC's game keeps
