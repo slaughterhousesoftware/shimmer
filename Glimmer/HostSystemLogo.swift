@@ -143,48 +143,125 @@ struct HostAvatar: View {
     }
 
     /// The disc for a mark: the platform's colour with its mark in white.
-    @ViewBuilder
+    ///
+    /// Every mark is sized by one rule so none looks bigger than another:
+    /// each asset is cropped to its own artwork (no built-in margin), then
+    /// drawn at the same optical area - the geometric mean of its width and
+    /// height is half the disc - with its longest side capped at 64%, so a
+    /// wide PlayStation mark and a tall Tux carry the same weight as a round
+    /// Fedora. A mark that is nearly all ink (Windows' four panes) still
+    /// looks heavier than a line drawing (Tux, Debian's swirl), so each is
+    /// nudged by its measured ink coverage - `optical`, at most ±10%.
     static func disc(_ mark: Mark, size: CGFloat) -> some View {
-        switch mark {
-        case .playStation:
-            Circle().fill(colour(0x0070D1))
-                .overlay {
-                    Image(systemName: "playstation.logo")
-                        .resizable().scaledToFit()
-                        .frame(width: size * 0.56, height: size * 0.56)
-                        .foregroundStyle(.white)
-                }
-        case .icon(.bazzite):
-            // The official colour artwork, which includes its own disc, with
-            // its translucent monogram made solid white so it reads at 36 pt.
-            Image("HostLogo-bazzite").renderingMode(.original).resizable().scaledToFit()
-        case .icon(.chimeraOS), .icon(.computer), .icon(.automatic):
-            // ChimeraOS's only artwork is a detailed mascot that can't read at
-            // this size, so it gets a controller; a plain PC a computer.
-            Circle().fill(colour(mark == .icon(.chimeraOS) ? HostIcon.chimeraOS.backgroundRGB
-                                                            : HostIcon.computer.backgroundRGB))
-                .overlay {
-                    Image(systemName: mark == .icon(.chimeraOS) ? "gamecontroller.fill" : "desktopcomputer")
-                        .resizable().scaledToFit()
-                        .frame(width: size * 0.52, height: size * 0.52)
-                        .foregroundStyle(.white)
-                }
-        case .icon(let icon):
-            Circle().fill(colour(icon.backgroundRGB))
-                .overlay {
-                    Group {
-                        if icon == .macOS {
-                            Image(systemName: "apple.logo").resizable().scaledToFit()
-                                .frame(width: size * 0.5, height: size * 0.5)
-                        } else if let asset = icon.assetName {
-                            Image(asset)
-                                .renderingMode(icon == .chimeraOS ? .original : .template)
-                                .resizable().scaledToFit()
-                                .frame(width: size * 0.69, height: size * 0.69)
-                        }
-                    }
-                    .foregroundStyle(icon == .linux ? .black : .white)
-                }
+        let glyph = Glyph(mark)
+        let frame = glyphFrame(aspect: glyph.aspect, size: size * glyph.optical)
+        return Circle()
+            .fill(glyph.fill)
+            .overlay {
+                glyph.image
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: frame.width, height: frame.height)
+                    .foregroundStyle(glyph.ink)
+            }
+            .frame(width: size, height: size)
+    }
+
+    static func glyphFrame(aspect: CGFloat, size: CGFloat) -> CGSize {
+        let side = size * 0.5
+        var width = side * aspect.squareRoot()
+        var height = side / aspect.squareRoot()
+        let longest = max(width, height), cap = size * 0.64
+        if longest > cap {
+            width *= cap / longest
+            height *= cap / longest
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    /// A mark's artwork, its proportions, and the colours it sits in.
+    @MainActor private struct Glyph {
+        let image: Image
+        let aspect: CGFloat
+        let fill: AnyShapeStyle
+        let ink: Color
+        /// The size nudge for how much of its box the mark inks: the 0.2th
+        /// power of (typical coverage ÷ this mark's), within 0.9-1.1.
+        let optical: CGFloat
+
+        init(_ mark: Mark) {
+            switch mark {
+            case .playStation:
+                self.init(symbol: "playstation.logo", fill: AnyShapeStyle(HostAvatar.colour(0x0070D1)))
+            case .icon(.bazzite):
+                // The press kit's gradient disc, its monogram solid white.
+                self.init(asset: "HostLogo-bazzite-mark", fill: AnyShapeStyle(LinearGradient(
+                    colors: [HostAvatar.colour(0x0047AB), HostAvatar.colour(0x8A2BE2)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing)))
+            case .icon(.chimeraOS):
+                // Its only artwork is a detailed mascot that can't read at
+                // sidebar size.
+                self.init(symbol: "gamecontroller.fill", fill: AnyShapeStyle(HostAvatar.colour(HostIcon.chimeraOS.backgroundRGB)))
+            case .icon(.macOS):
+                self.init(symbol: "apple.logo", fill: AnyShapeStyle(HostAvatar.colour(HostIcon.macOS.backgroundRGB)))
+            case .icon(.computer), .icon(.automatic):
+                self.init(symbol: "desktopcomputer", fill: AnyShapeStyle(HostAvatar.colour(HostIcon.computer.backgroundRGB)))
+            case .icon(let icon):
+                self.init(asset: icon.assetName ?? "HostLogo-linux",
+                          fill: AnyShapeStyle(HostAvatar.colour(icon.backgroundRGB)),
+                          ink: icon == .linux ? .black : .white)
+            }
+        }
+
+        private init(symbol: String, fill: AnyShapeStyle) {
+            let ns = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            let size = ns?.size ?? CGSize(width: 1, height: 1)
+            self.init(image: Image(systemName: symbol), aspect: size.width / max(size.height, 1), fill: fill,
+                      ink: .white, optical: Self.optical(ns, key: "symbol:" + symbol))
+        }
+
+        private init(asset: String, fill: AnyShapeStyle, ink: Color = .white) {
+            let ns = NSImage(named: asset)
+            let size = ns?.size ?? CGSize(width: 1, height: 1)
+            self.init(image: Image(asset).renderingMode(.template),
+                      aspect: size.width / max(size.height, 1), fill: fill, ink: ink,
+                      optical: Self.optical(ns, key: asset))
+        }
+
+        private init(image: Image, aspect: CGFloat, fill: AnyShapeStyle, ink: Color, optical: CGFloat) {
+            self.image = image
+            self.aspect = aspect
+            self.fill = fill
+            self.ink = ink
+            self.optical = optical
+        }
+
+        @MainActor private static var opticalCache: [String: CGFloat] = [:]
+
+        /// Measures the mark once: draws it into a 64-pixel square and
+        /// takes the share of its bounding box that is ink.
+        @MainActor private static func optical(_ image: NSImage?, key: String) -> CGFloat {
+            if let cached = opticalCache[key] { return cached }
+            guard let image, let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 64, bitsPerSample: 8,
+                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0) else { return 1 }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            let scale = min(64 / max(image.size.width, 1), 64 / max(image.size.height, 1))
+            image.draw(in: NSRect(x: 0, y: 0, width: image.size.width * scale, height: image.size.height * scale))
+            NSGraphicsContext.restoreGraphicsState()
+            var inked = 0, minX = 64, maxX = -1, minY = 64, maxY = -1
+            for y in 0..<64 { for x in 0..<64 where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5 {
+                inked += 1
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            } }
+            guard inked > 0 else { return 1 }
+            let box = CGFloat((maxX - minX + 1) * (maxY - minY + 1))
+            let coverage = CGFloat(inked) / box
+            let nudge = min(1.1, max(0.9, pow(0.55 / coverage, 0.2)))
+            opticalCache[key] = nudge
+            return nudge
         }
     }
 
@@ -198,7 +275,7 @@ struct HostAvatar: View {
         }
     }
 
-    private static func colour(_ rgb: UInt32) -> Color {
+    fileprivate static func colour(_ rgb: UInt32) -> Color {
         Color(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255,
               blue: Double(rgb & 255) / 255)
     }
