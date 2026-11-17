@@ -10,7 +10,7 @@
 //   ps5ctl stream   <ip> [options]           LAN session with the saved registration
 //        --seconds N        stop after N seconds (default 10)
 //        --out FILE         write the raw Annex-B video stream to FILE
-//        --press NAME@SEC   tap a button at SEC (repeatable): ps cross circle square triangle
+//        --press NAME@SEC   tap a button at SEC (repeatable; NAME+NAME = one combo): ps cross circle square triangle
 //                           up down left right options share l1 r1 touchpad
 //        --codec h264|h265  (default h265)    --res 720|1080 (default 1080)    --fps 30|60
 //        --rest             put the console into rest mode at the end
@@ -44,6 +44,9 @@
 // Shimmer's libchiaki research hook (third_party/chiaki-ng-patches/0002).
 extern int chiaki_shimmer_reorder_timeout_us;  // patch 0001 (default 4000)
 extern int chiaki_shimmer_takion_version;       // patch 0002 (default 20; PS5CTL_TAKION=12 = no negotiation)
+extern int chiaki_shimmer_history_trailing_override; // research/0004 (-1 = by Takion version)
+extern int chiaki_shimmer_history_log;              // research/0004 (history packets to hex-log)
+extern int chiaki_shimmer_history_drop_seq;         // research/0004 (drop that history packet)
 ChiakiErrorCode chiaki_shimmer_ctrl_send(ChiakiSession *session, uint16_t type, const uint8_t *payload, size_t payload_size);
 
 // Keychain account name the PSN items are stored under (any label you chose).
@@ -740,10 +743,17 @@ static int cmd_stream(int argc, char **argv)
 			char *at = strchr(spec, '@');
 			if(!at) { fprintf(stderr, "--press NAME@SEC\n"); return 1; }
 			*at = 0;
+			// NAME or NAME+NAME...: a combo changes every named button in one
+			// state update, so their history events share one packet
 			uint32_t mask = 0;
-			for(size_t b = 0; b < sizeof(kButtons) / sizeof(kButtons[0]); b++)
-				if(!strcmp(kButtons[b].name, spec)) mask = kButtons[b].mask;
-			if(!mask) { fprintf(stderr, "unknown button %s\n", spec); return 1; }
+			for(char *name = strtok(spec, "+"); name; name = strtok(NULL, "+"))
+			{
+				uint32_t one = 0;
+				for(size_t b = 0; b < sizeof(kButtons) / sizeof(kButtons[0]); b++)
+					if(!strcmp(kButtons[b].name, name)) one = kButtons[b].mask;
+				if(!one) { fprintf(stderr, "unknown button %s\n", name); return 1; }
+				mask |= one;
+			}
 			presses[npress++] = (Press){ mask, atof(at + 1) };
 		}
 		else { fprintf(stderr, "unknown option %s\n", argv[i]); return 1; }
@@ -1167,6 +1177,13 @@ int main(int argc, char **argv)
 		chiaki_shimmer_reorder_timeout_us = atoi(getenv("PS5CTL_REORDER_US"));
 	if(getenv("PS5CTL_TAKION"))
 		chiaki_shimmer_takion_version = atoi(getenv("PS5CTL_TAKION"));
+	// research/0004: force the v19+ history trailing byte on/off, log history payloads
+	if(getenv("PS5CTL_HISTORY_TRAILING"))
+		chiaki_shimmer_history_trailing_override = atoi(getenv("PS5CTL_HISTORY_TRAILING"));
+	if(getenv("PS5CTL_HISTORY_LOG"))
+		chiaki_shimmer_history_log = atoi(getenv("PS5CTL_HISTORY_LOG"));
+	if(getenv("PS5CTL_HISTORY_DROP_SEQ"))
+		chiaki_shimmer_history_drop_seq = atoi(getenv("PS5CTL_HISTORY_DROP_SEQ"));
 	chiaki_log_init(&g_log, CHIAKI_LOG_ALL, log_cb, NULL);
 	if(chiaki_lib_init() != CHIAKI_ERR_SUCCESS) { fprintf(stderr, "chiaki_lib_init failed\n"); return 1; }
 	if(argc < 2)

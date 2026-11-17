@@ -1,0 +1,96 @@
+diff -ruN a/lib/include/chiaki/feedback.h b/lib/include/chiaki/feedback.h
+--- a/lib/include/chiaki/feedback.h
++++ b/lib/include/chiaki/feedback.h
+@@ -71,6 +71,13 @@
+ 	size_t size;
+ 	size_t begin;
+ 	size_t len;
++	/**
++	 * Shimmer: from Takion 19 every button record (header 0x80|pad) ends with a
++	 * byte, 0 - chiaki-ng-core (feedback_button_trailing_byte_version = 19, v20
++	 * vector 80 8e 00) and PXPlay's v20 record layout. Set by the feedback
++	 * sender from the session's Takion version; false formats as before.
++	 */
++	bool button_trailing_byte;
+ } ChiakiFeedbackHistoryBuffer;
+ 
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_feedback_history_buffer_init(ChiakiFeedbackHistoryBuffer *feedback_history_buffer, size_t size);
+diff -ruN a/lib/src/feedback.c b/lib/src/feedback.c
+--- a/lib/src/feedback.c
++++ b/lib/src/feedback.c
+@@ -23,7 +23,7 @@
+ // opposite extreme, a full-speed spin the wrong way for a frame.
+ static uint16_t feedback_unorm16(float v, float min, float max)
+ {
+-	if(v != v) v = 0; // NaN: no motion (as chiaki-ng-core), not the range's end
++	if(v != v) v = 0; // NaN (callers pass rest values for these - see chiaki_feedback_state_format_v9)
+ 	if(v < min) v = min;
+ 	if(v > max) v = max;
+ 	return (uint16_t)(0xffff * (v - min) / (max - min));
+@@ -54,8 +54,29 @@
+ 	return r;
+ }
+ 
+-CHIAKI_EXPORT void chiaki_feedback_state_format_v9(uint8_t *buf, ChiakiFeedbackState *state)
++CHIAKI_EXPORT void chiaki_feedback_state_format_v9(uint8_t *buf, ChiakiFeedbackState *state_in)
+ {
++	// Shimmer: a sample that isn't finite goes out as rest, as chiaki-ng-core
++	// sends it - no rotation, gravity on Y, the identity orientation - not 0 g
++	// and an undefined float->uint cast in compress_quat.
++	ChiakiFeedbackState rest = *state_in;
++	ChiakiFeedbackState *state = &rest;
++	if(!isfinite(rest.gyro_x)) rest.gyro_x = 0.0f;
++	if(!isfinite(rest.gyro_y)) rest.gyro_y = 0.0f;
++	if(!isfinite(rest.gyro_z)) rest.gyro_z = 0.0f;
++	if(!isfinite(rest.accel_x) || !isfinite(rest.accel_y) || !isfinite(rest.accel_z))
++	{
++		rest.accel_x = 0.0f;
++		rest.accel_y = 1.0f;
++		rest.accel_z = 0.0f;
++	}
++	if(!isfinite(rest.orient_x) || !isfinite(rest.orient_y) || !isfinite(rest.orient_z) || !isfinite(rest.orient_w))
++	{
++		rest.orient_x = 0.0f;
++		rest.orient_y = 0.0f;
++		rest.orient_z = 0.0f;
++		rest.orient_w = 1.0f;
++	}
+ 	buf[0x0] = 0xa0;
+ 	uint16_t v = feedback_unorm16(state->gyro_x, GYRO_MIN, GYRO_MAX);
+ 	buf[0x1] = v;
+@@ -183,6 +204,7 @@
+ 	feedback_history_buffer->size = size;
+ 	feedback_history_buffer->begin = 0;
+ 	feedback_history_buffer->len = 0;
++	feedback_history_buffer->button_trailing_byte = false;
+ 	return CHIAKI_ERR_SUCCESS;
+ }
+ 
+@@ -199,10 +221,14 @@
+ 	for(size_t i=0; i<feedback_history_buffer->len; i++)
+ 	{
+ 		ChiakiFeedbackHistoryEvent *event = &feedback_history_buffer->events[(feedback_history_buffer->begin + i) % feedback_history_buffer->size];
+-		if(written + event->len > size_max)
++		// Shimmer: a button record (kind 4) gains its trailing byte from Takion 19
++		bool trailing = feedback_history_buffer->button_trailing_byte && event->len > 0 && (event->buf[0] & 0xe0) == 0x80;
++		if(written + event->len + (trailing ? 1 : 0) > size_max)
+ 			return CHIAKI_ERR_BUF_TOO_SMALL;
+ 		memcpy(buf + written, event->buf, event->len);
+ 		written += event->len;
++		if(trailing)
++			buf[written++] = 0;
+ 	}
+ 
+ 	*buf_size = written;
+diff -ruN a/lib/src/feedbacksender.c b/lib/src/feedbacksender.c
+--- a/lib/src/feedbacksender.c
++++ b/lib/src/feedbacksender.c
+@@ -66,6 +66,8 @@
+ 	ChiakiErrorCode err = chiaki_feedback_history_buffer_init(&feedback_sender->history_buf, FEEDBACK_HISTORY_BUFFER_SIZE);
+ 	if(err != CHIAKI_ERR_SUCCESS)
+ 		return err;
++	// Shimmer: the sender starts once Takion is connected, so the version is known
++	feedback_sender->history_buf.button_trailing_byte = takion->version >= 19;
+ 
+ 	err = chiaki_mutex_init(&feedback_sender->state_mutex, false);
+ 	if(err != CHIAKI_ERR_SUCCESS)

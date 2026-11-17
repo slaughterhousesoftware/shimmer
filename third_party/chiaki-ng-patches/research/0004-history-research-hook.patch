@@ -1,0 +1,58 @@
+--- a/lib/src/feedbacksender.c
++++ b/lib/src/feedbacksender.c
+@@ -4,6 +4,7 @@
+ #include <chiaki/time.h>
+ 
+ #include <string.h>
++#include <stdio.h>
+ 
+ #define FEEDBACK_STATE_TIMEOUT_MIN_MS 8 // minimum time to wait between sending 2 packets
+ #define FEEDBACK_STATE_TIMEOUT_MAX_MS 200 // maximum time to wait between sending 2 packets
+@@ -32,6 +33,14 @@
+ static void feedback_sender_send_history_packet(ChiakiFeedbackSender *feedback_sender, ChiakiSeqNum16 seq_num, uint8_t event_count, const uint8_t *buf, size_t buf_size);
+ static void feedback_sender_flush_history_locked(ChiakiFeedbackSender *feedback_sender);
+ static void feedback_sender_record_history(ChiakiFeedbackSender *feedback_sender, const ChiakiControllerState *state_prev, const ChiakiControllerState *state_now);
++
++// ps5ctl research hooks (research/0004): -1 = the trailing byte by Takion
++// version, 0/1 = forced off/on; and how many history packets to hex-log.
++int chiaki_shimmer_history_trailing_override = -1;
++int chiaki_shimmer_history_log = 0;
++// -1 = send all; N = never send the history packets whose newest event is N,
++// so the console must recover that event from the next packet's older records
++int chiaki_shimmer_history_drop_seq = -1;
+ 
+ CHIAKI_EXPORT ChiakiErrorCode chiaki_feedback_sender_init(ChiakiFeedbackSender *feedback_sender, ChiakiTakion *takion)
+ {
+@@ -68,6 +77,10 @@
+ 		return err;
+ 	// Shimmer: the sender starts once Takion is connected, so the version is known
+ 	feedback_sender->history_buf.button_trailing_byte = takion->version >= 19;
++	if(chiaki_shimmer_history_trailing_override >= 0)
++		feedback_sender->history_buf.button_trailing_byte = chiaki_shimmer_history_trailing_override != 0;
++	CHIAKI_LOGI(takion->log, "FeedbackSender: Takion %u, history trailing byte %s", (unsigned)takion->version,
++			feedback_sender->history_buf.button_trailing_byte ? "on" : "off");
+ 
+ 	err = chiaki_mutex_init(&feedback_sender->state_mutex, false);
+ 	if(err != CHIAKI_ERR_SUCCESS)
+@@ -249,8 +262,19 @@
+ 
+ static void feedback_sender_send_history_packet(ChiakiFeedbackSender *feedback_sender, ChiakiSeqNum16 seq_num, uint8_t event_count, const uint8_t *buf, size_t buf_size)
+ {
+-	//CHIAKI_LOGD(feedback_sender->log, "Feedback History:");
+-	//chiaki_log_hexdump(feedback_sender->log, CHIAKI_LOG_DEBUG, buf, buf_size);
++	if(chiaki_shimmer_history_drop_seq >= 0 && seq_num == (ChiakiSeqNum16)chiaki_shimmer_history_drop_seq)
++	{
++		CHIAKI_LOGI(feedback_sender->log, "History seq %u count %u: dropped (research)", (unsigned)seq_num, (unsigned)event_count);
++		return;
++	}
++	if(chiaki_shimmer_history_log > 0)
++	{
++		chiaki_shimmer_history_log--;
++		char hex[3 * 64 + 1] = { 0 };
++		for(size_t i = 0; i < buf_size && i < 64; i++)
++			snprintf(hex + 3 * i, 4, "%02x ", buf[i]);
++		CHIAKI_LOGI(feedback_sender->log, "History seq %u count %u: %s", (unsigned)seq_num, (unsigned)event_count, hex);
++	}
+ 	chiaki_takion_send_feedback_history(feedback_sender->takion, seq_num, event_count, (uint8_t *)buf, buf_size);
+ }
+ 

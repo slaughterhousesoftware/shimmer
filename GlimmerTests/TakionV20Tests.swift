@@ -141,4 +141,76 @@ struct TakionV20Tests {
         let (err, _, _) = Self.parse([0x02, 1, 2, 3, 4, 5, 6, 7], v20: true)
         #expect(err == CHIAKI_ERR_BUF_TOO_SMALL)
     }
+
+    // MARK: Feedback history records (chiaki-ng-core cross-check, 2026-11-17)
+
+    /// Formats `events` through a history buffer, the way the feedback sender does.
+    private static func history(trailingByte: Bool, _ events: [ChiakiFeedbackHistoryEvent]) -> [UInt8] {
+        var buffer = ChiakiFeedbackHistoryBuffer()
+        #expect(chiaki_feedback_history_buffer_init(&buffer, 8) == CHIAKI_ERR_SUCCESS)
+        defer { chiaki_feedback_history_buffer_fini(&buffer) }
+        buffer.button_trailing_byte = trailingByte
+        // The buffer formats newest first; push oldest first.
+        for var event in events { chiaki_feedback_history_buffer_push(&buffer, &event) }
+        var out = [UInt8](repeating: 0xee, count: 64)
+        var size = out.count
+        #expect(chiaki_feedback_history_buffer_format(&buffer, &out, &size) == CHIAKI_ERR_SUCCESS)
+        return Array(out.prefix(size))
+    }
+
+    private static func button(_ button: UInt64, _ state: UInt8) -> ChiakiFeedbackHistoryEvent {
+        var event = ChiakiFeedbackHistoryEvent()
+        #expect(chiaki_feedback_history_event_set_button(&event, button, state) == CHIAKI_ERR_SUCCESS)
+        return event
+    }
+
+    /// From Takion 19 every button record ends with a byte (0): chiaki-ng-core
+    /// (`feedback_button_trailing_byte_version = 19`, its v20 vector for a PS
+    /// release is 80 8e 00) and PXPlay's v20 record layout both send it.
+    @Test func v20ButtonRecordsEndWithATrailingByte() {
+        let ps = UInt64(CHIAKI_CONTROLLER_BUTTON_PS.rawValue)
+        #expect(Self.history(trailingByte: true, [Self.button(ps, 0)]) == [0x80, 0x8e, 0x00])
+        let l2 = UInt64(CHIAKI_CONTROLLER_ANALOG_BUTTON_L2.rawValue)
+        #expect(Self.history(trailingByte: true, [Self.button(l2, 0xff)]) == [0x80, 0x86, 0xff, 0x00])
+    }
+
+    /// Before 19 the records are as they were.
+    @Test func v12ButtonRecordsHaveNoTrailingByte() {
+        let ps = UInt64(CHIAKI_CONTROLLER_BUTTON_PS.rawValue)
+        #expect(Self.history(trailingByte: false, [Self.button(ps, 0)]) == [0x80, 0x8e])
+    }
+
+    /// Only button records (kind 4) gain the byte: touch records don't, and a
+    /// presence record for pad 1 does.
+    @Test func v20TrailingByteIsForButtonRecordsOnly() {
+        var touch = ChiakiFeedbackHistoryEvent()
+        chiaki_feedback_history_event_set_touchpad(&touch, true, 1, 0x123, 0x456)
+        var presence = ChiakiFeedbackHistoryEvent()
+        chiaki_feedback_history_event_set_presence(&presence, 1, true)
+        let ps = UInt64(CHIAKI_CONTROLLER_BUTTON_PS.rawValue)
+        #expect(Self.history(trailingByte: true, [touch, presence, Self.button(ps, 0xff)]) == [
+            0x80, 0xae, 0x00,           // newest: PS down
+            0x81, 0xbf, 0x00,           // pad 1 joined
+            0xd0, 0x01, 0x12, 0x34, 0x56 // touch down, no trailing byte
+        ])
+    }
+
+    /// A motion sample that isn't a number goes out as rest - gravity on Y and
+    /// the identity orientation (chiaki-ng-core) - not 0 g and an undefined quaternion.
+    @Test func nonFiniteMotionIsSentAsRest() {
+        func encoded(_ edit: (inout ChiakiFeedbackState) -> Void) -> [UInt8] {
+            var state = ChiakiFeedbackState()
+            state.accel_y = 1
+            state.orient_w = 1
+            edit(&state)
+            var buf = [UInt8](repeating: 0, count: 0x1c)
+            chiaki_feedback_state_format_v12(&buf, &state)
+            return buf
+        }
+        let rest = encoded { _ in }
+        #expect(encoded { $0.accel_x = .nan } == rest)
+        #expect(encoded { $0.accel_z = .infinity } == rest)
+        #expect(encoded { $0.orient_x = .nan } == rest)
+        #expect(encoded { $0.gyro_y = .nan } == rest)
+    }
 }
