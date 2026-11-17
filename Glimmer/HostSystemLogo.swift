@@ -146,17 +146,20 @@ struct HostAvatar: View {
     /// Every mark is sized by one rule so none looks bigger than another:
     /// each asset is cropped to its own artwork (no built-in margin), then
     /// drawn at the same optical area - the geometric mean of its width and
-    /// height is 54% of the disc - with its longest side capped at 69%, so a
+    /// height is 54% of the disc - with its longest side capped at 66%, so a
     /// wide PlayStation mark and a tall Tux carry the same weight as a round
     /// Fedora. A mark that is nearly all ink (Windows' four panes) still
     /// looks heavier than a line drawing (Tux, Debian's swirl), so each is
-    /// nudged by its measured ink coverage - `optical`, at most ±10%. And a
-    /// lopsided mark (Debian's swirl is top-heavy, EndeavourOS bottom-heavy)
-    /// looks off-centre when its box is centred, so each moves half-way from
-    /// its box's centre towards its ink's centre of mass - `shift`.
+    /// nudged by its measured ink coverage - `optical`, at most ±10%. Sizes
+    /// and centring go by the ink itself, measured once per mark (`inkBox`),
+    /// not by the artwork's frame: an SF Symbol's frame carries padding, and
+    /// the ink's box is what the eye reads, so it lands exactly on the
+    /// disc's centre.
     static func disc(_ mark: Mark, size: CGFloat) -> some View {
         let glyph = Glyph(mark)
-        let frame = glyphFrame(aspect: glyph.aspect, size: size * glyph.optical)
+        let box = glyph.inkBox
+        let ink = glyphFrame(aspect: glyph.aspect * box.width / box.height, size: size, optical: glyph.optical)
+        let frame = CGSize(width: ink.width / box.width, height: ink.height / box.height)
         return Circle()
             .fill(glyph.fill)
             .overlay {
@@ -165,17 +168,21 @@ struct HostAvatar: View {
                     .scaledToFit()
                     .frame(width: frame.width, height: frame.height)
                     .foregroundStyle(glyph.ink)
-                    .offset(x: -glyph.shift.width * 0.5 * frame.width,
-                            y: -glyph.shift.height * 0.5 * frame.height)
+                    .offset(x: (0.5 - box.midX) * frame.width,
+                            y: (0.5 - box.midY) * frame.height)
             }
             .frame(width: size, height: size)
     }
 
-    static func glyphFrame(aspect: CGFloat, size: CGFloat) -> CGSize {
-        let side = size * 0.54
+    /// The ink's size for a disc `size` across: the geometric mean of its
+    /// sides 54% of the disc (times `optical`), its longest side at most
+    /// 66% of the disc whatever `optical` says, so a wide mark keeps clear
+    /// of the rim.
+    static func glyphFrame(aspect: CGFloat, size: CGFloat, optical: CGFloat = 1) -> CGSize {
+        let side = size * 0.54 * optical
         var width = side * aspect.squareRoot()
         var height = side / aspect.squareRoot()
-        let longest = max(width, height), cap = size * 0.69
+        let longest = max(width, height), cap = size * 0.66
         if longest > cap {
             width *= cap / longest
             height *= cap / longest
@@ -192,9 +199,9 @@ struct HostAvatar: View {
         /// The size nudge for how much of its box the mark inks: the 0.2th
         /// power of (typical coverage ÷ this mark's), within 0.9-1.1.
         let optical: CGFloat
-        /// Where the ink's centre of mass sits from the box's centre, as a
-        /// fraction of the box (positive: right / down).
-        let shift: CGSize
+        /// The ink's bounding box within the artwork, as fractions of its
+        /// width and height (y down).
+        let inkBox: CGRect
 
         init(_ mark: Mark) {
             switch mark {
@@ -221,11 +228,16 @@ struct HostAvatar: View {
         }
 
         private init(symbol: String, fill: AnyShapeStyle) {
-            let ns = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            // Drawn from the same NSImage that is measured: SwiftUI's own
+            // resizable symbol drops the padding NSImage keeps around it, so
+            // the measured ink box wouldn't match what lands on screen.
+            let ns = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 64, weight: .regular))
             let size = ns?.size ?? CGSize(width: 1, height: 1)
             let measure = Self.measure(ns, key: "symbol:" + symbol)
-            self.init(image: Image(systemName: symbol), aspect: size.width / max(size.height, 1), fill: fill,
-                      ink: .white, optical: measure.optical, shift: measure.shift)
+            let image = ns.map { Image(nsImage: $0).renderingMode(.template) } ?? Image(systemName: symbol)
+            self.init(image: image, aspect: size.width / max(size.height, 1), fill: fill,
+                      ink: .white, optical: measure.optical, inkBox: measure.inkBox)
         }
 
         private init(asset: String, fill: AnyShapeStyle, ink: Color = .white) {
@@ -234,50 +246,54 @@ struct HostAvatar: View {
             let measure = Self.measure(ns, key: asset)
             self.init(image: Image(asset).renderingMode(.template),
                       aspect: size.width / max(size.height, 1), fill: fill, ink: ink,
-                      optical: measure.optical, shift: measure.shift)
+                      optical: measure.optical, inkBox: measure.inkBox)
         }
 
         private init(image: Image, aspect: CGFloat, fill: AnyShapeStyle, ink: Color,
-                     optical: CGFloat, shift: CGSize) {
+                     optical: CGFloat, inkBox: CGRect) {
             self.image = image
             self.aspect = aspect
             self.fill = fill
             self.ink = ink
             self.optical = optical
-            self.shift = shift
+            self.inkBox = inkBox
         }
 
-        @MainActor private static var measureCache: [String: (optical: CGFloat, shift: CGSize)] = [:]
+        @MainActor private static var measureCache: [String: (optical: CGFloat, inkBox: CGRect)] = [:]
 
-        /// Measures the mark once: draws it into a 96-pixel square, then
-        /// takes the share of its bounding box that is ink (for `optical`)
-        /// and where the ink's centre of mass sits in that box (for `shift`).
-        @MainActor private static func measure(_ image: NSImage?, key: String) -> (optical: CGFloat, shift: CGSize) {
+        /// Measures the mark once: draws it into a 256-pixel square, finds its
+        /// ink's bounding box (for `inkBox`), and the share of that box that
+        /// is ink (for `optical`).
+        @MainActor private static func measure(_ image: NSImage?, key: String) -> (optical: CGFloat, inkBox: CGRect) {
+            let whole = CGRect(x: 0, y: 0, width: 1, height: 1)
             if let cached = measureCache[key] { return cached }
-            let side = 96
-            guard let image, let rep = NSBitmapImageRep(
+            let side = 256
+            guard let image, image.size.width > 0, image.size.height > 0, let rep = NSBitmapImageRep(
                 bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
                 samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                bytesPerRow: 0, bitsPerPixel: 0) else { return (1, .zero) }
+                bytesPerRow: 0, bitsPerPixel: 0) else { return (1, whole) }
+            let scale = min(CGFloat(side) / image.size.width, CGFloat(side) / image.size.height)
+            let drawn = CGSize(width: image.size.width * scale, height: image.size.height * scale)
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-            let scale = min(CGFloat(side) / max(image.size.width, 1), CGFloat(side) / max(image.size.height, 1))
-            image.draw(in: NSRect(x: 0, y: 0, width: image.size.width * scale, height: image.size.height * scale))
+            image.draw(in: NSRect(origin: .zero, size: drawn))
             NSGraphicsContext.restoreGraphicsState()
-            var inked = 0, sumX = 0, sumY = 0, minX = side, maxX = -1, minY = side, maxY = -1
+            var inked = 0, minX = side, maxX = -1, minY = side, maxY = -1
             for y in 0..<side { for x in 0..<side where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5 {
-                inked += 1; sumX += x; sumY += y
+                inked += 1
                 minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
             } }
-            guard inked > 0 else { return (1, .zero) }
+            guard inked > 0 else { return (1, whole) }
             let boxW = CGFloat(maxX - minX + 1), boxH = CGFloat(maxY - minY + 1)
             let coverage = CGFloat(inked) / (boxW * boxH)
             let nudge = min(1.1, max(0.9, pow(0.55 / coverage, 0.2)))
-            // colorAt's y runs down, as SwiftUI's offset does.
-            let shift = CGSize(width: (CGFloat(sumX) / CGFloat(inked) - (CGFloat(minX) + boxW / 2 - 0.5)) / boxW,
-                               height: (CGFloat(sumY) / CGFloat(inked) - (CGFloat(minY) + boxH / 2 - 0.5)) / boxH)
-            measureCache[key] = (nudge, shift)
-            return (nudge, shift)
+            // The drawing sits at the bitmap's bottom-left; colorAt's rows
+            // run down from the top.
+            let top = CGFloat(side) - drawn.height
+            let box = CGRect(x: CGFloat(minX) / drawn.width, y: (CGFloat(minY) - top) / drawn.height,
+                             width: boxW / drawn.width, height: boxH / drawn.height)
+            measureCache[key] = (nudge, box)
+            return (nudge, box)
         }
     }
 
