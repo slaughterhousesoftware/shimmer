@@ -96,22 +96,26 @@ enum ResolutionChoice: Hashable {
 /// stream asks for a NUMBER; the picker should show which one.
 enum FrameRateChoice: Hashable {
     case fixed(Int)
-    case custom
 
     static let standardRates = [30, 60, 90, 120, 144, 165, 240]
-    static let all: [FrameRateChoice] = standardRates.map { .fixed($0) } + [.custom]
+    /// Standard rates only: Custom left the menu on 2026-11-17.
+    static let all: [FrameRateChoice] = standardRates.map { .fixed($0) }
 
+    /// The standard rate nearest `hz`; a tie goes to the lower one, so a 75 Hz
+    /// panel streams 60 rather than faster than it can show.
+    static func nearestStandard(_ hz: Int) -> Int {
+        standardRates.min { abs($0 - hz) < abs($1 - hz) } ?? 60
+    }
+
+    /// The row a stored rate reads as: off the menu, the nearest one on it.
     static func from(customFPS: Int) -> FrameRateChoice {
-        standardRates.contains(customFPS) ? .fixed(customFPS) : .custom
+        .fixed(nearestStandard(customFPS))
     }
 
     /// The fixed rate a "Match display" install migrates to: the panel's own
-    /// refresh, so nobody's stream changes speed the day the row disappears.
-    /// Clamped to the engine's bounds; a panel whose rate isn't one of the
-    /// standard rows (a 75Hz monitor) lands on Custom showing 75, which is
-    /// exactly what it was already streaming at.
+    /// refresh, or the nearest rate on the menu if the panel's isn't one.
     static func migratedRate(displayHz: Int) -> Int {
-        StreamSizeBounds.clampFPS(displayHz > 0 ? displayHz : 60)
+        nearestStandard(StreamSizeBounds.clampFPS(displayHz > 0 ? displayHz : 60))
     }
 }
 

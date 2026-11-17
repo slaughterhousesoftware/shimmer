@@ -47,6 +47,14 @@ struct HostStreamSettings: Codable, Equatable, Sendable {
         return fixed
     }
 
+    /// These settings on a standard frame rate: a custom rate (gone from the
+    /// menu) becomes the nearest standard one.
+    func withStandardFrameRate() -> HostStreamSettings {
+        var fixed = self
+        fixed.customFPS = FrameRateChoice.nearestStandard(customFPS)
+        return fixed
+    }
+
     static func storageKey(for hostID: String) -> String { "glimmer.streamSettings.\(hostID)" }
 
     static func load(hostID: String, defaults: UserDefaults = .standard) -> HostStreamSettings? {

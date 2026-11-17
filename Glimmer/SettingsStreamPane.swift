@@ -18,11 +18,6 @@ import SwiftUI
 struct StreamPane: View {
     @Environment(AppModel.self) private var model
 
-    /// "Custom" was picked while the Custom number still equals a standard
-    /// rate; without this the picker would snap back to that rate's row and
-    /// the field would never appear. Cleared by any other pick.
-    @State private var customFrameRateEntry = false
-
     // MARK: Picker bindings
 
     private var resolutionSelection: Binding<ResolutionChoice> {
@@ -30,15 +25,7 @@ struct StreamPane: View {
     }
 
     private var frameRateSelection: Binding<FrameRateChoice> {
-        Binding(
-            get: {
-                if customFrameRateEntry { return .custom }
-                return model.frameRateChoice
-            },
-            set: { choice in
-                customFrameRateEntry = (choice == .custom)
-                model.apply(choice)
-            })
+        Binding(get: { model.frameRateChoice }, set: { model.apply($0) })
     }
 
     /// The slider rides the stepped scale; while automatic it rests on the
@@ -62,17 +49,7 @@ struct StreamPane: View {
     private func frameRateLabel(_ choice: FrameRateChoice) -> String {
         switch choice {
         case .fixed(let hz): return "\(hz) Hz"
-        // No ellipsis: closed, "Custom…" reads as a truncated label. Picking it
-        // shows the Custom frame rate row below.
-        case .custom: return "Custom"
         }
-    }
-
-    // MARK: Clamps (run on EVERY commit, focus loss included)
-
-    private func clampCustomFPS() {
-        let fps = StreamSizeBounds.clampFPS(model.customFPS)
-        if fps != model.customFPS { model.customFPS = fps }
     }
 
     /// Rows of the page's Video section (a grouped Form, System Settings style).
@@ -83,17 +60,6 @@ struct StreamPane: View {
             resolutions: ResolutionChoice.all.map { (resolutionLabel($0), $0) },
             frameRate: frameRateSelection,
             frameRates: FrameRateChoice.all.map { (frameRateLabel($0), $0) })
-        if frameRateSelection.wrappedValue == .custom {
-            LabeledContent("Custom frame rate") {
-                HStack(spacing: 4) {
-                    TextField("", value: $model.customFPS, format: .number)
-                        .labelsHidden()
-                        .frame(width: 56).multilineTextAlignment(.trailing).monospacedDigit()
-                        .onChange(of: model.customFPS) { _, _ in clampCustomFPS() }
-                    Text("Hz").foregroundStyle(.secondary)
-                }
-            }
-        }
         BitrateMenu(automatic: $model.bitrateAuto, mbps: $model.manualBitrateMbps,
                     automaticMbps: model.recommendedBitrateMbpsNow,
                     maxMbps: BitrateSlider.stopsMbps.last ?? 300)

@@ -47,10 +47,11 @@ extension AppModel {
         guard !host.isPlayStation else { return }
         let saved = HostStreamSettings.load(hostID: host.id)
         let display = smartDefaultsForCurrentDisplay(), hidpi = hidpiDefaultsForCurrentDisplay()
-        // Resolution offers standard sizes only: a PC saved on a removed
-        // choice moves to the nearest one, and keeps it.
+        // Resolution and frame rate offer standard values only: a PC saved on
+        // a removed choice moves to the nearest one, and keeps it.
         let settings = (saved ?? .defaults).withStandardResolution(
             display: (display.width, display.height), hidpi: (hidpi.width, hidpi.height))
+            .withStandardFrameRate()
         loadHostStreamSettings(settings)
         if settings != saved { settings.save(hostID: host.id) }
     }

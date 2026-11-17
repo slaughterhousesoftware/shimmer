@@ -411,14 +411,11 @@ extension AppModel {
         }
     }
 
-    /// Adopt a frame-rate choice. `.custom` reveals the field and keeps the
-    /// number already stored, so picking it never changes the rate by itself.
+    /// Adopt a frame-rate choice.
     func apply(_ choice: FrameRateChoice) {
         switch choice {
         case .fixed(let hz):
             customFPS = hz
-        case .custom:
-            break   // keeps the stored number; the field takes over
         }
     }
 

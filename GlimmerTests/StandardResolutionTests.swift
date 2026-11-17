@@ -44,4 +44,14 @@ struct StandardResolutionTests {
         saved.customWidth = 1920; saved.customHeight = 1080; saved.customFPS = 75
         #expect(saved.withStandardResolution(display: (3456, 2234), hidpi: (1728, 1117)) == saved)
     }
+
+    /// A PC saved on a custom frame rate (gone from the menu) streams the
+    /// nearest standard rate instead, and keeps it.
+    @Test func customFrameRateSnapsToAStandardOne() {
+        var saved = HostStreamSettings.defaults
+        saved.customFPS = 75
+        #expect(saved.withStandardFrameRate().customFPS == 60)
+        saved.customFPS = 144
+        #expect(saved.withStandardFrameRate() == saved)
+    }
 }

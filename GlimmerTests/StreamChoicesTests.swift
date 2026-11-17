@@ -31,28 +31,34 @@ struct StreamChoicesTests {
 
     // MARK: Frame rate picker
 
-    @Test func frameRateRowIsJustTheNumber() {
+    /// Custom is gone (2026-11-17): the menu lists the standard rates only.
+    @Test func frameRatePickerListsStandardRatesOnly() {
+        #expect(FrameRateChoice.all == FrameRateChoice.standardRates.map { .fixed($0) })
         #expect(FrameRateChoice.from(customFPS: 120) == .fixed(120))
-        #expect(FrameRateChoice.from(customFPS: 75) == .custom)
-        #expect(!FrameRateChoice.all.isEmpty)
     }
 
-    /// "Match display" left the picker, so an install that was on it has to
-    /// land on the rate it was ALREADY streaming at - the panel's refresh -
-    /// not on whatever `customFPS` happened to hold.
+    /// A rate that isn't on the menu reads as the nearest one that is; a tie
+    /// goes to the lower rate, so a 75 Hz panel never streams faster than it
+    /// can show.
+    @Test func aNonStandardRateSnapsToTheNearestStandardOne() {
+        #expect(FrameRateChoice.nearestStandard(75) == 60)
+        #expect(FrameRateChoice.nearestStandard(100) == 90)
+        #expect(FrameRateChoice.nearestStandard(130) == 120)
+        #expect(FrameRateChoice.nearestStandard(200) == 165)
+        #expect(FrameRateChoice.nearestStandard(20) == 30)
+        #expect(FrameRateChoice.nearestStandard(1000) == 240)
+        #expect(FrameRateChoice.from(customFPS: 75) == .fixed(60))
+    }
+
+    /// "Match display" left the picker, so an install that was on it lands on
+    /// the panel's own refresh - or, off the menu, the nearest rate on it.
     @Test func matchDisplayMigratesToThePanelsOwnRate() {
         #expect(FrameRateChoice.migratedRate(displayHz: 120) == 120)
-        #expect(FrameRateChoice.migratedRate(displayHz: 75) == 75)
+        #expect(FrameRateChoice.migratedRate(displayHz: 75) == 60)
         // A panel that can't say its refresh falls back, never 0.
         #expect(FrameRateChoice.migratedRate(displayHz: 0) == 60)
         // And an absurd reading is clamped like any other rate.
         #expect(FrameRateChoice.migratedRate(displayHz: 1000) == 240)
-    }
-
-    /// A migrated 75Hz panel reads back as Custom showing 75 - the honest row,
-    /// since 75 isn't one of the standard offers.
-    @Test func aNonStandardMigratedRateReadsAsCustom() {
-        #expect(FrameRateChoice.from(customFPS: FrameRateChoice.migratedRate(displayHz: 75)) == .custom)
     }
 
     // MARK: Resolution rules
@@ -183,7 +189,7 @@ struct QualityRestoreTests {
     @Test func everyFrameRateChoiceRoundTripsAndSurvivesRelaunch() {
         withSeededDefaults(["qualityPreset": "matchDisplay"]) {
             let model = AppModel()
-            for choice in FrameRateChoice.all where choice != .custom {
+            for choice in FrameRateChoice.all {
                 model.apply(choice)
                 #expect(model.frameRateChoice == choice)
                 #expect(AppModel().frameRateChoice == choice)
