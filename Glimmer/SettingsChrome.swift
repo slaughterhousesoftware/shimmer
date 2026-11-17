@@ -306,10 +306,10 @@ struct SettingsSegmentedControl<Value: Hashable>: NSViewRepresentable {
     }
 }
 
-/// Resolution and frame rate on one row, as both server pages had them before
-/// the grouped layout: two menus side by side at the row's trailing edge. Each
-/// menu keeps the width of its widest value, so changing one never slides the
-/// other along the row, and neither stretches or truncates (fixedSize).
+/// Resolution and frame rate on one row: one capsule split into two menus,
+/// `[1920 × 1080 ⌄ | 60 Hz ⌄]`, the same shape and height as the page's
+/// segmented controls, so the pair reads as one control rather than two
+/// popups that happen to share a row.
 struct ResolutionFrameRateRow<Resolution: Hashable, FrameRate: Hashable>: View {
     @Binding var resolution: Resolution
     let resolutions: [(title: String, value: Resolution)]
@@ -318,33 +318,99 @@ struct ResolutionFrameRateRow<Resolution: Hashable, FrameRate: Hashable>: View {
 
     var body: some View {
         LabeledContent("Resolution") {
-            HStack(spacing: 6) {
-                Self.menu("Resolution", $resolution, resolutions)
-                Self.menu("Frame rate", $frameRate, frameRates)
+            SettingsMenuSegments(segments: [
+                .init(name: "Resolution", selection: $resolution, options: resolutions),
+                .init(name: "Frame rate", selection: $frameRate, options: frameRates),
+            ])
+        }
+    }
+}
+
+/// A capsule of menu segments: AppKit's NSSegmentedControl in momentary mode
+/// with a menu on each segment, styled like SettingsSegmentedControl (large,
+/// capsule, 13 pt). A click opens that segment's menu, the current value
+/// checked. Each segment is as wide as its longest option, so picking a
+/// shorter value never resizes the capsule or shifts its neighbour.
+struct SettingsMenuSegments: NSViewRepresentable {
+    struct Segment {
+        struct Item {
+            let title: String
+            let isSelected: Bool
+            let choose: () -> Void
+        }
+        let name: String
+        let items: [Item]
+
+        init<V: Hashable>(name: String, selection: Binding<V>, options: [(title: String, value: V)]) {
+            self.name = name
+            items = options.map { option in
+                Item(title: option.title, isSelected: option.value == selection.wrappedValue,
+                     choose: { selection.wrappedValue = option.value })
             }
+        }
+
+        var title: String { items.first(where: \.isSelected)?.title ?? items.first?.title ?? "" }
+    }
+
+    let segments: [Segment]
+
+    /// Rex's segment padding, plus room for the menu indicator.
+    static var segmentHorizontalPadding: CGFloat { 8 }
+    static var menuIndicatorWidth: CGFloat { 14 }
+
+    final class Coordinator: NSObject {
+        var segments: [Segment] = []
+
+        @objc func choose(_ item: NSMenuItem) {
+            guard let (segment, index) = item.representedObject as? (Int, Int),
+                  segments.indices.contains(segment),
+                  segments[segment].items.indices.contains(index) else { return }
+            segments[segment].items[index].choose()
         }
     }
 
-    private static func menu<V: Hashable>(_ title: String, _ selection: Binding<V>,
-                                          _ options: [(title: String, value: V)]) -> some View {
-        ZStack(alignment: .trailing) {
-            // One invisible copy per value: the stack takes the widest.
-            ForEach(options.indices, id: \.self) { index in
-                picker(title, .constant(options[index].value), options)
-                    .hidden()
-                    .accessibilityHidden(true)
-            }
-            picker(title, selection, options)
-        }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl(frame: .zero)
+        control.trackingMode = .momentary
+        control.segmentStyle = .automatic
+        control.controlSize = .large
+        control.font = .systemFont(ofSize: NSFont.systemFontSize(for: .regular))
+        control.borderShape = .capsule
+        return control
     }
 
-    private static func picker<V: Hashable>(_ title: String, _ selection: Binding<V>,
-                                            _ options: [(title: String, value: V)]) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(options.indices, id: \.self) { Text(options[$0].title).tag(options[$0].value) }
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.segments = segments
+        let font = control.font ?? .systemFont(ofSize: NSFont.systemFontSize(for: .regular))
+        control.segmentCount = segments.count
+        for (index, segment) in segments.enumerated() {
+            control.setLabel(segment.title, forSegment: index)
+            control.setToolTip(segment.name, forSegment: index)
+            control.setShowsMenuIndicator(true, forSegment: index)
+            let menu = NSMenu(title: segment.name)
+            for (itemIndex, entry) in segment.items.enumerated() {
+                let item = NSMenuItem(title: entry.title, action: #selector(Coordinator.choose(_:)), keyEquivalent: "")
+                item.target = context.coordinator
+                item.representedObject = (index, itemIndex)
+                item.state = entry.isSelected ? .on : .off
+                menu.addItem(item)
+            }
+            control.setMenu(menu, forSegment: index)
+            let widest = segment.items
+                .map { ($0.title as NSString).size(withAttributes: [.font: font]).width }
+                .max() ?? 0
+            control.setWidth((widest + Self.menuIndicatorWidth + 2 * Self.segmentHorizontalPadding).rounded(.up),
+                             forSegment: index)
         }
-        .labelsHidden()
-        .fixedSize()
+        let enabled = context.environment.isEnabled
+        control.isEnabled = enabled
+        control.alphaValue = enabled ? 1 : 0.5
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
+        nsView.intrinsicContentSize
     }
 }
 
