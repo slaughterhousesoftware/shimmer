@@ -1,0 +1,203 @@
+diff -ruN a/lib/include/chiaki/audioreceiver.h b/lib/include/chiaki/audioreceiver.h
+--- a/lib/include/chiaki/audioreceiver.h
++++ b/lib/include/chiaki/audioreceiver.h
+@@ -38,6 +38,7 @@
+ 	bool playback_started;
+ 	bool frame_index_startup; // whether frame_index_prev has definitely not wrapped yet
+ 	ChiakiPacketStats *packet_stats;
++	uint8_t haptics_pad; // Shimmer: which pad's haptics this receiver carries (0-3)
+ 	struct {
+ 		bool occupied;
+ 		ChiakiSeqNum16 frame_index;
+diff -ruN a/lib/include/chiaki/session.h b/lib/include/chiaki/session.h
+--- a/lib/include/chiaki/session.h
++++ b/lib/include/chiaki/session.h
+@@ -132,6 +132,9 @@
+ 	ChiakiAudioHeader audio_header;
+ } ChiakiAudioStreamInfoEvent;
+ 
++/** Shimmer: haptics frames for pad `pad` (1-3), as the haptics sink gets pad 0's. */
++typedef void (*ChiakiHapticsPadCallback)(uint8_t pad, uint8_t *buf, size_t buf_size, void *user);
++
+ typedef struct chiaki_rumble_event_t
+ {
+ 	uint8_t unknown;
+@@ -143,6 +146,7 @@
+ typedef struct chiaki_trigger_effects_event_t
+ {
+ 	uint8_t pad; // Shimmer: which player's pad (0-3)
++	uint8_t target; // Shimmer: the triggers this effect is for: bit 0 L2, bit 1 R2
+ 	uint8_t type_left;
+ 	uint8_t type_right;
+ 	uint8_t left[10];
+@@ -269,6 +273,9 @@
+ 	void *video_sample_cb_user;
+ 	ChiakiAudioSink audio_sink;
+ 	ChiakiAudioSink haptics_sink;
++	// Shimmer: players 2-4's haptics (pad 1-3), same frames as haptics_sink
++	ChiakiHapticsPadCallback haptics_pad_cb;
++	void *haptics_pad_user;
+ 	ChiakiCtrlDisplaySink display_sink;
+ 
+ 	ChiakiThread session_thread;
+diff -ruN a/lib/include/chiaki/streamconnection.h b/lib/include/chiaki/streamconnection.h
+--- a/lib/include/chiaki/streamconnection.h
++++ b/lib/include/chiaki/streamconnection.h
+@@ -50,6 +50,7 @@
+ 	ChiakiAudioReceiver *audio_receiver;
+ 	ChiakiVideoReceiver *video_receiver;
+ 	ChiakiAudioReceiver *haptics_receiver;
++	ChiakiAudioReceiver *haptics_receivers_more[3]; // Shimmer: pads 1-3
+ 	double packet_loss_max;
+ 	uint8_t motion_counter[4];
+ 	uint8_t led_state[3];
+diff -ruN a/lib/include/chiaki/takion.h b/lib/include/chiaki/takion.h
+--- a/lib/include/chiaki/takion.h
++++ b/lib/include/chiaki/takion.h
+@@ -38,6 +38,10 @@
+ 	bool uses_nalu_info_structs;
+ 	bool is_video;
+ 	bool is_haptics;
++	// Shimmer: the audio channel (0 game audio, 1 voice, 2+N pad N's haptics,
++	// 6+N pad N's speaker - Sony's map) and, for haptics, the pad
++	uint8_t audio_channel;
++	uint8_t haptics_pad;
+ 	ChiakiSeqNum16 unit_index;
+ 	uint16_t units_in_frame_total; // source + units_in_frame_fec
+ 	uint16_t units_in_frame_fec;
+diff -ruN a/lib/src/audioreceiver.c b/lib/src/audioreceiver.c
+--- a/lib/src/audioreceiver.c
++++ b/lib/src/audioreceiver.c
+@@ -21,6 +21,7 @@
+ 	audio_receiver->session = session;
+ 	audio_receiver->log = session->log;
+ 	audio_receiver->packet_stats = packet_stats;
++	audio_receiver->haptics_pad = 0;
+ 
+ 	audio_receiver->frame_index_prev = 0;
+ 	audio_receiver->next_frame_index = 0;
+@@ -162,6 +163,17 @@
+ 				audio_receiver->frame_index_prev = frame_index;
+ 				frame_cb = audio_receiver->session->haptics_sink.frame_cb;
+ 				frame_cb_user = audio_receiver->session->haptics_sink.user;
++				// Shimmer: players 2-4's haptics to the per-pad callback
++				if(audio_receiver->haptics_pad != 0)
++				{
++					ChiakiHapticsPadCallback pad_cb = audio_receiver->session->haptics_pad_cb;
++					void *pad_user = audio_receiver->session->haptics_pad_user;
++					uint8_t pad = audio_receiver->haptics_pad;
++					chiaki_mutex_unlock(&audio_receiver->mutex);
++					if(pad_cb)
++						pad_cb(pad, buf, buf_size, pad_user);
++					return;
++				}
+ 				deliver_buf = buf;
+ 				deliver_buf_size = buf_size;
+ 			}
+diff -ruN a/lib/src/streamconnection.c b/lib/src/streamconnection.c
+--- a/lib/src/streamconnection.c
++++ b/lib/src/streamconnection.c
+@@ -106,6 +106,8 @@
+ 	stream_connection->video_receiver = NULL;
+ 	stream_connection->audio_receiver = NULL;
+ 	stream_connection->haptics_receiver = NULL;
++	for(size_t i = 0; i < 3; i++)
++		stream_connection->haptics_receivers_more[i] = NULL;
+ 
+ 	err = chiaki_mutex_init(&stream_connection->feedback_sender_mutex, false);
+ 	if(err != CHIAKI_ERR_SUCCESS)
+@@ -297,6 +299,14 @@
+ 		goto err_audio_receiver;
+ 	}
+ 
++	// Shimmer: players 2-4's haptics, each with its own frame numbers
++	for(size_t i = 0; i < 3; i++)
++	{
++		stream_connection->haptics_receivers_more[i] = chiaki_audio_receiver_new(session, NULL);
++		if(stream_connection->haptics_receivers_more[i])
++			stream_connection->haptics_receivers_more[i]->haptics_pad = (uint8_t)(i + 1);
++	}
++
+ 	stream_connection->video_receiver = chiaki_video_receiver_new(session, &stream_connection->packet_stats);
+ 	if(!stream_connection->video_receiver)
+ 	{
+@@ -476,6 +486,12 @@
+ 	chiaki_mutex_lock(&stream_connection->state_mutex);
+ 	chiaki_audio_receiver_free(stream_connection->haptics_receiver);
+ 	stream_connection->haptics_receiver = NULL;
++	for(size_t i = 0; i < 3; i++)
++	{
++		if(stream_connection->haptics_receivers_more[i])
++			chiaki_audio_receiver_free(stream_connection->haptics_receivers_more[i]);
++		stream_connection->haptics_receivers_more[i] = NULL;
++	}
+ 	chiaki_mutex_unlock(&stream_connection->state_mutex);
+ 
+ err_audio_receiver:
+@@ -579,10 +595,19 @@
+ 	ChiakiEvent event = { 0 };
+ 	event.type = CHIAKI_EVENT_RUMBLE;
+ 	event.rumble.unknown = buf[0];
+-	// Shimmer: Takion 20 names the pad at byte 8
+-	event.rumble.pad = stream_connection->takion.version >= 20 && buf_size >= 9 ? (buf[8] & 0x3) : 0;
+-	event.rumble.left = buf[1];
+-	event.rumble.right = buf[2];
++	if(stream_connection->takion.version >= 20 && buf_size >= 11)
++	{
++		// Shimmer: Takion 20 puts 8 bytes in front: pad, large motor, small motor at 8-10
++		event.rumble.pad = buf[8] & 0x3;
++		event.rumble.left = buf[9];
++		event.rumble.right = buf[10];
++	}
++	else
++	{
++		event.rumble.pad = stream_connection->takion.version >= 16 ? (buf[0] & 0x3) : 0;
++		event.rumble.left = buf[1];
++		event.rumble.right = buf[2];
++	}
+ 	chiaki_session_send_event(stream_connection->session, &event);
+ }
+ 
+@@ -607,6 +632,8 @@
+ 	event.trigger_effects.pad = stream_connection->takion.version >= 16 ? (buf[0] & 0x3) : 0;
+ 	event.trigger_effects.type_left = buf[1];
+ 	event.trigger_effects.type_right = buf[2];
++	// Shimmer: which triggers the console means (bit 0 L2, bit 1 R2; Sony's targetTrigger)
++	event.trigger_effects.target = buf[3];
+ 	memcpy(&event.trigger_effects.left, buf + 5, 10);
+ 	memcpy(&event.trigger_effects.right, buf + 15, 10);
+ 	chiaki_session_send_event(stream_connection->session, &event);
+@@ -1365,9 +1392,15 @@
+ 	if(packet->is_video)
+ 		chiaki_video_receiver_av_packet(stream_connection->video_receiver, packet);
+ 	else if(packet->is_haptics)
+-	    chiaki_audio_receiver_av_packet(stream_connection->haptics_receiver, packet);
+-	else
++	{
++		ChiakiAudioReceiver *receiver = packet->haptics_pad == 0 ? stream_connection->haptics_receiver
++			: stream_connection->haptics_receivers_more[packet->haptics_pad - 1];
++		if(receiver)
++			chiaki_audio_receiver_av_packet(receiver, packet);
++	}
++	else if(packet->audio_channel == 0)
+ 		chiaki_audio_receiver_av_packet(stream_connection->audio_receiver, packet);
++	// Shimmer: voice (1) and the pads' speakers (6-9) aren't game audio; drop them
+ }
+ 
+ static ChiakiErrorCode stream_connection_send_heartbeat(ChiakiStreamConnection *stream_connection)
+diff -ruN a/lib/src/takion.c b/lib/src/takion.c
+--- a/lib/src/takion.c
++++ b/lib/src/takion.c
+@@ -2090,7 +2090,11 @@
+ 	if(v12 && !packet->is_video)
+ 	{
+ 		// v20 uses the high nibble of this byte for something else
+-		packet->is_haptics = (v20 ? (*av & 0xf) : *av) == 0x02;
++		// The channel: low nibble on v20 (the high one is something else), the
++		// whole byte before. Pad N's haptics ride channel 2+N.
++		packet->audio_channel = v20 ? (*av & 0xf) : *av;
++		packet->is_haptics = packet->audio_channel >= 0x02 && packet->audio_channel <= 0x05;
++		packet->haptics_pad = packet->is_haptics ? (uint8_t)(packet->audio_channel - 0x02) : 0;
+ 		shimmer_audio_tag_counts[*av]++;
+ 		av += 1;
+ 		av_size -= 1;

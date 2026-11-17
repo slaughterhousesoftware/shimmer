@@ -46,7 +46,12 @@ extension DualSenseHID {
         var d = [UInt8](repeating: 0, count: 47)
         d[0] = triggerFlags & (flagRightTrigger | flagLeftTrigger)
         if s.rumbleLeft != 0 || s.rumbleRight != 0 {
-            d[0] |= flagRumbleEmulation | flagRumbleNotHaptics
+            if s.rumbleKeepsHaptics {
+                d[0] |= flagRumbleEmulation
+                d[38] |= 0x08
+            } else {
+                d[0] |= flagRumbleEmulation | flagRumbleNotHaptics
+            }
             d[2] = s.rumbleRight   // high-frequency side
             d[3] = s.rumbleLeft    // low-frequency side
         }
@@ -177,7 +182,8 @@ extension DualSenseHID {
     /// the haptics stream a slot on the link.
     func setAudioHapticsMode(_ on: Bool, keepAliveEvery seconds: Double = 1, padFilter: Bool = true) {
         lock.lock()
-        mutateOutput(slot: nil) { $0.audioHaptics = on; $0.hapticsFilter = padFilter }
+        // padFilter is the Bluetooth case: USB alone keeps haptics under rumble.
+        mutateOutput(slot: nil) { $0.audioHaptics = on; $0.hapticsFilter = padFilter; $0.rumbleKeepsHaptics = on && !padFilter }
         lock.unlock()
         writeQueue.async { [weak self] in
             guard let self else { return }

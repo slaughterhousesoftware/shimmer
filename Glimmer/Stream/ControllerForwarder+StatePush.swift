@@ -94,12 +94,20 @@ extension InputForwarder {
 
         let buttons = pressedButtonFlags(pad: pad, slot: slot)
 
-        let lt = UInt8((pad.leftTrigger.value  * 255).rounded().clamped(to: 0...255))
-        let rt = UInt8((pad.rightTrigger.value * 255).rounded().clamped(to: 0...255))
-        let lx = Int16((pad.leftThumbstick.xAxis.value  * 32767).rounded().clamped(to: -32768...32767))
-        let ly = Int16((pad.leftThumbstick.yAxis.value  * 32767).rounded().clamped(to: -32768...32767))
-        let rx = Int16((pad.rightThumbstick.xAxis.value * 32767).rounded().clamped(to: -32768...32767))
-        let ry = Int16((pad.rightThumbstick.yAxis.value * 32767).rounded().clamped(to: -32768...32767))
+        var lt = UInt8((pad.leftTrigger.value  * 255).rounded().clamped(to: 0...255))
+        var rt = UInt8((pad.rightTrigger.value * 255).rounded().clamped(to: 0...255))
+        var lx = Int16((pad.leftThumbstick.xAxis.value  * 32767).rounded().clamped(to: -32768...32767))
+        var ly = Int16((pad.leftThumbstick.yAxis.value  * 32767).rounded().clamped(to: -32768...32767))
+        var rx = Int16((pad.rightThumbstick.xAxis.value * 32767).rounded().clamped(to: -32768...32767))
+        var ry = Int16((pad.rightThumbstick.yAxis.value * 32767).rounded().clamped(to: -32768...32767))
+        // A DualSense's own report, as Sony's Remote Play sends it: linear, no
+        // deadzone (the game has its own; GameController's on top ate small
+        // aim corrections and rescaled the rest).
+        if pad is GCDualSenseGamepad, Self.rawDualSenseAxes, let raw = DualSenseHID.shared.axes(forSlot: slot) {
+            lt = raw.l2; rt = raw.r2
+            lx = DualSenseRawAxes.stick(raw.lx); ly = DualSenseRawAxes.stickY(raw.ly)
+            rx = DualSenseRawAxes.stick(raw.rx); ry = DualSenseRawAxes.stickY(raw.ry)
+        }
 
         let rc = backend?.sendMultiController(
             num: Int16(slot),
@@ -166,6 +174,12 @@ extension InputForwarder {
 }
 
 extension InputForwarder {
+    /// Raw DualSense sticks/triggers (default on; `rawDualSenseAxes` false
+    /// goes back to GameController's deadzoned values).
+    static var rawDualSenseAxes: Bool {
+        UserDefaults.standard.object(forKey: "rawDualSenseAxes") as? Bool ?? true
+    }
+
     /// GameController's pressed buttons as a `PadSignature`, to compare with
     /// the raw reports (DualSenseHID.noteGameControllerState).
     static func padSignature(_ pad: GCExtendedGamepad) -> UInt32 {

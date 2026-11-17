@@ -352,8 +352,10 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
     /// Open the first DualSense with 4+ output channels and start playing
     /// silence. `onLost` fires (once, on the main queue) if the device goes
     /// away or the engine can't be restarted.
-    static func start(onLost: @escaping @Sendable () -> Void) -> DualSenseAudioHaptics? {
-        guard let (device, name) = findDevice() else { return nil }
+    /// `usbLocation`: the pad's USB location (DualSenseHID), to pick that
+    /// pad's audio device when more than one DualSense is plugged in; nil, the first.
+    static func start(usbLocation: UInt32? = nil, onLost: @escaping @Sendable () -> Void) -> DualSenseAudioHaptics? {
+        guard let (device, name) = findDevice(usbLocation: usbLocation) else { return nil }
         let engine = AVAudioEngine()
         guard let format = bind(engine, to: device) else { return nil }
         let shared = Shared(HapticsBuffer(outputRate: format.sampleRate))
@@ -500,8 +502,11 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
         engine.stop()
     }
 
-    /// The first output device named like a DualSense with at least 4 channels.
-    static func findDevice() -> (AudioDeviceID, String)? {
+    /// The first output device named like a DualSense with at least 4 channels
+    /// - the one at `usbLocation` when given. A USB audio device's UID carries
+    /// the port's location in hex ("AppleUSBAudioEngine:…:DualSense Wireless
+    /// Controller:3100000:1"), the same number as the pad's HID LocationID.
+    static func findDevice(usbLocation: UInt32? = nil) -> (AudioDeviceID, String)? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
                                                  mScope: kAudioObjectPropertyScopeGlobal,
                                                  mElement: kAudioObjectPropertyElementMain)
@@ -513,9 +518,27 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
         else { return nil }
         for id in ids {
             let name = deviceName(id)
-            if name.localizedCaseInsensitiveContains("DualSense"), outputChannels(id) >= 4 { return (id, name) }
+            guard name.localizedCaseInsensitiveContains("DualSense"), outputChannels(id) >= 4 else { continue }
+            if let usbLocation, !Self.uid(deviceUID(id), isAt: usbLocation) { continue }
+            return (id, name)
         }
         return nil
+    }
+
+    /// True when a USB audio UID names the port at `location`.
+    static func uid(_ uid: String, isAt location: UInt32) -> Bool {
+        uid.split(separator: ":").contains { $0.lowercased() == String(location, radix: 16) }
+    }
+
+    private static func deviceUID(_ id: AudioDeviceID) -> String {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var uid: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &uid) == noErr,
+              let value = uid?.takeRetainedValue() else { return "" }
+        return value as String
     }
 
     private static func deviceName(_ id: AudioDeviceID) -> String {

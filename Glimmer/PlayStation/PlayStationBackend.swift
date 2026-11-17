@@ -108,6 +108,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// gyro aiming see a pad that never moves. Under `lock`.
     private var motion: [UInt8: PadMotion] = [:]
     private var lastTriggerTypes: (UInt8, UInt8)?
+    private var loggedTriggerTargets: Set<UInt8> = []
     /// ControllerFocus identity; and the console's last trigger effect while
     /// in standby, applied at the cut-over.
     private var focusID: ObjectIdentifier { ControllerFocus.id(self) }
@@ -161,6 +162,11 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private var loggedHaptics = false
     /// The USB DualSense haptics player, while one is open (guarded by `lock`).
     private var audioHaptics: DualSenseHapticsOutput?
+    /// Players 2-4's haptics, each on their own USB DualSense, by seat (`lock`).
+    private var otherHaptics: [UInt8: DualSenseHapticsOutput] = [:]
+    /// When a seat's haptics output was last looked for (uptime ns, `lock`):
+    /// its pad may not be tied to its USB device yet, so look again, once a second.
+    private var otherHapticsTried: [UInt8: UInt64] = [:]
     /// We hold the raw-HID writer open for the session (triggers, light bar).
     private var retainedHID = false
     /// The console's intensity settings, as the pad's power-reduction nibbles
@@ -431,6 +437,13 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 .handleHapticsFrame(UnsafeRawBufferPointer(start: buf, count: size))
         }
         chiaki_session_set_haptics_sink(session, &haptics)
+        // Players 2-4's haptics (their own channels since patch 0005).
+        session.pointee.haptics_pad_user = ctx
+        session.pointee.haptics_pad_cb = { pad, buf, size, user in
+            guard let buf, let user else { return }
+            Unmanaged<PlayStationBackend>.fromOpaque(user).takeUnretainedValue()
+                .handleOtherPlayerHaptics(seat: pad, UnsafeRawBufferPointer(start: buf, count: size))
+        }
 
         let mic = PS5Microphone(session: session, log: chiakiLog)
         let focus = focusID
@@ -512,6 +525,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             hapticsTimer = nil
         }
         stopAudioHaptics(reason: "stream ended")
+        stopOtherPlayersHaptics()
         if lock.withLock({ () -> Bool in defer { retainedHID = false }; return retainedHID }) {
             DualSenseHID.shared.release()
         }
@@ -858,7 +872,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         case .actuators:
             break
         }
-        if let player = DualSenseAudioHaptics.start(onLost: { [weak self] in
+        let primaryLocation = lock.withLock { primaryPad }.flatMap { DualSenseHID.shared.usbLocation(forSlot: $0) }
+        if let player = DualSenseAudioHaptics.start(usbLocation: primaryLocation, onLost: { [weak self] in
             self?.restartAudioHaptics(reason: "the DualSense audio device changed")
         }) {
             useActuators(player)
@@ -900,6 +915,44 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         let bluetooth = player is DualSenseBluetoothHaptics
         DualSenseHID.shared.setAudioHapticsMode(true, keepAliveEvery: bluetooth ? 2 : 0.25, padFilter: bluetooth)
         Diag.notice("PS5: haptics play on the DualSense's actuators (\(player.deviceName))", Self.logCategory)
+    }
+
+    private func stopOtherPlayersHaptics() {
+        let players = lock.withLock { () -> [DualSenseHapticsOutput] in
+            defer { otherHaptics.removeAll(); otherHapticsTried.removeAll() }
+            return Array(otherHaptics.values)
+        }
+        players.forEach { $0.stop() }
+    }
+
+    /// Haptics frames for player 2-4 (seat 1-3): played on that player's own
+    /// USB DualSense. Its output starts on the first frame, once the pad is
+    /// tied to its USB device (DualSenseHID); no output, no haptics for them.
+    private func handleOtherPlayerHaptics(seat: UInt8, _ pcm: UnsafeRawBufferPointer) {
+        guard options.settings.haptics == .actuators else { return }
+        let now = DispatchTime.now().uptimeNanoseconds
+        let (player, tryStart) = lock.withLock { () -> (DualSenseHapticsOutput?, Bool) in
+            if let player = otherHaptics[seat] { return (player, false) }
+            guard now &- (otherHapticsTried[seat] ?? 0) > 1_000_000_000 else { return (nil, false) }
+            otherHapticsTried[seat] = now
+            return (nil, true)
+        }
+        if let player { player.push(pcm); return }
+        guard tryStart, let slot = otherPlayerPad(seat: seat) else { return }
+        hapticsQueue.async { [weak self] in
+            guard let self, let location = DualSenseHID.shared.usbLocation(forSlot: slot),
+                  let player = DualSenseAudioHaptics.start(usbLocation: location, onLost: { [weak self] in
+                      guard let self else { return }
+                      let lost = self.lock.withLock { self.otherHaptics.removeValue(forKey: seat) }
+                      lost?.stop()
+                  }) else { return }
+            let muted = self.lock.withLock { () -> Bool in
+                self.otherHaptics[seat] = player
+                return self.hapticsNibble == Self.intensityOff & 0x0F
+            }
+            if muted { player.setGain(0) }
+            Diag.notice("PS5: player \(seat + 1)'s haptics play on their DualSense (\(player.deviceName))", Self.logCategory)
+        }
     }
 
     private func stopAudioHaptics(reason: String, fallBackToRumble: Bool = false) {
@@ -1018,8 +1071,16 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         let (events, primary) = lock.withLock { (self.events, primaryPad) }
         // Player 2-4's effect to their own pad; player 1's to the first pad.
         let pad = otherPlayerPad(seat: effect.pad) ?? primary ?? 0
-        // 0x04 | 0x08: both trigger blocks (DS_EFFECT_RIGHT/LEFT_TRIGGER).
-        events?.setAdaptiveTriggers(controller: UInt16(pad), eventFlags: 0x0C,
+        // The triggers the console means (its target mask: bit 0 L2, bit 1 R2),
+        // as the report's flags (0x08 left, 0x04 right); a mask of 0 (older
+        // consoles) means both.
+        let target = effect.target
+        let flags: UInt8 = target & 0x3 == 0 ? 0x0C
+            : (target & 0x1 != 0 ? 0x08 : 0) | (target & 0x2 != 0 ? 0x04 : 0)
+        if lock.withLock({ loggedTriggerTargets.insert(target).inserted }) {
+            Diag.info("PS5: trigger effect target mask 0x\(String(target, radix: 16))", Self.logCategory)
+        }
+        events?.setAdaptiveTriggers(controller: UInt16(pad), eventFlags: flags,
                                     typeLeft: effect.type_left, typeRight: effect.type_right,
                                     left: left, right: right)
         let types = (effect.type_left, effect.type_right)
@@ -1041,7 +1102,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             if haptics { hapticsNibble = hapticsLevel } else { triggerNibble = triggerLevel }
             return (hapticsNibble, triggerNibble, audioHaptics)
         }
-        if haptics { player?.setGain(intensity == Off ? 0 : 1) }
+        if haptics {
+            player?.setGain(intensity == Off ? 0 : 1)
+            lock.withLock { Array(otherHaptics.values) }.forEach { $0.setGain(intensity == Off ? 0 : 1) }
+        }
         if !haptics, intensity == Off {
             // Release whatever the triggers hold now.
             let off = [UInt8](repeating: 0, count: 10)
@@ -1250,7 +1314,14 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 seats[num] = seat
                 return num
             }
-            if let seated { Diag.notice("PS5: controller \(seated) plays as player \(player)", Self.logCategory) }
+            if let seated {
+                Diag.notice("PS5: controller \(seated) plays as player \(player)", Self.logCategory)
+                // With two USB pads player 1's haptics may have started on the
+                // other one: now both are known, put them on player 1's.
+                if options.settings.haptics == .actuators, lock.withLock({ audioHaptics }) is DualSenseAudioHaptics {
+                    restartAudioHaptics(reason: "player \(player) joined")
+                }
+            }
             _ = pushPad()
         case 0x0a:
             lock.withLock { if let num = seats.first(where: { $0.value == seat })?.key { seats[num] = nil } }

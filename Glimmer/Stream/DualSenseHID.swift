@@ -86,6 +86,10 @@ struct DualSenseOutputState: Equatable, Sendable {
     /// limits at the source's 1.5 kHz, so the pad's filter only dulls crisp
     /// effects. On for Bluetooth, where the pad gets the raw 3 kHz stream.
     var hapticsFilter = true
+    /// USB with audio haptics: rumble goes out without the "rumble instead of
+    /// haptics" bit, plus enable byte 38 bit 0x08, as Sony's Remote Play does
+    /// on current pad firmware - the motors run and the haptics keep playing.
+    var rumbleKeepsHaptics = false
     /// The mic mute light (PS5 chat): true lit (muted), false off, nil untouched.
     var micLED: Bool?
 }
@@ -107,7 +111,7 @@ final class DualSenseHID: @unchecked Sendable {
     /// button set, by device (the same key as `writeDevices`). Kept per pad:
     /// with two players one shared value flipped between the pads' reports
     /// (each ~250/s), so a held Options flickered and reached both slots.
-    private var padInputs: [UnsafeMutableRawPointer: (extras: DualSenseExtraButtons, signature: UInt32)] = [:]
+    private var padInputs: [UnsafeMutableRawPointer: (extras: DualSenseExtraButtons, signature: UInt32, axes: DualSenseRawAxes?)] = [:]
     /// Which physical pad each GameController slot is, once button presses
     /// have tied them together (noteGameControllerState).
     private var slotDevices: [UInt8: UnsafeMutableRawPointer] = [:]
@@ -177,6 +181,10 @@ final class DualSenseHID: @unchecked Sendable {
     /// Called on the main queue whenever the decoded buttons change - lets the
     /// input-test UI refresh. Set by the consumer; cleared on the last release.
     var onChange: (@MainActor () -> Void)?
+    /// Called on the main queue when a tied pad's raw sticks or triggers
+    /// change, with its slot: a movement inside GameController's deadzone
+    /// fires no GameController handler, so this is what carries it.
+    var onAxesChange: (@MainActor (UInt8) -> Void)?
 
     /// Total raw input reports received since the manager opened - a live
     /// "is the device delivering anything?" signal for the input test. Zero
@@ -209,6 +217,22 @@ final class DualSenseHID: @unchecked Sendable {
         if let key = slotDevices[slot], let pad = padInputs[key] { return pad.extras }
         let claimed = Set(slotDevices.filter { $0.key != slot }.map(\.value))
         return Self.merged(padInputs.filter { !claimed.contains($0.key) }.map(\.value.extras))
+    }
+
+    /// The USB location of the pad that is `slot` (nil: not tied yet, or not
+    /// on USB) - names its audio device for haptics.
+    func usbLocation(forSlot slot: UInt8) -> UInt32? {
+        lock.lock(); defer { lock.unlock() }
+        guard let key = slotDevices[slot], let entry = writeDevices[key], !entry.bluetooth else { return nil }
+        return (IOHIDDeviceGetProperty(entry.device, kIOHIDLocationIDKey as CFString) as? NSNumber)?.uint32Value
+    }
+
+    /// The raw sticks and triggers of the pad that is `slot` (nil until a press
+    /// has tied them, or while the pad sends no full report).
+    func axes(forSlot slot: UInt8) -> DualSenseRawAxes? {
+        lock.lock(); defer { lock.unlock() }
+        guard let key = slotDevices[slot] else { return nil }
+        return padInputs[key]?.axes
     }
 
     /// The physical pad bound to `slot`, if a press has tied them.
@@ -499,12 +523,21 @@ final class DualSenseHID: @unchecked Sendable {
         if let nextBattery = decoded.battery { batteryLocked = nextBattery }
         reportCountLocked += 1
         var changed = false
+        var axesSlot: UInt8?
         if let device, writeDevices[device] != nil {
-            changed = padInputs[device]?.extras != decoded.buttons
-            padInputs[device] = (decoded.buttons, decoded.signature)
+            let before = padInputs[device]
+            changed = before?.extras != decoded.buttons
+            padInputs[device] = (decoded.buttons, decoded.signature, decoded.axes)
+            if decoded.axes != nil, before?.axes != decoded.axes {
+                axesSlot = slotDevices.first { $0.value == device }?.key
+            }
         }
         let notify = onChange
+        let notifyAxes = onAxesChange
         lock.unlock()
+        if let axesSlot, let notifyAxes {
+            DispatchQueue.main.async { MainActor.assumeIsolated { notifyAxes(axesSlot) } }
+        }
 
         if changed, let notify {
             DispatchQueue.main.async { MainActor.assumeIsolated { notify() } }

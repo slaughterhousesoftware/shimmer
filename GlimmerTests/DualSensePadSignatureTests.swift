@@ -51,3 +51,44 @@ struct DualSensePadSignatureTests {
         #expect(m.options && m.ps && m.r1 && !m.create && !m.mute && !m.l1)
     }
 }
+
+struct DualSenseAudioDeviceTests {
+    @Test func usbAudioUIDCarriesTheHIDLocation() {
+        let uid = "AppleUSBAudioEngine:Sony Interactive Entertainment:DualSense Wireless Controller:3100000:1"
+        #expect(DualSenseAudioHaptics.uid(uid, isAt: 0x3100000))
+        #expect(!DualSenseAudioHaptics.uid(uid, isAt: 0x100000))
+        #expect(DualSenseAudioHaptics.uid("AppleUSBAudioEngine:Sony:DualSense:100000:2", isAt: 0x100000))
+    }
+}
+
+struct DualSenseRawAxesTests {
+    @Test func sticksAreLinearFullRange() {
+        #expect(DualSenseRawAxes.stick(0) == -32768)
+        #expect(DualSenseRawAxes.stick(255) == 32767)
+        #expect(abs(Int(DualSenseRawAxes.stick(128))) < 300)
+        // GameStream Y is up; the report's is down.
+        #expect(DualSenseRawAxes.stickY(0) == 32767)
+        #expect(DualSenseRawAxes.stickY(255) == -32768)
+    }
+
+    @Test func usbReportCarriesTheAxes() {
+        var r = [UInt8](repeating: 0, count: 64)
+        r[0] = 0x01
+        r[1] = 10; r[2] = 20; r[3] = 30; r[4] = 40; r[5] = 50; r[6] = 60
+        r[8] = 0x08
+        let axes = r.withUnsafeBufferPointer { DualSenseHID.decodeInputReport(reportID: 0x01, bytes: $0) }?.axes
+        #expect(axes == DualSenseRawAxes(lx: 10, ly: 20, rx: 30, ry: 40, l2: 50, r2: 60))
+    }
+
+    @Test func usbRumbleKeepsHapticsLikeSony() {
+        var s = DualSenseOutputState()
+        s.rumbleLeft = 200; s.rumbleRight = 100
+        s.audioHaptics = true; s.hapticsFilter = false; s.rumbleKeepsHaptics = true
+        let d = DualSenseHID.effectsState(s, triggerFlags: 0)
+        #expect(d[0] & 0x01 != 0 && d[0] & 0x02 == 0)
+        #expect(d[38] & 0x08 != 0)
+        #expect(d[3] == 200 && d[2] == 100)
+        s.rumbleKeepsHaptics = false
+        #expect(DualSenseHID.effectsState(s, triggerFlags: 0)[0] & 0x03 == 0x03)
+    }
+}

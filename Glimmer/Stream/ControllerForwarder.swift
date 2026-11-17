@@ -277,7 +277,10 @@ extension InputForwarder {
         DualSenseHID.shared.forgetSlot(state.slot)
         if state.retainedHID {
             // The hook serves every DualSense; drop it with the last one.
-            if !attachedControllers.values.contains(where: \.retainedHID) { DualSenseHID.shared.onChange = nil }
+            if !attachedControllers.values.contains(where: \.retainedHID) {
+                DualSenseHID.shared.onChange = nil
+                DualSenseHID.shared.onAxesChange = nil
+            }
             DualSenseHID.shared.release()
         }
         // If this pad armed the in-flight quit-chord dwell, the hold can no
@@ -350,6 +353,7 @@ extension InputForwarder {
             DualSenseHID.shared.forgetSlot(state.slot)
             if state.retainedHID {
                 DualSenseHID.shared.onChange = nil
+                DualSenseHID.shared.onAxesChange = nil
                 DualSenseHID.shared.release()
             }
         }
@@ -515,6 +519,15 @@ extension InputForwarder {
                     guard let ex = entry.controller?.extendedGamepad else { continue }
                     self.sendCenterButtonUpdate(pad: ex, slot: entry.slot)
                 }
+            }
+            // A raw stick/trigger change GameController may never report
+            // (inside its deadzone): push that pad's state.
+            DualSenseHID.shared.onAxesChange = { [weak self] slot in
+                guard let self, Self.rawDualSenseAxes,
+                      let entry = self.attachedControllers.values.first(where: { $0.slot == slot && $0.retainedHID }),
+                      let ex = entry.controller?.extendedGamepad else { return }
+                // State only: the touchpad stays on GameController's path.
+                self.sendCenterButtonUpdate(pad: ex, slot: slot)
             }
         }
     }

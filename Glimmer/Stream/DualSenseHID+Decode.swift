@@ -17,6 +17,21 @@ struct DualSenseDecodedReport: Equatable, Sendable {
     /// The buttons GameController also reports, as `PadSignature` bits - what
     /// ties this physical pad to its GameController slot (two players).
     var signature: UInt32 = 0
+    /// The sticks and analog triggers as the pad reports them (0-255, sticks
+    /// centred at 128, Y down) - no GameController deadzone or rescale.
+    var axes: DualSenseRawAxes?
+}
+
+/// A DualSense's sticks and triggers straight from its report. Sony's Remote
+/// Play sends these as they are; GameController's are deadzoned and rescaled,
+/// so a small aim correction never moved (or never reached) the host.
+struct DualSenseRawAxes: Equatable, Sendable {
+    var lx: UInt8, ly: UInt8, rx: UInt8, ry: UInt8, l2: UInt8, r2: UInt8
+
+    /// A stick byte as a GameStream axis: linear, full range (-32768...32767).
+    static func stick(_ raw: UInt8) -> Int16 { Int16(clamping: Int(raw) * 257 - 32768) }
+    /// The same, flipped: GameStream's Y is up, the report's is down.
+    static func stickY(_ raw: UInt8) -> Int16 { Int16(clamping: 32767 - Int(raw) * 257) }
 }
 
 /// The buttons both GameController and the raw report carry, as one bitset:
@@ -114,6 +129,8 @@ extension DualSenseHID {
             }
         }
         let signature = PadSignature.fromRaw(face: bytes[lxIndex + 7], shoulders: b1)
-        return DualSenseDecodedReport(buttons: buttons, battery: battery, signature: signature)
+        let axes = DualSenseRawAxes(lx: bytes[lxIndex], ly: bytes[lxIndex + 1], rx: bytes[lxIndex + 2],
+                                    ry: bytes[lxIndex + 3], l2: bytes[lxIndex + 4], r2: bytes[lxIndex + 5])
+        return DualSenseDecodedReport(buttons: buttons, battery: battery, signature: signature, axes: axes)
     }
 }
