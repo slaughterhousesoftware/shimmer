@@ -604,9 +604,9 @@ private struct NearbyPCRow: View {
 
 // MARK: - Sidebar row
 
-/// One machine: its icon, the name, and its status beneath in words after a
-/// coloured dot, as System Settings › Network lists its services. The
-/// address and the full status are in the row's tooltip.
+/// One machine: its icon, the name, and a word or two of status beneath, as
+/// Rex's sidebar says "Server / Running". The address and the full status
+/// are in the row's tooltip.
 private struct HostRow: View {
     let host: Host
     let address: String
@@ -622,9 +622,10 @@ private struct HostRow: View {
                 Text(host.displayName)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
-                HostStatusText(text: statusText.components(separatedBy: " · ").first ?? statusText,
-                               status: status)
+                Text(Self.shortStatus(statusText))
                     .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -637,6 +638,13 @@ private struct HostRow: View {
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(selected ? Color(nsColor: .unemphasizedSelectedContentBackgroundColor) : Color.clear))
+    }
+
+    /// The sidebar's short form: "Streaming" rather than "Streaming at
+    /// 1080p60 HDR", "Online" rather than "Online · status unavailable".
+    static func shortStatus(_ text: String) -> String {
+        if text.hasPrefix("Streaming") { return "Streaming" }
+        return text.components(separatedBy: " · ").first ?? text
     }
 }
 

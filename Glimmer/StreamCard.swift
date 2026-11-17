@@ -33,7 +33,7 @@ struct StreamRow: View {
     var body: some View {
         HStack(spacing: 12) {
             leading
-            Spacer(minLength: 12)
+            Spacer(minLength: 8)
             buttons
         }
         .padding(.vertical, 2)
@@ -44,12 +44,14 @@ struct StreamRow: View {
 
     private var showsChooser: Bool { !host.isPlayStation && apps.count > 1 }
 
+    /// Icon 28 pt (two lines of text tall), 12 pt to the text; the name at
+    /// 13 pt and the second line at 11 pt secondary, 2 pt apart - System
+    /// Settings' two-line rows. The text wins any squeeze before the buttons.
     private var leading: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             icon
-                .frame(width: 22, height: 22)
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 1) {
+                .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 2) {
                 if showsChooser {
                     TitleChooser(title: title, apps: apps, chosen: app, choose: choose)
                         .disabled(model.isStreaming)
@@ -60,19 +62,23 @@ struct StreamRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(subtitleIsLive ? Color.green : Color.secondary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
             }
+            .layoutPriority(1)
         }
     }
 
+    /// The glyph drawn at the row's size: an SF Symbol takes its size from the
+    /// font (AppGlyphIcon's size only frames bundled marks), so both are set.
     @ViewBuilder
     private var icon: some View {
         if host.isPlayStation {
             Image("HostGlyph-playstation").resizable().scaledToFit()
+                .frame(width: 26, height: 26)
         } else if let app {
-            AppGlyphIcon(app: app, size: 18)
+            AppGlyphIcon(app: app, size: 24)
+                .font(.system(size: 21))
         } else {
-            Image(systemName: "display")
+            Image(systemName: "display").font(.system(size: 21))
         }
     }
 
@@ -83,8 +89,13 @@ struct StreamRow: View {
     /// The row's second line: the stream while there is one, else what the
     /// row is (the console's home screen, or how many apps the PC offers).
     private var subtitle: String {
-        if streamingHere { return model.hostStatusLine(for: host.id) }
-        if model.isStreaming { return "Another stream is running" }
+        if streamingHere {
+            if case .streaming = model.streamPhase {
+                return model.activeStreamShorthand.map { "Streaming · \($0)" } ?? "Streaming"
+            }
+            return model.hostStatusLine(for: host.id)
+        }
+        if model.isStreaming { return "Another stream is live" }
         if resumes { return "Running" }
         if host.isPlayStation { return "Home screen" }
         return apps.count > 1 ? "\(apps.count) apps on \(host.displayName)" : "On \(host.displayName)"
@@ -167,25 +178,6 @@ private final class ClosureMenuItem: NSMenuItem {
     @objc private func run() { handler() }
 }
 
-/// A machine's status as words, after a small dot in its colour - the way
-/// System Settings › Network lists "● Connected".
-struct HostStatusText: View {
-    let text: String
-    let status: HostStatusIndicator
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(HostConnectionBadge.colour(for: status))
-                .frame(width: 6, height: 6)
-            Text(text)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-    }
-}
-
-
 /// Which of a PC's apps Stream launches: the row's title, with the pop-up
 /// arrow in the same grey square as the page's other menus, dropping a
 /// native menu of the apps (icons, the current one checked).
@@ -198,15 +190,15 @@ private struct TitleChooser: View {
 
     var body: some View {
         Button(action: showMenu) {
-            HStack(spacing: 8) {
+            HStack(spacing: 5) {
                 Text(title).lineLimit(1)
-                // The pop-up arrow exactly as every menu on this page draws
-                // it (measured off Quality and Bitrate): a 20 pt circle at 6%
-                // of the text colour, the arrow in the text colour.
+                // The pop-up arrow as the page's other menus draw it (a
+                // circle at 6% of the text colour, the arrow in the text
+                // colour), sized to sit with 13 pt text: 18 pt, 5 pt off it.
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
                     .background(Circle().fill(Color.primary.opacity(0.06)))
             }
             .contentShape(Rectangle())
