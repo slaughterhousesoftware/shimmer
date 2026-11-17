@@ -306,23 +306,48 @@ struct SettingsSegmentedControl<Value: Hashable>: NSViewRepresentable {
     }
 }
 
-/// Resolution and frame rate as two standard menu rows, as System Settings ›
-/// Displays lays out Resolution and Refresh rate. (Tried and dropped
-/// 2026-11-17: both menus on one row, then one capsule split into two menus;
-/// neither read as cohesive as the plain rows.)
-struct ResolutionFrameRateRows<Resolution: Hashable, FrameRate: Hashable>: View {
+/// The Quality row: resolution and frame rate as two menus side by side,
+/// `1920 × 1080 ⌃⌄  60 Hz ⌃⌄`. Each menu keeps the width of its widest value,
+/// so changing one never slides the other along the row. (Tried and dropped
+/// 2026-11-17: one capsule split into two menus, and one combined menu.)
+struct ResolutionFrameRateRow<Resolution: Hashable, FrameRate: Hashable>: View {
     @Binding var resolution: Resolution
     let resolutions: [(title: String, value: Resolution)]
     @Binding var frameRate: FrameRate
     let frameRates: [(title: String, value: FrameRate)]
 
     var body: some View {
-        Picker("Resolution", selection: $resolution) {
-            ForEach(resolutions.indices, id: \.self) { Text(resolutions[$0].title).tag(resolutions[$0].value) }
+        LabeledContent("Quality") {
+            HStack(spacing: 6) {
+                Self.menu("Resolution", $resolution, resolutions)
+                Self.menu("Frame rate", $frameRate, frameRates)
+            }
         }
-        Picker("Frame rate", selection: $frameRate) {
-            ForEach(frameRates.indices, id: \.self) { Text(frameRates[$0].title).tag(frameRates[$0].value) }
+    }
+
+    private static func menu<V: Hashable>(_ title: String, _ selection: Binding<V>,
+                                          _ options: [(title: String, value: V)]) -> some View {
+        ZStack(alignment: .trailing) {
+            // One invisible copy per value: the stack takes the widest.
+            ForEach(options.indices, id: \.self) { index in
+                picker(title, .constant(options[index].value), options)
+                    .hidden()
+                    .accessibilityHidden(true)
+            }
+            picker(title, selection, options)
         }
+    }
+
+    private static func picker<V: Hashable>(_ title: String, _ selection: Binding<V>,
+                                            _ options: [(title: String, value: V)]) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(options.indices, id: \.self) { Text(options[$0].title).tag(options[$0].value) }
+        }
+        .pickerStyle(.menu)
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .labelsHidden()
+        .fixedSize()
     }
 }
 

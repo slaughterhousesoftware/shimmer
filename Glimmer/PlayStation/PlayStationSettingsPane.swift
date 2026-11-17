@@ -15,7 +15,7 @@ struct PlayStationSettingsPane: View {
     /// choices are segmented, as Rex lays out its few-option rows.
     var body: some View {
         Section {
-            ResolutionFrameRateRows(
+            ResolutionFrameRateRow(
                 resolution: $settings.height,
                 resolutions: [("1920 × 1080", 1080), ("1280 × 720", 720)],
                 frameRate: $settings.fps,
