@@ -158,6 +158,11 @@ final class DualSenseHID: @unchecked Sendable {
     /// Per pad, which trigger blocks changed since they were last written
     /// (valid_flag0 bits: right 0x04, left 0x08).
     var padDirtyTriggers: [UnsafeMutableRawPointer: UInt8] = [:]
+    /// What each slot last asked of its pad (triggers, light bar, settings),
+    /// kept across the pad dropping off: a pad that comes back - USB to
+    /// Bluetooth and back, asleep and awake - gets it again when it is tied
+    /// to its slot, rather than sitting blank until the game sends a new effect.
+    var slotOutputs: [UInt8: DualSenseOutputState] = [:]
     /// Latch so the "SetReport refused" breadcrumb logs once, not per write
     /// (host re-arms triggers can arrive at frame rate).
     private var loggedWriteFailure = false
@@ -260,26 +265,44 @@ final class DualSenseHID: @unchecked Sendable {
     /// row bind (or re-bind); an empty set or a set two pads share proves
     /// nothing. With a single pad there is nothing to tell apart.
     func noteGameControllerState(slot: UInt8, signature: UInt32) {
-        lock.lock(); defer { lock.unlock() }
-        if padInputs.count == 1, let only = padInputs.keys.first {
-            if slotDevices[slot] != only { bind(slot: slot, to: only) }
-            return
-        }
-        guard signature != 0 else { return }
-        if let bound = slotDevices[slot], padInputs[bound]?.signature == signature { return }
-        let matches = padInputs.filter { $0.value.signature == signature }.map(\.key)
-        guard matches.count == 1, let device = matches.first else { return }
-        let votes = bindVotes[slot].map { $0.device == device ? $0.count + 1 : 1 } ?? 1
-        bindVotes[slot] = (device, votes)
-        if votes >= 2 { bind(slot: slot, to: device) }
+        lock.lock()
+        let restored = noteGameControllerStateLocked(slot: slot, signature: signature)
+        lock.unlock()
+        if restored { scheduleWrite() }
     }
 
-    private func bind(slot: UInt8, to device: UnsafeMutableRawPointer) {
+    private func noteGameControllerStateLocked(slot: UInt8, signature: UInt32) -> Bool {
+        if padInputs.count == 1, let only = padInputs.keys.first {
+            if slotDevices[slot] != only { return bind(slot: slot, to: only) }
+            return false
+        }
+        guard signature != 0 else { return false }
+        if let bound = slotDevices[slot], padInputs[bound]?.signature == signature { return false }
+        let matches = padInputs.filter { $0.value.signature == signature }.map(\.key)
+        guard matches.count == 1, let device = matches.first else { return false }
+        let votes = bindVotes[slot].map { $0.device == device ? $0.count + 1 : 1 } ?? 1
+        bindVotes[slot] = (device, votes)
+        return votes >= 2 ? bind(slot: slot, to: device) : false
+    }
+
+    /// Returns true when the pad got its slot's last output and needs a write.
+    @discardableResult
+    private func bind(slot: UInt8, to device: UnsafeMutableRawPointer) -> Bool {
         for (other, key) in slotDevices where key == device && other != slot { slotDevices[other] = nil }
         slotDevices[slot] = device
         bindVotes[slot] = nil
+        var restored = false
+        if var state = slotOutputs[slot] {
+            // Motors stay off: a rumble from before the pad dropped is stale.
+            state.rumbleLeft = 0; state.rumbleRight = 0
+            padOutputs[device] = state
+            padDirtyTriggers[device] = Self.bothTriggers
+            restored = true
+        }
         let transport = writeDevices[device].map { $0.bluetooth ? "Bluetooth" : "USB" } ?? "?"
-        Diag.notice("DualSense on slot \(slot) is the \(transport) pad #\(deviceOrdinal(device))", "Controller")
+        Diag.notice("DualSense on slot \(slot) is the \(transport) pad #\(deviceOrdinal(device))"
+            + (restored ? " (its triggers and light restored)" : ""), "Controller")
+        return restored
     }
 
     /// A stable small number for a pad in the logs.
@@ -454,6 +477,7 @@ final class DualSenseHID: @unchecked Sendable {
         outputState = DualSenseOutputState()
         padOutputs.removeAll()
         padDirtyTriggers.removeAll()
+        slotOutputs.removeAll()
         // A request the pad never confirmed would time the next session's
         // first write from this one.
         triggerRequestedAt = 0
@@ -601,6 +625,12 @@ final class DualSenseHID: @unchecked Sendable {
             if wantLeft { outputState.leftTrigger = leftBlock }
             if wantRight { outputState.rightTrigger = rightBlock }
         }
+        for key in slot.map({ [$0] }) ?? Array(slotOutputs.keys) {
+            var state = slotOutputs[key] ?? outputState
+            if wantLeft { state.leftTrigger = leftBlock }
+            if wantRight { state.rightTrigger = rightBlock }
+            slotOutputs[key] = state
+        }
         var changed = false
         for key in targets(forSlot: slot) {
             var state = padOutputs[key] ?? outputState
@@ -637,7 +667,14 @@ final class DualSenseHID: @unchecked Sendable {
     /// Change the OUTPUT state of `slot`'s pad(s) (`lock` held); nil changes
     /// every pad and the state a new pad starts from.
     func mutateOutput(slot: UInt8?, _ body: (inout DualSenseOutputState) -> Void) {
-        if slot == nil { body(&outputState) }
+        if let slot {
+            var state = slotOutputs[slot] ?? outputState
+            body(&state)
+            slotOutputs[slot] = state
+        } else {
+            body(&outputState)
+            for key in Array(slotOutputs.keys) { body(&slotOutputs[key]!) }
+        }
         for key in targets(forSlot: slot) {
             var state = padOutputs[key] ?? outputState
             body(&state)

@@ -371,6 +371,10 @@ public final class InputForwarder {
     /// Bitmask of slots currently in use; bit N == 1 means slot N is occupied.
     /// Sent to the host as `activeGamepadMask` on every controller event.
     var gamepadMask: UInt16 = 0
+    /// One DualSense-reader hold for the whole stream (on top of each pad's):
+    /// swapping the only pad between USB and Bluetooth would otherwise close
+    /// the reader in the gap and lose the slot's triggers and light.
+    var heldHIDForStream = false
 
     /// Per-slot DualSense/DualShock touchpad finger tracking, so the touchpad
     /// surface can be forwarded as host touch events (down/move/up). Keyed by

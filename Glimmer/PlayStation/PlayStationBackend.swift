@@ -872,8 +872,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         case .actuators:
             break
         }
-        let primaryLocation = lock.withLock { primaryPad }.flatMap { DualSenseHID.shared.usbLocation(forSlot: $0) }
-        if let player = DualSenseAudioHaptics.start(usbLocation: primaryLocation, onLost: { [weak self] in
+        let (primary, others) = lock.withLock { (primaryPad, Array(seats.keys)) }
+        let primaryLocation = primary.flatMap { DualSenseHID.shared.usbLocation(forSlot: $0) }
+        // While player 1's pad is reconnecting, never take another player's.
+        let otherLocations = Set(others.compactMap { DualSenseHID.shared.usbLocation(forSlot: $0) })
+        if let player = DualSenseAudioHaptics.start(usbLocation: primaryLocation, excluding: otherLocations,
+                                                    onLost: { [weak self] in
             self?.restartAudioHaptics(reason: "the DualSense audio device changed")
         }) {
             useActuators(player)

@@ -87,6 +87,10 @@ extension InputForwarder {
             }
         }
         GCController.startWirelessControllerDiscovery {}
+        if DualSenseHID.isEnabled, !heldHIDForStream {
+            heldHIDForStream = true
+            DualSenseHID.shared.retain()
+        }
 
         // Attach controllers ALREADY connected when the stream wires up.
         // GCControllerDidConnect does NOT replay for pads connected before we
@@ -361,6 +365,10 @@ extension InputForwarder {
         announcedControllerSlots.removeAll()
         touchpadStates.removeAll()
         gamepadMask = 0
+        if heldHIDForStream {
+            heldHIDForStream = false
+            DualSenseHID.shared.release()
+        }
     }
 
     /// Announce a pad's type and capabilities. Returns whether the backend

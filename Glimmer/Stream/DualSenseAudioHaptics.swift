@@ -354,8 +354,10 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
     /// away or the engine can't be restarted.
     /// `usbLocation`: the pad's USB location (DualSenseHID), to pick that
     /// pad's audio device when more than one DualSense is plugged in; nil, the first.
-    static func start(usbLocation: UInt32? = nil, onLost: @escaping @Sendable () -> Void) -> DualSenseAudioHaptics? {
-        guard let (device, name) = findDevice(usbLocation: usbLocation) else { return nil }
+    /// `excluding`: other players' pads, never picked when `usbLocation` is nil.
+    static func start(usbLocation: UInt32? = nil, excluding: Set<UInt32> = [],
+                      onLost: @escaping @Sendable () -> Void) -> DualSenseAudioHaptics? {
+        guard let (device, name) = findDevice(usbLocation: usbLocation, excluding: excluding) else { return nil }
         let engine = AVAudioEngine()
         guard let format = bind(engine, to: device) else { return nil }
         let shared = Shared(HapticsBuffer(outputRate: format.sampleRate))
@@ -506,7 +508,7 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
     /// - the one at `usbLocation` when given. A USB audio device's UID carries
     /// the port's location in hex ("AppleUSBAudioEngine:…:DualSense Wireless
     /// Controller:3100000:1"), the same number as the pad's HID LocationID.
-    static func findDevice(usbLocation: UInt32? = nil) -> (AudioDeviceID, String)? {
+    static func findDevice(usbLocation: UInt32? = nil, excluding: Set<UInt32> = []) -> (AudioDeviceID, String)? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
                                                  mScope: kAudioObjectPropertyScopeGlobal,
                                                  mElement: kAudioObjectPropertyElementMain)
@@ -519,7 +521,9 @@ final class DualSenseAudioHaptics: DualSenseHapticsOutput, @unchecked Sendable {
         for id in ids {
             let name = deviceName(id)
             guard name.localizedCaseInsensitiveContains("DualSense"), outputChannels(id) >= 4 else { continue }
-            if let usbLocation, !Self.uid(deviceUID(id), isAt: usbLocation) { continue }
+            let uid = deviceUID(id)
+            if let usbLocation, !Self.uid(uid, isAt: usbLocation) { continue }
+            if usbLocation == nil, excluding.contains(where: { Self.uid(uid, isAt: $0) }) { continue }
             return (id, name)
         }
         return nil
