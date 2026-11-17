@@ -60,6 +60,8 @@ extension AppModel {
         if let kbps = s.bitrateKbps {
             options.bitrateKbps = PlayStationStreamOptions.clampBitrate(kbps)
             options.holdBitrate = true
+        } else if options.resolution == .p1080 {
+            options.bitrateKbps = PlayStationSettings.presetBitrateMbps * 1000   // adaptive, not held
         }
         let displayCanShowHDR = (NSScreen.main?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1
         options.codec = !s.hevc ? .h264 : (s.hdr && displayCanShowHDR ? .h265HDR : .h265)

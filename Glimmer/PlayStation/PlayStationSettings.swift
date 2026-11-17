@@ -95,7 +95,11 @@ final class PlayStationSettings {
     /// The console's range for a bitrate set by hand (PXPlay's).
     static let bitrateRangeMbps = 2...100
     /// The console's own 1080p preset.
-    static let presetBitrateMbps = 15
+    /// Automatic at 1080p: what the PS Portal - Sony's own Remote Play
+    /// handheld - asks for (25 Mbps), not the console's 15 Mbps preset that
+    /// libchiaki and Sony's Mac app leave it on. Still not held: the console
+    /// may lower it when the network struggles.
+    static let presetBitrateMbps = 25
 
     var height: Int = 1080 { didSet { save(height, "height") } }
     var fps: Int = 60 { didSet { save(fps, "fps") } }
