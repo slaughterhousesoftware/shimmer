@@ -50,7 +50,7 @@ extension InputForwarder {
         // line that makes "I held all four and nothing happened" diagnosable:
         // it names which of the four never registered. Edge-only + rate-limited.
         guard pushed, quitChordUsesCentreButtons() else { return }
-        let hid = DualSenseHID.shared.buttons
+        let hid = DualSenseHID.shared.buttons(forSlot: slot)
         if hid.options || hid.create {
             quitChordBreadcrumb(.partial, "partial hold on slot \(slot)", pad: pad)
         }
@@ -92,7 +92,7 @@ extension InputForwarder {
         // arrival yet, send it now, and hold the state if it is still refused.
         guard ensureControllerAnnounced(slot: slot) else { return false }
 
-        let buttons = pressedButtonFlags(pad: pad)
+        let buttons = pressedButtonFlags(pad: pad, slot: slot)
 
         let lt = UInt8((pad.leftTrigger.value  * 255).rounded().clamped(to: 0...255))
         let rt = UInt8((pad.rightTrigger.value * 255).rounded().clamped(to: 0...255))
@@ -119,7 +119,7 @@ extension InputForwarder {
     /// trips). The DualSense/DualShock touchpad *click* rides here as
     /// TOUCHPAD_FLAG (Sunshine's touchpad button); the touchpad *surface* is
     /// forwarded separately as touch events.
-    private func pressedButtonFlags(pad: GCExtendedGamepad) -> Int32 {
+    private func pressedButtonFlags(pad: GCExtendedGamepad, slot: UInt8) -> Int32 {
         let mapping: [(Bool, Int32)] = [
             (pad.buttonA.isPressed, StreamProtocol.A_FLAG),
             (pad.buttonB.isPressed, StreamProtocol.B_FLAG),
@@ -152,13 +152,33 @@ extension InputForwarder {
         // GameController). Mapped to the host's semantics: Options → Start,
         // Create/Share → Back, PS → Guide, Mute → misc.
         if pad is GCDualSenseGamepad {
-            let hid = DualSenseHID.shared.buttons
+            // This slot's own pad (two players: each pad's centre buttons are
+            // its own), tied to the slot by the buttons both sides see.
+            DualSenseHID.shared.noteGameControllerState(slot: slot, signature: Self.padSignature(pad))
+            let hid = DualSenseHID.shared.buttons(forSlot: slot)
             if hid.options { buttons |= StreamProtocol.PLAY_FLAG }
             if hid.create { buttons |= StreamProtocol.BACK_FLAG }
             if hid.ps { buttons |= StreamProtocol.SPECIAL_FLAG }
             if hid.mute { buttons |= StreamProtocol.MISC_FLAG }
         }
         return buttons
+    }
+}
+
+extension InputForwarder {
+    /// GameController's pressed buttons as a `PadSignature`, to compare with
+    /// the raw reports (DualSenseHID.noteGameControllerState).
+    static func padSignature(_ pad: GCExtendedGamepad) -> UInt32 {
+        let map: [(Bool, UInt32)] = [
+            (pad.buttonA.isPressed, PadSignature.cross), (pad.buttonB.isPressed, PadSignature.circle),
+            (pad.buttonX.isPressed, PadSignature.square), (pad.buttonY.isPressed, PadSignature.triangle),
+            (pad.dpad.up.isPressed, PadSignature.up), (pad.dpad.down.isPressed, PadSignature.down),
+            (pad.dpad.left.isPressed, PadSignature.left), (pad.dpad.right.isPressed, PadSignature.right),
+            (pad.leftShoulder.isPressed, PadSignature.l1), (pad.rightShoulder.isPressed, PadSignature.r1),
+            (pad.leftThumbstickButton?.isPressed == true, PadSignature.l3),
+            (pad.rightThumbstickButton?.isPressed == true, PadSignature.r3),
+        ]
+        return map.reduce(0) { $1.0 ? $0 | $1.1 : $0 }
     }
 }
 

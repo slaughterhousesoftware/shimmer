@@ -14,6 +14,45 @@ import Foundation
 struct DualSenseDecodedReport: Equatable, Sendable {
     var buttons: DualSenseExtraButtons
     var battery: DualSenseBattery?
+    /// The buttons GameController also reports, as `PadSignature` bits - what
+    /// ties this physical pad to its GameController slot (two players).
+    var signature: UInt32 = 0
+}
+
+/// The buttons both GameController and the raw report carry, as one bitset:
+/// when a slot's GameController state and one pad's raw report show the same
+/// non-empty set, that pad is the slot's (DualSenseHID.noteGameControllerState).
+enum PadSignature {
+    static let cross: UInt32 = 1 << 0, circle: UInt32 = 1 << 1, square: UInt32 = 1 << 2, triangle: UInt32 = 1 << 3
+    static let up: UInt32 = 1 << 4, down: UInt32 = 1 << 5, left: UInt32 = 1 << 6, right: UInt32 = 1 << 7
+    static let l1: UInt32 = 1 << 8, r1: UInt32 = 1 << 9, l3: UInt32 = 1 << 10, r3: UInt32 = 1 << 11
+
+    /// From the raw report's face/D-pad byte (low nibble the hat, 0 = up,
+    /// clockwise, 8 = centred; 0x10 square, 0x20 cross, 0x40 circle, 0x80
+    /// triangle) and the shoulder byte (L1 0x01, R1 0x02, L3 0x40, R3 0x80).
+    static func fromRaw(face: UInt8, shoulders: UInt8) -> UInt32 {
+        var s: UInt32 = 0
+        if face & 0x10 != 0 { s |= square }
+        if face & 0x20 != 0 { s |= cross }
+        if face & 0x40 != 0 { s |= circle }
+        if face & 0x80 != 0 { s |= triangle }
+        switch face & 0x0F {
+        case 0: s |= up
+        case 1: s |= up | right
+        case 2: s |= right
+        case 3: s |= down | right
+        case 4: s |= down
+        case 5: s |= down | left
+        case 6: s |= left
+        case 7: s |= up | left
+        default: break
+        }
+        if shoulders & 0x01 != 0 { s |= l1 }
+        if shoulders & 0x02 != 0 { s |= r1 }
+        if shoulders & 0x40 != 0 { s |= l3 }
+        if shoulders & 0x80 != 0 { s |= r3 }
+        return s
+    }
 }
 
 extension DualSenseHID {
@@ -74,6 +113,7 @@ extension DualSenseHID {
                 battery = DualSenseBattery(percent: pct, charging: charge == 0x01 || charge == 0x02)
             }
         }
-        return DualSenseDecodedReport(buttons: buttons, battery: battery)
+        let signature = PadSignature.fromRaw(face: bytes[lxIndex + 7], shoulders: b1)
+        return DualSenseDecodedReport(buttons: buttons, battery: battery, signature: signature)
     }
 }

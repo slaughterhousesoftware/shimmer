@@ -103,7 +103,17 @@ final class DualSenseHID: @unchecked Sendable {
     let lock = NSLock()
 
     // All mutable state below is guarded by `lock`.
-    private var buttonsLocked = DualSenseExtraButtons()
+    /// Each pad's latest decoded centre buttons and GameController-visible
+    /// button set, by device (the same key as `writeDevices`). Kept per pad:
+    /// with two players one shared value flipped between the pads' reports
+    /// (each ~250/s), so a held Options flickered and reached both slots.
+    private var padInputs: [UnsafeMutableRawPointer: (extras: DualSenseExtraButtons, signature: UInt32)] = [:]
+    /// Which physical pad each GameController slot is, once button presses
+    /// have tied them together (noteGameControllerState).
+    private var slotDevices: [UInt8: UnsafeMutableRawPointer] = [:]
+    /// Evidence toward a binding: the pad a slot's last matches pointed at
+    /// and how many times in a row.
+    private var bindVotes: [UInt8: (device: UnsafeMutableRawPointer, count: Int)] = [:]
     private var retainCount = 0
     private var running = false
     // Per-device input-report buffers. A buffer handed to IOKit is NEVER
@@ -176,10 +186,75 @@ final class DualSenseHID: @unchecked Sendable {
         return batteryLocked
     }
 
-    /// Latest decoded button state (thread-safe snapshot).
+    /// Every pad's centre buttons together (thread-safe snapshot): the input
+    /// test and the Settings chord capture, which don't know a slot.
     var buttons: DualSenseExtraButtons {
         lock.lock(); defer { lock.unlock() }
-        return buttonsLocked
+        return Self.merged(padInputs.values.map(\.extras))
+    }
+
+    /// The centre buttons of the pad that is `slot`. Until a press has tied the
+    /// slot to a pad: the only pad, or every pad no other slot has claimed.
+    func buttons(forSlot slot: UInt8) -> DualSenseExtraButtons {
+        lock.lock(); defer { lock.unlock() }
+        if let key = slotDevices[slot], let pad = padInputs[key] { return pad.extras }
+        let claimed = Set(slotDevices.filter { $0.key != slot }.map(\.value))
+        return Self.merged(padInputs.filter { !claimed.contains($0.key) }.map(\.value.extras))
+    }
+
+    /// The physical pad bound to `slot`, if a press has tied them.
+    func device(forSlot slot: UInt8) -> UnsafeMutableRawPointer? {
+        lock.lock(); defer { lock.unlock() }
+        return slotDevices[slot]
+    }
+
+    static func merged(_ all: [DualSenseExtraButtons]) -> DualSenseExtraButtons {
+        var m = DualSenseExtraButtons()
+        for b in all {
+            m.options = m.options || b.options; m.create = m.create || b.create
+            m.ps = m.ps || b.ps; m.mute = m.mute || b.mute
+            m.l1 = m.l1 || b.l1; m.r1 = m.r1 || b.r1
+        }
+        return m
+    }
+
+    /// GameController's view of `slot` (its `PadSignature`): tie the slot to
+    /// the one pad whose raw report shows the same buttons. Two matches in a
+    /// row bind (or re-bind); an empty set or a set two pads share proves
+    /// nothing. With a single pad there is nothing to tell apart.
+    func noteGameControllerState(slot: UInt8, signature: UInt32) {
+        lock.lock(); defer { lock.unlock() }
+        if padInputs.count == 1, let only = padInputs.keys.first {
+            if slotDevices[slot] != only { bind(slot: slot, to: only) }
+            return
+        }
+        guard signature != 0 else { return }
+        if let bound = slotDevices[slot], padInputs[bound]?.signature == signature { return }
+        let matches = padInputs.filter { $0.value.signature == signature }.map(\.key)
+        guard matches.count == 1, let device = matches.first else { return }
+        let votes = bindVotes[slot].map { $0.device == device ? $0.count + 1 : 1 } ?? 1
+        bindVotes[slot] = (device, votes)
+        if votes >= 2 { bind(slot: slot, to: device) }
+    }
+
+    private func bind(slot: UInt8, to device: UnsafeMutableRawPointer) {
+        for (other, key) in slotDevices where key == device && other != slot { slotDevices[other] = nil }
+        slotDevices[slot] = device
+        bindVotes[slot] = nil
+        let transport = writeDevices[device].map { $0.bluetooth ? "Bluetooth" : "USB" } ?? "?"
+        Diag.notice("DualSense on slot \(slot) is the \(transport) pad #\(deviceOrdinal(device))", "Controller")
+    }
+
+    /// A stable small number for a pad in the logs.
+    private func deviceOrdinal(_ device: UnsafeMutableRawPointer) -> Int {
+        reportBuffers.keys.sorted { UInt(bitPattern: $0) < UInt(bitPattern: $1) }.firstIndex(of: device) ?? -1
+    }
+
+    /// The slot's controller detached: forget which pad it was.
+    func forgetSlot(_ slot: UInt8) {
+        lock.lock(); defer { lock.unlock() }
+        slotDevices[slot] = nil
+        bindVotes[slot] = nil
     }
 
     /// True while the IOHIDManager is open (someone holds a `retain()`). The
@@ -311,7 +386,9 @@ final class DualSenseHID: @unchecked Sendable {
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         lock.lock()
         writeDevices.removeAll()
-        buttonsLocked = DualSenseExtraButtons()
+        padInputs.removeAll()
+        slotDevices.removeAll()
+        bindVotes.removeAll()
         batteryLocked = nil
         reportCountLocked = 0
         outputState = DualSenseOutputState()
@@ -371,6 +448,8 @@ final class DualSenseHID: @unchecked Sendable {
         let key = Unmanaged.passUnretained(device).toOpaque()
         lock.lock()
         let known = writeDevices.removeValue(forKey: key) != nil ? reportBuffers[key] : nil
+        padInputs[key] = nil
+        for (slot, device) in slotDevices where device == key { slotDevices[slot] = nil }
         lock.unlock()
         // The buffer stays allocated (see reportBuffers): a report already
         // queued for this device may still be copied into it.
@@ -382,7 +461,7 @@ final class DualSenseHID: @unchecked Sendable {
     // MARK: Report decode
 
     // C-function-pointer-compatible (no captures). `report` is non-optional.
-    private static let reportCallback: IOHIDReportCallback = { context, result, _, _, reportID, report, reportLength in
+    private static let reportCallback: IOHIDReportCallback = { context, result, sender, _, reportID, report, reportLength in
         guard result == kIOReturnSuccess, let context else { return }
         let me = Unmanaged<DualSenseHID>.fromOpaque(context).takeUnretainedValue()
         // A report queued before stop() can still arrive after it.
@@ -390,13 +469,15 @@ final class DualSenseHID: @unchecked Sendable {
         let live = me.running
         me.lock.unlock()
         guard live else { return }
-        me.decode(reportID: reportID, report: report, length: reportLength)
+        // `sender` is the IOHIDDevice, the same pointer registerDevice keys by.
+        me.decode(device: sender, reportID: reportID, report: report, length: reportLength)
     }
 
     /// Per-report entry from the IOKit callback: the pure decode lives in
     /// DualSenseHID+Decode.swift; this half owns the lock, the change edge,
     /// and the main-queue hop to `onChange`.
-    private func decode(reportID: UInt32, report: UnsafeMutablePointer<UInt8>, length: CFIndex) {
+    private func decode(device: UnsafeMutableRawPointer?, reportID: UInt32,
+                        report: UnsafeMutablePointer<UInt8>, length: CFIndex) {
         noteTriggerStatus(report: report, length: length)
         guard let decoded = Self.decodeInputReport(
             reportID: reportID, bytes: UnsafeBufferPointer(start: report, count: length)) else { return }
@@ -404,8 +485,11 @@ final class DualSenseHID: @unchecked Sendable {
         lock.lock()
         if let nextBattery = decoded.battery { batteryLocked = nextBattery }
         reportCountLocked += 1
-        let changed = decoded.buttons != buttonsLocked
-        buttonsLocked = decoded.buttons
+        var changed = false
+        if let device, writeDevices[device] != nil {
+            changed = padInputs[device]?.extras != decoded.buttons
+            padInputs[device] = (decoded.buttons, decoded.signature)
+        }
         let notify = onChange
         lock.unlock()
 

@@ -28,7 +28,16 @@ extension InputForwarder {
         let chord = controllerQuitChordProvider()
         guard chord != .none else { return false }   // no set to build on the hot path
         return Self.chordSatisfied(chord, custom: customControllerChordProvider(),
-                                   held: heldControllerButtons(pad: pad))
+                                   held: heldControllerButtons(pad: pad, hid: hidButtons(for: pad)))
+    }
+
+    /// The raw-HID centre buttons of this pad's own DualSense (its slot's).
+    func hidButtons(for pad: GCExtendedGamepad) -> DualSenseExtraButtons {
+        guard let controller = pad.controller,
+              let slot = attachedControllers[ObjectIdentifier(controller)]?.slot else {
+            return DualSenseHID.shared.buttons
+        }
+        return DualSenseHID.shared.buttons(forSlot: slot)
     }
 
     /// The pure chord predicate: every button of `chord` is in `held`. Static
@@ -209,11 +218,11 @@ extension InputForwarder {
             guard now - quitChordCrumbs.lastPartialAt >= Self.quitChordBreadcrumbIntervalSeconds else { return }
             quitChordCrumbs.lastPartialAt = now
         }
-        let hid = DualSenseHID.shared.buttons
+        let hid = pad.map(hidButtons(for:)) ?? DualSenseHID.shared.buttons
         var detail = "chord=\(controllerQuitChordProvider().rawValue) "
             + "hid[opt=\(hid.options) cre=\(hid.create) l1=\(hid.l1) r1=\(hid.r1)]"
         if let pad {
-            let held = heldControllerButtons(pad: pad)
+            let held = heldControllerButtons(pad: pad, hid: hid)
             detail += " gc[menu=\(pad.buttonMenu.isPressed) opt=\(pad.buttonOptions?.isPressed ?? false) "
                 + "l1=\(pad.leftShoulder.isPressed) r1=\(pad.rightShoulder.isPressed)] "
                 + "held=\(held.isEmpty ? "none" : ControllerButton.describe(held))"
@@ -229,11 +238,11 @@ extension InputForwarder {
 /// carries (see `DualSenseExtraButtons` for why the shoulders ride along).
 /// Free function (not an InputForwarder method) so the Settings capture sheet,
 /// which has no live stream, can call it too.
-func heldControllerButtons(pad: GCExtendedGamepad) -> Set<ControllerButton> {
+func heldControllerButtons(pad: GCExtendedGamepad,
+                           hid: DualSenseExtraButtons = DualSenseHID.shared.buttons) -> Set<ControllerButton> {
     // Compute the composite (HID + GameController) bools first, then a flat
     // table-driven fold - keeps this off the cyclomatic-complexity radar a
     // 19-way if-chain would trip.
-    let hid = DualSenseHID.shared.buttons
     let touchpadHeld = ((pad as? GCDualSenseGamepad)?.touchpadButton
         ?? (pad as? GCDualShockGamepad)?.touchpadButton)?.isPressed == true
     let optionsHeld = hid.options || pad.buttonMenu.isPressed

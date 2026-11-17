@@ -80,6 +80,7 @@ extension InputForwarder {
                             ControllerHaptics.shared.unregister(slot: state.slot)
                             ControllerMotion.shared.unregister(slot: state.slot)
                             ControllerBattery.shared.unregister(slot: state.slot)
+                            DualSenseHID.shared.forgetSlot(state.slot)
                         }
                     }
                 }
@@ -273,8 +274,10 @@ extension InputForwarder {
         ControllerHaptics.shared.unregister(slot: state.slot)
         ControllerMotion.shared.unregister(slot: state.slot)
         ControllerBattery.shared.unregister(slot: state.slot)
+        DualSenseHID.shared.forgetSlot(state.slot)
         if state.retainedHID {
-            DualSenseHID.shared.onChange = nil
+            // The hook serves every DualSense; drop it with the last one.
+            if !attachedControllers.values.contains(where: \.retainedHID) { DualSenseHID.shared.onChange = nil }
             DualSenseHID.shared.release()
         }
         // If this pad armed the in-flight quit-chord dwell, the hold can no
@@ -344,6 +347,7 @@ extension InputForwarder {
             ControllerHaptics.shared.unregister(slot: state.slot)
             ControllerMotion.shared.unregister(slot: state.slot)
             ControllerBattery.shared.unregister(slot: state.slot)
+            DualSenseHID.shared.forgetSlot(state.slot)
             if state.retainedHID {
                 DualSenseHID.shared.onChange = nil
                 DualSenseHID.shared.release()
@@ -500,10 +504,17 @@ extension InputForwarder {
         // to the host. DualSenseHID gates onChange on a real bit change; the push
         // does NOT re-forward the touchpad (that stays on the GameController path,
         // the single full-state source - no double-feed).
+        // One hook for every DualSense: a centre-button change on any pad
+        // re-pushes each DualSense slot (each reads its own pad's buttons). A
+        // hook per pad replaced the last, so player 1's Options re-sent player
+        // 2's state.
         if state.retainedHID {
-            DualSenseHID.shared.onChange = { [weak self, weak gamepad] in
-                guard let self, let ex = gamepad?.extendedGamepad else { return }
-                self.sendCenterButtonUpdate(pad: ex, slot: slot)
+            DualSenseHID.shared.onChange = { [weak self] in
+                guard let self else { return }
+                for entry in self.attachedControllers.values where entry.retainedHID {
+                    guard let ex = entry.controller?.extendedGamepad else { continue }
+                    self.sendCenterButtonUpdate(pad: ex, slot: entry.slot)
+                }
             }
         }
     }

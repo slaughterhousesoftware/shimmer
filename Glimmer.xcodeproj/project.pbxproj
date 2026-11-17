@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C11055896EFA8E092F2C79CB /* DualSensePadSignatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 189A3F19521EA4749F16B793 /* DualSensePadSignatureTests.swift */; };
 		190FFC794092E4334C51C525 /* StreamCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E3DB8EC3703202A18B56EE /* StreamCard.swift */; };
 		2E496D812D9F09AA3280EBEF /* PiPPanelFitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */; };
 		A8154BB6086F8BA46726C747 /* PiPSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94408D713B1FE163D04B1F2E /* PiPSource.swift */; };
@@ -384,6 +385,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		189A3F19521EA4749F16B793 /* DualSensePadSignatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualSensePadSignatureTests.swift; sourceTree = "<group>"; };
 		79E3DB8EC3703202A18B56EE /* StreamCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamCard.swift; sourceTree = "<group>"; };
 		E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPPanelFitter.swift; sourceTree = "<group>"; };
 		94408D713B1FE163D04B1F2E /* PiPSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/PiPSource.swift; sourceTree = "<group>"; };
@@ -1103,6 +1105,7 @@
 		D2000016 /* GlimmerTests */ = {
 			isa = PBXGroup;
 			children = (
+				189A3F19521EA4749F16B793 /* DualSensePadSignatureTests.swift */,
 				81C7FCF9C52ECB7AF3E2C1D4 /* UnfairLockTests.swift */,
 				B7E410E6F836476FBAD72F8B /* TakionV20Tests.swift */,
 				A25C9B34B062B47C6A38BE6C /* DualSenseFeedbackTests.swift */,
@@ -1581,6 +1584,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C11055896EFA8E092F2C79CB /* DualSensePadSignatureTests.swift in Sources */,
 				2944CF1FAAD8CAE494E680FF /* UnfairLockTests.swift in Sources */,
 				FE0BB9C295D1D62E89857967 /* TakionV20Tests.swift in Sources */,
 				C7B38447FF55B77D3057A417 /* DualSenseFeedbackTests.swift in Sources */,
