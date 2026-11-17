@@ -128,82 +128,90 @@ struct BitrateMenu: View {
     }
 }
 
-/// How any stream - Sunshine or PlayStation - shows and behaves on this Mac.
+/// How any stream - Sunshine or PlayStation - shows and behaves on this Mac:
+/// General's Stream and Performance sections (Rex-style grouped Form rows -
+/// the title, a grey line under it, the control on the right).
 struct StreamWindowPane: View {
     @Environment(AppModel.self) private var model
     private var awdl = AWDLGuard.shared
 
     var body: some View {
         @Bindable var model = model
-        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-            SettingsField("Show the stream") {
-                Picker("", selection: $model.streamDisplayMode) {
-                    ForEach(StreamDisplayMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
+        Section {
+            Picker(selection: $model.streamDisplayMode) {
+                ForEach(StreamDisplayMode.allCases) { mode in
+                    Label(mode.displayName, systemImage: mode.settingsSymbol).tag(mode)
                 }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .settingsControl()
+            } label: {
+                Text("Show the stream")
             }
-
-            SettingsField("Picture in Picture") {
-                Toggle("Pop out when you switch away", isOn: $model.autoPictureInPicture)
-                SettingsHelp("Moves the stream into a floating window when you switch apps.")
+            .pickerStyle(.segmented)
+            Toggle(isOn: $model.autoPictureInPicture) {
+                Text("Picture in Picture when you switch away")
+                Text("Moves the stream into a floating window when you switch apps.")
             }
-
-            // The cushion that rides out Wi-Fi hiccups can sit at 100+ ms for
-            // minutes after one; this caps it at 60 ms on every link and takes
-            // the occasional blip instead.
-            SettingsField("Audio") {
-                Toggle("Prefer low latency over smoothness", isOn: $model.preferLowAudioLatency)
-                SettingsHelp("Reduces audio buffering, but unstable connections may sound less smooth.")
-            }
-
             // A pad doesn't reset the Mac's idle timer, so a stream being
             // played would dim and sleep without this. Off means the Mac's
             // own rules apply even mid-stream.
-            SettingsField("Keep the Mac awake") {
-                Toggle("While streaming", isOn: Binding(
-                    get: { model.keepAwakePolicy.isOn },
-                    set: { model.keepAwakePolicy = KeepAwakePolicy(isOn: $0) }))
+            Toggle(isOn: Binding(
+                get: { model.keepAwakePolicy.isOn },
+                set: { model.keepAwakePolicy = KeepAwakePolicy(isOn: $0) })) {
+                Text("Keep the Mac awake while streaming")
+                Text("A controller doesn’t count as activity, so the Mac would otherwise sleep.")
             }
+        } header: {
+            FormSectionHeader("Stream")
+        }
 
+        Section {
             // One switch for Game Mode wherever the stream is. Holding it in a
             // window and Picture in Picture takes Xcode's gamepolicyctl
             // (GameModeBoost); without Xcode macOS still turns it on in full
             // screen by itself, and the switch can't change anything, so it
             // shows that instead. Checked on every draw - a file lookup.
-            SettingsField("Game Mode") {
-                let hasXcode = GameModeBoost.tool() != nil
-                Toggle("Turn on Game Mode while streaming",
-                       isOn: Binding(get: { hasXcode && model.gameModeDuringStreams },
-                                     set: { model.gameModeDuringStreams = $0 }))
-                    .disabled(!hasXcode)
-                if hasXcode {
-                    SettingsHelp("Cuts a Bluetooth controller's input lag (macOS checks it every 7.5 ms "
-                        + "instead of 15) in full screen, a window and Picture in Picture.")
-                } else {
-                    SettingsHelp("Cuts a Bluetooth controller's input lag. Without Xcode, macOS only "
-                        + "turns Game Mode on in full screen. Install Xcode to have it in a window and "
-                        + "Picture in Picture too.")
-                    Link("Get Xcode from the App Store",
-                         destination: URL(string: "macappstore://apps.apple.com/app/id497799835")!)
-                        .font(.system(size: 12))
+            let hasXcode = GameModeBoost.tool() != nil
+            Toggle(isOn: Binding(get: { hasXcode && model.gameModeDuringStreams },
+                                 set: { model.gameModeDuringStreams = $0 })) {
+                Text("Game Mode while streaming")
+                Text(hasXcode
+                     ? "Halves a Bluetooth controller’s input lag (7.5 ms instead of 15) in full screen, "
+                        + "a window and Picture in Picture."
+                     : "Without Xcode, macOS only turns Game Mode on in full screen.")
+            }
+            .disabled(!hasXcode)
+            if !hasXcode {
+                LabeledContent("Xcode adds it in a window and Picture in Picture") {
+                    Link("Get Xcode", destination: URL(string: "macappstore://apps.apple.com/app/id497799835")!)
                 }
             }
+            Toggle(isOn: Binding(get: { awdl.enabled }, set: { awdl.setEnabled($0) })) {
+                Text("Reduce lag spikes on Wi-Fi")
+                Text("Pauses AirDrop, AirPlay and Sidecar while you play - they share the Wi-Fi radio. "
+                    + "macOS asks for your password the first time. Not needed on Ethernet.")
+            }
+            .disabled(awdl.installing)
+            if let error = awdl.lastError, !awdl.enabled {
+                Text(error).font(.callout).foregroundStyle(.secondary)
+            }
+            // The cushion that rides out Wi-Fi hiccups can sit at 100+ ms for
+            // minutes after one; this caps it at 60 ms on every link and takes
+            // the occasional blip instead.
+            Toggle(isOn: $model.preferLowAudioLatency) {
+                Text("Prefer low audio latency")
+                Text("Less audio buffering. Unstable connections may sound less smooth.")
+            }
+        } header: {
+            FormSectionHeader("Performance")
+        }
+    }
+}
 
-            SettingsField("Wi-Fi") {
-                Toggle("Reduce lag spikes on Wi-Fi", isOn: Binding(
-                    get: { awdl.enabled }, set: { awdl.setEnabled($0) }))
-                    .disabled(awdl.installing)
-                SettingsHelp("AirDrop, AirPlay and Sidecar share your Wi-Fi radio and can interrupt the "
-                    + "stream. This pauses them while you play and turns them back on after. The first "
-                    + "time, macOS asks for your password. Not needed on Ethernet.")
-                if let error = awdl.lastError, !awdl.enabled {
-                    Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-            }
+extension StreamDisplayMode {
+    /// The segment's glyph on General's "Show the stream" row.
+    var settingsSymbol: String {
+        switch self {
+        case .fullScreen: return "arrow.up.left.and.arrow.down.right"
+        case .window: return "macwindow"
         }
     }
 }

@@ -353,9 +353,13 @@ struct ComputersTab: View {
     private func machinePage(for host: Host) -> some View {
         let chosen = apps.first { $0.name == (chosenAppName ?? model.heroTargetAppName) } ?? apps.first
         return Form {
+            // Rex's header card on its own, then the stream's own rows.
             Section {
                 StreamHeader(host: host, app: chosen,
                              address: model.selectedHostRouteAddress ?? model.dialAddress(for: host))
+            }
+            Section {
+                addressRow(model.selectedHostRouteAddress ?? model.dialAddress(for: host))
                 if !host.isPlayStation && apps.isEmpty {
                     noAppsNotice(for: host)
                 } else if apps.count > 1 {
@@ -384,17 +388,41 @@ struct ComputersTab: View {
         .toggleStyle(.switch)
     }
 
+    /// Where the machine is reached, with a copy button - Rex's Remote Address row.
+    private func addressRow(_ address: String) -> some View {
+        LabeledContent {
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(address, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .help("Copy the address")
+        } label: {
+            Text("Address")
+            Text(address).textSelection(.enabled)
+        }
+    }
+
     /// What ending a stream does to the machine. Off, a PC's game keeps
     /// running for the next Resume ("Quit <app>" in the menu bar ends it).
     @ViewBuilder
     private func endOfStreamToggle(for host: Host) -> some View {
         if host.isPlayStation {
             let settings = PlayStationSettings.forConsole(host.id)
-            Toggle("Rest the PS5 when the stream ends", isOn: Binding(
-                get: { settings.restWhenStreamEnds }, set: { settings.restWhenStreamEnds = $0 }))
+            Toggle(isOn: Binding(
+                get: { settings.restWhenStreamEnds }, set: { settings.restWhenStreamEnds = $0 })) {
+                Text("Rest the PS5 when the stream ends")
+                Text("Puts the console in rest mode when you end the stream.")
+            }
         } else {
-            Toggle("Quit the game when the stream ends", isOn: Binding(
-                get: { model.quitAppWhenStreamEnds }, set: { model.quitAppWhenStreamEnds = $0 }))
+            Toggle(isOn: Binding(
+                get: { model.quitAppWhenStreamEnds }, set: { model.quitAppWhenStreamEnds = $0 })) {
+                Text("Quit the game when the stream ends")
+                Text("Off, it keeps running so you can resume.")
+            }
         }
     }
 

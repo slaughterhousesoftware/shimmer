@@ -11,17 +11,20 @@ import SwiftUI
 struct PlayStationSettingsPane: View {
     @Bindable var settings: PlayStationSettings
 
-    /// The page's Video and Controller sections (a grouped Form).
+    /// The page's Video and Controller sections (a grouped Form). Two-way
+    /// choices are segmented, as Rex lays out its few-option rows.
     var body: some View {
         Section {
             Picker("Resolution", selection: $settings.height) {
-                Text("1920 × 1080").tag(1080)
-                Text("1280 × 720").tag(720)
+                Text("1080p").tag(1080)
+                Text("720p").tag(720)
             }
+            .pickerStyle(.segmented)
             Picker("Frame rate", selection: $settings.fps) {
                 Text("60 Hz").tag(60)
                 Text("30 Hz").tag(30)
             }
+            .pickerStyle(.segmented)
             BitrateMenu(automatic: $settings.bitrateAuto, mbps: $settings.bitrateMbps,
                         automaticMbps: PlayStationSettings.presetBitrateMbps,
                         maxMbps: PlayStationSettings.bitrateRangeMbps.upperBound)
@@ -29,12 +32,19 @@ struct PlayStationSettingsPane: View {
                 Text("HEVC").tag(true)
                 Text("H.264").tag(false)
             }
-            Toggle("HDR", isOn: $settings.hdr)
-                .disabled(!settings.hevc)
-                .help(settings.hevc ? "Brighter highlights, deeper colour" : "HDR needs HEVC")
-            Picker("Presentation", selection: $settings.presentation) {
-                ForEach(PlayStationSettings.Presentation.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            .pickerStyle(.segmented)
+            Toggle(isOn: $settings.hdr) {
+                Text("HDR")
+                Text(settings.hevc ? "Brighter highlights, deeper colour." : "HDR needs HEVC.")
             }
+            .disabled(!settings.hevc)
+            Picker(selection: $settings.presentation) {
+                Label("Lowest latency", systemImage: "bolt").tag(PlayStationSettings.Presentation.lowestLatency)
+                Label("Smooth", systemImage: "water.waves").tag(PlayStationSettings.Presentation.smooth)
+            } label: {
+                Text("Presentation")
+            }
+            .pickerStyle(.segmented)
             .help(settings.presentation == .lowestLatency
                 ? "Each frame shows the moment it is decoded."
                 : "Frames wait for the display: steadier, a little more lag.")
@@ -42,12 +52,17 @@ struct PlayStationSettingsPane: View {
             FormSectionHeader("Video")
         }
         Section {
-            Picker("Vibration", selection: $settings.haptics) {
+            Picker(selection: $settings.haptics) {
                 ForEach(PlayStationSettings.HapticsMode.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            } label: {
+                Text("Vibration")
+                Text("Haptic feedback needs a DualSense; Rumble suits other controllers.")
             }
-            .help("Haptic feedback needs a DualSense; Rumble suits other controllers.")
             Toggle("Adaptive triggers", isOn: $settings.adaptiveTriggers)
-            Toggle("Light bar colours from the console", isOn: $settings.lightBar)
+            Toggle(isOn: $settings.lightBar) {
+                Text("Light bar colours from the console")
+                Text("Games and the PS5 set the controller’s light.")
+            }
         } header: {
             FormSectionHeader("Controller")
         }

@@ -18,43 +18,39 @@ struct ShortcutsPane: View {
     @Environment(AppModel.self) private var model
     @State private var showChordCapture = false
 
+    /// General's Controls section.
     var body: some View {
         @Bindable var model = model
-        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-            // One "Input:" group, the way Tailscale's "General:" owns several
-            // checkboxes - a label per single row read as a stack of forms.
-            SettingsField("Input") {
-                Toggle("Use ⌘ shortcuts inside the game", isOn: $model.captureSysKeys)
-                SettingsHelp("Sends Command-key shortcuts to the PC during a stream.")
-                Toggle("Disable mouse input", isOn: $model.mouseInputDisabled)
+        Section {
+            Toggle(isOn: $model.captureSysKeys) {
+                Text("Use ⌘ shortcuts inside the game")
+                Text("Sends Command-key shortcuts to the PC during a stream.")
             }
-
-            SettingsField("Controller quit") {
-                Picker("", selection: $model.controllerQuitChord) {
-                    ForEach(ControllerQuitChord.allCases, id: \.self) { chord in
-                        Text(chord.displayName).tag(chord)
-                    }
+            Toggle("Disable mouse input", isOn: $model.mouseInputDisabled)
+            Picker(selection: $model.controllerQuitChord) {
+                ForEach(ControllerQuitChord.allCases, id: \.self) { chord in
+                    Text(chord.displayName).tag(chord)
                 }
-                .labelsHidden()
-                .settingsControl()
-                SettingsHelp("Hold this combination to leave the stream.", checkbox: false)
-                if model.controllerQuitChord == .custom {
+            } label: {
+                Text("Controller quit")
+                Text("Hold this combination to leave the stream.")
+            }
+            if model.controllerQuitChord == .custom {
+                LabeledContent("Custom combination") {
                     HStack(spacing: 8) {
                         Text(model.customControllerChord.isEmpty
-                             ? "No chord recorded yet"
+                             ? "None recorded"
                              : ControllerButton.describe(model.customControllerChord))
-                            .foregroundStyle(model.customControllerChord.isEmpty ? .secondary : .primary)
+                            .foregroundStyle(.secondary)
                         Button("Record…") { showChordCapture = true }
                     }
                 }
             }
-
             if model.controllerConnected || model.rawHIDControllerEnabled {
-                SettingsField("DualSense") {
-                    RawHIDControl()
-                        .settingsControl(maxWidth: SettingsMetrics.wideControlWidth)
-                }
+                RawHIDControl()
             }
+        } header: {
+            FormSectionHeader("Controls")
         }
         .sheet(isPresented: $showChordCapture) {
             ChordCaptureSheet().environment(model)

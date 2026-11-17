@@ -37,77 +37,91 @@ struct AppPane: View {
         }
     }
 
+    /// General's App, Stream health and Coding agents sections.
     var body: some View {
         @Bindable var model = model
-        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-            SettingsField("General") {
-                Toggle("Show status in menu bar", isOn: $model.showMenuBarItem)
-                    .help("Shows the active app, controller battery, or a warning. Hidden when idle; Shimmer stays available in the Dock.")
-                SettingsHelp("Hidden when idle. Shimmer stays available in the Dock.")
+        Group {
+            Section {
+                Toggle(isOn: $model.showMenuBarItem) {
+                    Text("Show status in the menu bar")
+                    Text("The app you’re playing, the controller’s battery, or a warning. Hidden when idle; "
+                        + "Shimmer stays in the Dock.")
+                }
                 // The login helper suppresses the window; Dock access remains
                 // available whenever there is no useful menu-bar status.
-                // Waiting for approval it isn't on, so no tick: a red dot stands
-                // in the checkbox's place until the user allows Shimmer.
+                // Waiting for approval it isn't on, so no switch: a red dot
+                // stands in its place until the user allows Shimmer.
                 if loginItemNeedsApproval {
-                    SettingsNotice(message: "Be ready at login") {
+                    SettingsNotice(message: "Be ready at login: allow Shimmer in Login Items") {
                         Button("Open Settings…") { SMAppService.openSystemSettingsLoginItems() }
                     }
                     .help("Turn on Shimmer under Allow in the Background. Starts quietly when you sign in.")
                 } else {
-                    Toggle("Be ready at login", isOn: $launchAtLogin)
-                        .onChange(of: launchAtLogin) { _, on in
-                            scheduleLoginItemRegistration(launchAtLogin: on)
-                        }
-                    SettingsHelp("Starts quietly when you sign in.")
-                }
-            }
-
-            // Deliberately NOT behind the `showDiagnostics` reveal the rest of
-            // this group sits behind. This switch is the first thing to flip
-            // when a stream misbehaves - it starts the recorder whose output
-            // (one JSON object per second, plus GET /snapshot on loopback) is
-            // how anyone, human or otherwise, finds out WHY. A troubleshooting
-            // switch nobody can find troubleshoots nothing.
-            SettingsField("Stream health") {
-                Toggle("Show over the picture", isOn: $model.showStreamStats)
-                Toggle("Record while streaming", isOn: $model.telemetryEnabled)
-                    .settingsStackedToggle()
-                SettingsHelp("Saves local recordings for diagnosing stream issues.")
-                if model.telemetryEnabled {
-                    Button("Show recordings in Finder") {
-                        let dir = FileManager.default.homeDirectoryForCurrentUser
-                            .appendingPathComponent("Library/Logs/Shimmer", isDirectory: true)
-                        try? FileManager.default.createDirectory(
-                            at: dir, withIntermediateDirectories: true)
-                        NSWorkspace.shared.open(dir)
+                    Toggle(isOn: $launchAtLogin) {
+                        Text("Be ready at login")
+                        Text("Starts quietly in the menu bar when you sign in.")
+                    }
+                    .onChange(of: launchAtLogin) { _, on in
+                        scheduleLoginItemRegistration(launchAtLogin: on)
                     }
                 }
+            } header: {
+                FormSectionHeader("App")
+            }
+
+            // Deliberately NOT behind the `showDiagnostics` reveal. This switch
+            // is the first thing to flip when a stream misbehaves - it starts
+            // the recorder whose output (one JSON object per second, plus GET
+            // /snapshot on loopback) is how anyone, human or otherwise, finds
+            // out WHY. A troubleshooting switch nobody can find troubleshoots
+            // nothing.
+            Section {
+                Toggle("Show stats over the picture", isOn: $model.showStreamStats)
+                Toggle(isOn: $model.telemetryEnabled) {
+                    Text("Record while streaming")
+                    Text("Saves local recordings for diagnosing stream issues.")
+                }
+                if model.telemetryEnabled {
+                    LabeledContent("Recordings") {
+                        Button("Show in Finder") {
+                            let dir = FileManager.default.homeDirectoryForCurrentUser
+                                .appendingPathComponent("Library/Logs/Shimmer", isDirectory: true)
+                            try? FileManager.default.createDirectory(
+                                at: dir, withIntermediateDirectories: true)
+                            NSWorkspace.shared.open(dir)
+                        }
+                    }
+                }
+            } header: {
+                FormSectionHeader("Stream health")
             }
 
             // The agent finds the bundled shimmerctl itself (the instructions
             // carry its path), so there's nothing to install or type here.
-            SettingsField("Coding agents") {
-                HStack {
-                    Text("Let an agent check and fix Shimmer.")
-                    Spacer(minLength: 8)
+            Section {
+                LabeledContent {
                     CLICopyButton("Copy Instructions") {
                         ShimmerCLIAgentInstructions.text(hostName: model.selectedHost?.displayName,
                             address: model.selectedHostRouteAddress)
                     }
-                    .settingsTrailingButton()
+                } label: {
+                    Text("Coding agents")
+                    Text("Let Claude Code or another agent check and fix Shimmer.")
                 }
+            } header: {
+                FormSectionHeader("Help")
             }
 
             if model.showDiagnostics {
-                SettingsField("Diagnostics") {
+                Section {
                     DisclosureGroup("Controller input test") {
-                        ControllerInputTest().settingsControl(maxWidth: SettingsMetrics.wideControlWidth)
+                        ControllerInputTest()
                     }
-                    .settingsControl(maxWidth: SettingsMetrics.wideControlWidth)
                     DisclosureGroup("Logs") {
-                        LogViewer().frame(maxWidth: 560, alignment: .leading)
+                        LogViewer()
                     }
-                    .frame(maxWidth: 560, alignment: .leading)
+                } header: {
+                    FormSectionHeader("Diagnostics")
                 }
             }
         }

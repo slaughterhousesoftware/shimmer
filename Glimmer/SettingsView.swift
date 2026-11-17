@@ -6,7 +6,7 @@
 //
 //    Computers - the PCs sidebar and the selected PC's cover grid, with the
 //                add/remove actions along the bottom (Tailscale's Accounts tab)
-//    Settings  - one long page of flat gutter rows (Tailscale's Settings tab)
+//    General   - grouped sections of rows, Rex / System Settings style
 //    About     - the centred identity page
 //
 //  There is deliberately no `Settings` scene and no second window: a SwiftUI
@@ -21,29 +21,14 @@ struct AppShell: View {
     @Environment(AppModel.self) private var model
     @Environment(\.controlActiveState) private var activeState
     @State private var pairingTarget: PCPairingTarget?
-    /// Title + tab strip + divider, and the current page's natural height
-    /// (nil on pages without a `SettingsPageBody`).
-    @State private var headerHeight: CGFloat = 0
-    @State private var pageHeight: CGFloat?
 
     private var showsWelcome: Bool {
         model.hosts.isEmpty && model.settingsTab == .computers
     }
 
-    /// Fixed for Servers / About / welcome; the scrolling pages fit their
-    /// rows, capped at the tab's height so a long page scrolls instead.
+    /// Each tab's own height; General's grouped Form scrolls within it.
     private var contentHeight: CGFloat {
-        if showsWelcome { return 520 - 32 }
-        let ceiling = model.settingsTab.windowHeight
-        switch model.settingsTab {
-        case .general:
-            guard let pageHeight, headerHeight > 0 else { return ceiling }
-            // The header is measured in window space, but its top 32pt is the
-            // title bar this frame's height already excludes.
-            return min(ceiling, (headerHeight - 32 + pageHeight).rounded(.up))
-        case .computers, .about:
-            return ceiling
-        }
+        showsWelcome ? 520 - 32 : model.settingsTab.windowHeight
     }
 
     var body: some View {
@@ -89,7 +74,6 @@ struct AppShell: View {
                 }
                 if !showsWelcome { Divider() }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
             switch model.settingsTab {
             case .computers: ComputersTab(pairingTarget: $pairingTarget)
             case .general: GeneralTabPage()
@@ -103,7 +87,6 @@ struct AppShell: View {
         .ignoresSafeArea(.container, edges: .top)
         // Fixed, not resizable - the window follows the tab.
         .frame(width: SettingsMetrics.windowWidth, height: contentHeight, alignment: .top)
-        .onPreferenceChange(SettingsPageHeightKey.self) { pageHeight = $0 }
         .background(Color(nsColor: showsWelcome ? .windowBackgroundColor : .textBackgroundColor))
         .onChange(of: model.settingsTab) { _, tab in
             if tab != .computers { pairingTarget = nil }
@@ -112,14 +95,19 @@ struct AppShell: View {
 }
 
 /// The controls and the app around the stream: shortcuts, the pad, login,
-/// the Wi-Fi helper, troubleshooting, diagnostics.
+/// the Wi-Fi helper, troubleshooting, diagnostics. Laid out like Rex's (and
+/// System Settings') panes: bold section titles over rounded groups, each row
+/// a title with a grey line under it and its control on the right - the same
+/// grouped Form a machine's page on Servers uses.
 private struct GeneralTabPage: View {
     var body: some View {
-        SettingsPageBody {
+        Form {
             StreamWindowPane()
             ShortcutsPane()
             AppPane()
         }
+        .formStyle(.grouped)
+        .toggleStyle(.switch)
     }
 }
 

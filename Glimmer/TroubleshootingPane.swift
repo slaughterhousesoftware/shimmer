@@ -53,14 +53,16 @@ struct RawHIDControl: View {
         // label and one control. The warning line below borrows the shape the
         // login-item and Wi-Fi helper rows already use for "macOS needs you to
         // approve this": one status line, one native button.
-        Toggle("Use the Options, Create and Mute buttons", isOn: enabledBinding)
+        Toggle(isOn: enabledBinding) {
+            Text("Use the DualSense’s Options, Create and Mute buttons")
+            Text("Needs Input Monitoring permission in System Settings.")
+        }
             .alert("Enable enhanced DualSense buttons?", isPresented: $showExplain) {
                 Button("Enable") { enable() }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text(AppModel.rawHIDExplanation)
             }
-        SettingsHelp("Requires Input Monitoring permission in System Settings.")
         if model.rawHIDControllerEnabled, !working {
             SettingsNotice(
                 message: sentToSettings ? "Relaunch to finish" : "Input Monitoring is off"

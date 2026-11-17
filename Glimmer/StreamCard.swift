@@ -50,11 +50,15 @@ struct StreamHeader: View {
     private var subtitle: String {
         if streamingHere { return model.hostStatusLine(for: host.id) }
         if model.isStreaming { return "Another stream is running" }
-        return "\(address) · \(model.hostStatusLine(for: host.id))"
+        // The address has its own row under the card (Rex's Remote Address).
+        return model.hostStatusLine(for: host.id)
     }
 
     private var subtitleIsLive: Bool { streamingHere && model.streamPhase == .streaming }
 
+    /// Rex's header-card buttons: capsules on the right - Stream in the
+    /// accent colour, Picture in Picture beside it, End Stream tinted red
+    /// (Rex's "Stop Server…").
     @ViewBuilder
     private var buttons: some View {
         HStack(spacing: 6) {
@@ -71,6 +75,7 @@ struct StreamHeader: View {
                         .disabled(!model.activeStreamHasVideo)
                 }
                 Button("End Stream") { model.endStream() }
+                    .tint(.red)
             } else {
                 PictureInPictureButton(entering: true) {
                     guard let app else { return }
@@ -83,10 +88,14 @@ struct StreamHeader: View {
                     model.requestStream(app: app, on: host)
                 } label: {
                     Label(resumes ? "Resume" : "Stream", systemImage: "play.fill")
+                        .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.borderedProminent)
             }
         }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .fixedSize()
         .disabled(app == nil || (model.isStreaming && !streamingHere))
     }
 }
