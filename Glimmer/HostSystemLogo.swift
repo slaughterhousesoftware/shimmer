@@ -112,10 +112,9 @@ struct HostAvatar: View {
     var body: some View {
         Self.disc(mark, size: size)
         .frame(width: size, height: size)
-        // Tailscale's status dot (measured off its Settings window at 2x): a
-        // 10 pt dot centred 10 pt right of and below a 36 pt avatar's centre,
-        // set into a 1.5 pt gap cut out of the avatar - whatever is behind the
-        // row (the selection plate, the sidebar) shows through, no drawn ring.
+        // The status dot on the disc's rim (see `badge`), set into a 1.5 pt
+        // gap cut out of the avatar - whatever is behind the row (the
+        // selection plate, the sidebar) shows through, no drawn ring.
         .mask {
             if status != nil {
                 ZStack {
@@ -265,8 +264,10 @@ struct HostAvatar: View {
         }
     }
 
-    private var badge: CGFloat { size * 10 / 36 }
-    private var badgeOffset: CGFloat { size * 10 / 36 }
+    /// A 7 pt dot (at 36 pt) centred on the disc's rim at 45° (r·cos45° ≈
+    /// 12.7 pt each way), so it sits on the edge instead of over the mark.
+    private var badge: CGFloat { size * 7 / 36 }
+    private var badgeOffset: CGFloat { size * 12.7 / 36 }
 
     private static func name(of mark: Mark) -> String {
         switch mark {
