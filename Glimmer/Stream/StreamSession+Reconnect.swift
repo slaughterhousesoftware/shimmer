@@ -407,7 +407,9 @@ extension StreamSession {
         //    state can't be reused and interrupt() latches permanently). Re-point
         //    input + decoder on the MainActor so uplink + IDR requests go to the
         //    new backend, not the dead one.
-        let fresh = NativeBackend()
+        // The same Controller-tab settings the stream started with.
+        let fresh = NativeBackend(controllerFeedback: (backend as? NativeBackend)?.controllerFeedback
+                                  ?? ControllerSettings.Snapshot())
         self.backend = fresh
         await MainActor.run {
             inp.setBackend(fresh)

@@ -229,12 +229,9 @@ extension NativeBackend {
         // What the host asked of the pad while in standby, replayed at the cut
         // (it asks once, when the game wants it, and not again).
         let deferred = DeferredPadRequests()
-        // The Controller tab's settings, read once for the stream (as a PS5
-        // stream reads them at connect): what the game may do to the pad.
-        let allowed = ControllerSettings.Snapshot.load(.standard)
         ControllerFocus.activate(focus) { ControllerHaptics.shared.streamActivated() }
         enet.onRumble = { controllerNumber, lowFreq, highFreq in
-            guard allowed.rumble, ControllerFocus.allows(focus) else { return }
+            guard ControllerFocus.allows(focus) else { return }
             events.rumble(controller: controllerNumber, lowFreq: lowFreq, highFreq: highFreq)
         }
         // No stuck motors, no ghost sampling: whatever ends this control
@@ -259,11 +256,11 @@ extension NativeBackend {
         // stopAll/teardown path above (trigger motors at zero; the light bar
         // needs no parking - it is lit hardware state, not motion).
         enet.onRumbleTriggers = { controllerNumber, left, right in
-            guard allowed.rumble, ControllerFocus.allows(focus) else { return }
+            guard ControllerFocus.allows(focus) else { return }
             events.rumbleTriggers(controller: controllerNumber, left: left, right: right)
         }
         enet.onSetRgbLed = { controllerNumber, red, green, blue in
-            guard allowed.lightBar, ControllerFocus.allows(focus) else { return }
+            guard ControllerFocus.allows(focus) else { return }
             events.setControllerLED(controller: controllerNumber, r: red, g: green, b: blue)
         }
         // Motion (0x5501) closes the loop the LI_CCAP_ACCEL/GYRO caps open:
@@ -293,7 +290,6 @@ extension NativeBackend {
         // above - DualSenseHID resets the trigger blocks to "off" on the final
         // release(), so a stream ending mid-effect can't strand a stiff trigger.
         enet.onSetAdaptiveTriggers = { controllerNumber, eventFlags, typeLeft, typeRight, left, right in
-            guard allowed.adaptiveTriggers else { return }
             guard ControllerFocus.allows(focus) else {
                 deferred.triggers(controllerNumber, eventFlags, typeLeft, typeRight, left, right)
                 return
@@ -302,6 +298,8 @@ extension NativeBackend {
                                        typeLeft: typeLeft, typeRight: typeRight,
                                        left: left, right: right)
         }
+        // Last, so it wraps everything above: the Controller tab's switches.
+        ControllerFeedbackGate.apply(controllerFeedback, to: enet)
     }
 
     /// FAST-START (mid-handshake, at SETUP-audio): construct the RtpAudioReceiver
@@ -584,5 +582,21 @@ final class DeferredPadRequests: @unchecked Sendable {
             events.setAdaptiveTriggers(controller: controller, eventFlags: t.flags, typeLeft: t.typeLeft,
                                        typeRight: t.typeRight, left: t.left, right: t.right)
         }
+    }
+}
+
+/// The Controller tab's switches for a PC stream: wraps the control
+/// channel's feedback callbacks so what is switched off never reaches the
+/// pad - rumble and trigger rumble (Vibration off), the light bar's colour,
+/// and trigger effects (dropped before a standby stream would defer them).
+/// Motion is not feedback and isn't gated.
+enum ControllerFeedbackGate {
+    static func apply(_ allowed: ControllerSettings.Snapshot, to enet: EnetControlChannel) {
+        if !allowed.rumble {
+            enet.onRumble = nil
+            enet.onRumbleTriggers = nil
+        }
+        if !allowed.lightBar { enet.onSetRgbLed = nil }
+        if !allowed.adaptiveTriggers { enet.onSetAdaptiveTriggers = nil }
     }
 }

@@ -151,7 +151,7 @@ extension AppModel {
         if host.isPlayStation, let console = playStationConsole(for: host) {
             return PlayStationBackend(console: console, options: playStationStreamOptions(for: host))
         }
-        return NativeBackend()
+        return NativeBackend(controllerFeedback: ControllerSettings.shared.snapshot)
     }
 
     // MARK: Library edits

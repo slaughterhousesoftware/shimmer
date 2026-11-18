@@ -100,3 +100,62 @@ struct ControllerSettingsTests {
         #expect(console.snapshot.lightBar)
     }
 }
+
+/// A PC stream honours the Controller tab: what the PC sends to the pad is
+/// dropped when its switch is off. The settings reach the stream the way a
+/// PS5's do - handed to its backend when the stream starts.
+struct PCControllerFeedbackTests {
+    private typealias Wire = EnetInboundOrderTests
+
+    @Test func pcRumbleIsDroppedWhenVibrationIsOff() throws {
+        let (channel, _) = try Wire.makeChannel()
+        let events = Wire.rumbleEvents(channel)
+        ControllerFeedbackGate.apply(ControllerSettings.Snapshot(vibration: .off), to: channel)
+        channel.onDatagram(Wire.reliable(relSeq: 1, try Wire.rumble(1, seq: 1)))
+        #expect(events.values.isEmpty)
+    }
+
+    @Test func pcRumbleArrivesWhenVibrationIsOn() throws {
+        let (channel, _) = try Wire.makeChannel()
+        let events = Wire.rumbleEvents(channel)
+        ControllerFeedbackGate.apply(ControllerSettings.Snapshot(vibration: .rumble), to: channel)
+        channel.onDatagram(Wire.reliable(relSeq: 1, try Wire.rumble(1, seq: 1)))
+        #expect(events.values == [1])
+    }
+
+    @Test func lightAndTriggersFollowTheirSwitches() throws {
+        for on in [false, true] {
+            let (channel, _) = try Wire.makeChannel()
+            var got: [String] = []
+            channel.onSetRgbLed = { _, _, _, _ in got.append("light") }
+            channel.onSetAdaptiveTriggers = { _, _, _, _, _, _ in got.append("triggers") }
+            channel.onRumbleTriggers = { _, _, _ in got.append("trigger rumble") }
+            let allowed = ControllerSettings.Snapshot(vibration: on ? .actuators : .off,
+                                                      adaptiveTriggers: on, lightBar: on)
+            ControllerFeedbackGate.apply(allowed, to: channel)
+            channel.onSetRgbLed?(0, 255, 0, 0)
+            channel.onSetAdaptiveTriggers?(0, 0x0C, 1, 1, [], [])
+            channel.onRumbleTriggers?(0, 100, 100)
+            #expect(got == (on ? ["light", "triggers", "trigger rumble"] : []))
+        }
+    }
+
+    @Test func eachSwitchOnlyGatesItsOwnFeedback() throws {
+        let (channel, _) = try Wire.makeChannel()
+        var got: [String] = []
+        channel.onRumble = { _, _, _ in got.append("rumble") }
+        channel.onSetRgbLed = { _, _, _, _ in got.append("light") }
+        channel.onSetAdaptiveTriggers = { _, _, _, _, _, _ in got.append("triggers") }
+        ControllerFeedbackGate.apply(ControllerSettings.Snapshot(adaptiveTriggers: false), to: channel)
+        channel.onRumble?(0, 1, 1)
+        channel.onSetRgbLed?(0, 1, 2, 3)
+        channel.onSetAdaptiveTriggers?(0, 0x0C, 1, 1, [], [])
+        #expect(got == ["rumble", "light"])
+    }
+
+    @Test func aPCBackendKeepsTheSettingsItWasGiven() {
+        let allowed = ControllerSettings.Snapshot(vibration: .off, adaptiveTriggers: false, lightBar: true)
+        #expect(NativeBackend(controllerFeedback: allowed).controllerFeedback == allowed)
+        #expect(NativeBackend().controllerFeedback == ControllerSettings.Snapshot())
+    }
+}

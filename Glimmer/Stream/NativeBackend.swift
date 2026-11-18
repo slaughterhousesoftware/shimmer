@@ -89,7 +89,19 @@ public final class NativeBackend: StreamingBackend, @unchecked Sendable {
         return body()
     }
 
-    public init() {}
+    /// What the Controller tab lets the PC do to the pad (rumble, the light
+    /// bar, trigger effects), read when the stream was set up - as a PS5
+    /// stream gets its settings - and applied by ControllerFeedbackGate.
+    let controllerFeedback: ControllerSettings.Snapshot
+
+    /// Everything allowed: the pre-Controller-tab behaviour.
+    public init() {
+        controllerFeedback = ControllerSettings.Snapshot()
+    }
+
+    init(controllerFeedback: ControllerSettings.Snapshot) {
+        self.controllerFeedback = controllerFeedback
+    }
 
     // MARK: - Lifecycle
 
