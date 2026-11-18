@@ -259,3 +259,55 @@ struct MenuBarVisibilityTests {
         #expect(noBattery?.glyph == .asset("ControllerGlyph-switchpro"))
     }
 }
+
+/// The approved pyramid spinner (design variant 06, 1.20 s motion).
+struct MenuBarSpinnerTests {
+    @Test func oneTurnIsSeventyTwoFramesAtSixtyFramesASecond() {
+        #expect(MenuBarSpinner.frameIndex(elapsed: 0) == 0)
+        #expect(MenuBarSpinner.frameIndex(elapsed: 1.0 / 60) == 1)
+        #expect(MenuBarSpinner.frameIndex(elapsed: 1.0) == 60)
+        #expect(MenuBarSpinner.frameIndex(elapsed: 1.199) == 71)
+        // Every 1.20 s it starts the next turn.
+        #expect(MenuBarSpinner.frameIndex(elapsed: 1.2) == 0)
+        #expect(MenuBarSpinner.frameIndex(elapsed: 3.6 + 0.5) == 30)
+        #expect(MenuBarSpinner.frameIndex(elapsed: -1) == 0)
+    }
+
+    /// Stream from the menu bar first asks the PC what it runs; a PC that
+    /// doesn't answer takes ~8 s over it. That is loading too.
+    @MainActor @Test func askingThePCBeforeAStreamCountsAsLoading() {
+        let model = AppModel()
+        #expect(!model.menuBarBusy)
+        model.streamCheckHostID = "tower"
+        #expect(model.menuBarBusy)
+        #expect(model.menuBarPresentation?.spinning == true)
+        model.streamCheckHostID = nil
+        #expect(!model.menuBarBusy)
+    }
+
+    /// Cancelling during that check stops it: the spinner ends and nothing
+    /// starts afterwards.
+    @MainActor @Test func cancellingDuringTheCheckStopsIt() {
+        let model = AppModel()
+        model.streamCheckHostID = "tower"
+        model.streamCheckToken = UUID()
+        model.cancelConnect()
+        #expect(model.streamCheckHostID == nil)
+        #expect(model.streamCheckToken == nil)
+        #expect(!model.menuBarBusy)
+        model.streamCheckHostID = "tower"
+        model.endStream()
+        #expect(!model.menuBarBusy)
+        #expect(!model.cancelStreamCheck())
+    }
+
+    @MainActor @Test func everyFrameShipsAsATemplateAtTheApprovedSize() {
+        #expect(MenuBarSpinner.frames.count == 72)
+        for index in 0..<72 {
+            let image = NSImage(named: MenuBarSpinner.frameName(index))
+            #expect(image != nil, "frame \(index) missing from the asset catalog")
+            #expect(image?.size == NSSize(width: 24, height: 18))
+            #expect(MenuBarSpinner.frames[index].isTemplate)
+        }
+    }
+}

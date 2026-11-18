@@ -62,12 +62,31 @@ extension AppModel {
         // running (measured: a test launch from a second Mac ended a game
         // being played from the first). Ask the host now; it is one
         // /serverinfo, well under the connect time.
+        // One check at a time: during it the menu offers End Stream, not
+        // Stream, but a second click can land before the menu is rebuilt.
+        guard streamCheckHostID == nil else {
+            Diag.notice("Ignoring stream request - still asking \(host.displayName, privacy: .private) what it runs", "Stream")
+            return
+        }
         let info = nativeServerInfo(for: host)
-        Task { [weak self] in
+        let token = UUID()
+        streamCheckHostID = host.id
+        streamCheckToken = token
+        streamCheckTask = Task { [weak self] in
+            // Cleared after stream() has set the connecting phase, so the
+            // spinner runs on without a gap. A cancelled check was cleared
+            // by cancelStreamCheck() already (and may have a successor).
+            defer {
+                if let self, self.streamCheckToken == token {
+                    self.streamCheckHostID = nil
+                    self.streamCheckToken = nil
+                    self.streamCheckTask = nil
+                }
+            }
             let client = NetworkClient(server: info)
             let fresh = try? await client.fetchServerInfo()
             await client.shutdown()
-            guard let self else { return }
+            guard let self, !Task.isCancelled, self.streamCheckToken == token else { return }
             guard !self.isStreaming, self.pendingTakeover == nil else { return }
             guard let fresh else {
                 // Unreachable: let the session report that in its own words.
@@ -766,6 +785,7 @@ extension AppModel {
             switchWakeTask = nil
             pendingHostSwitch = nil
         }
+        if cancelStreamCheck() { return }
         guard isStreaming else { return }
         Diag.notice("User ended the stream from the menu bar", "Stream")
         // Ended on purpose: if the stream was still connecting, its start()
@@ -791,6 +811,7 @@ extension AppModel {
     /// never isStreaming/streamPhase-to-idle directly - because faking the
     /// end state from a second site is how zombie sessions are made.
     func cancelConnect() {
+        if cancelStreamCheck() { return }
         guard isStreaming, case .connecting = streamPhase else { return }
         guard !Self.connectCancelRequested else { return }  // one stop() is plenty (it's idempotent anyway)
         Self.connectCancelRequested = true
@@ -803,6 +824,20 @@ extension AppModel {
     }
 
     nonisolated static let cancellingStage = "Cancelling…"
+
+    /// Stop a stream that is still at its first step - asking the PC what it
+    /// runs (requestStream) - before any session exists: nothing starts.
+    /// Returns whether there was one to stop.
+    @discardableResult
+    func cancelStreamCheck() -> Bool {
+        guard streamCheckHostID != nil else { return false }
+        Diag.notice("User cancelled the stream while asking the PC what it runs", "Stream")
+        streamCheckTask?.cancel()
+        streamCheckTask = nil
+        streamCheckToken = nil
+        streamCheckHostID = nil
+        return true
+    }
 
     /// One INFO adjudicating the 400 ms connect hold at the live edge: the
     /// click→established span plus whether the capsule mounted. In testing

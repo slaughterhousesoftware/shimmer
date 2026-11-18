@@ -364,6 +364,14 @@ final class AppModel {
     /// runs. There is no session yet then, so stopping the attempt is
     /// cancelling this.
     @ObservationIgnored var streamPreflightTask: Task<Bool, Error>?
+    /// The PC being asked what it runs before a stream starts (the takeover
+    /// check in requestStream). Loading already, before streamPhase says so:
+    /// the menu bar spins from the click, not from the connect - a PC that
+    /// doesn't answer takes the check ~8 s.
+    var streamCheckHostID: String?
+    /// That check's task, and the token that tells its end from a newer one's.
+    @ObservationIgnored var streamCheckTask: Task<Void, Never>?
+    @ObservationIgnored var streamCheckToken: UUID?
     /// The session's start() while it runs (the connect). Cancelled along
     /// with a stop, so its control requests abort instead of timing out.
     @ObservationIgnored var streamStartTask: Task<AsyncStream<StreamEvent>, Error>?

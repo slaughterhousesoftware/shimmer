@@ -92,10 +92,12 @@ extension AppModel {
                                    appGlyph: appGlyph)
     }
 
-    /// A stream connecting, or a Switch PC under way (from the click, through
+    /// A stream connecting (from the click, through asking the PC what it
+    /// runs), or a Switch PC under way (from the click, through
     /// waking a PS5 and the old stream closing, to the new one connecting).
     var menuBarBusy: Bool {
         if case .connecting = streamPhase { return true }
+        if streamCheckHostID != nil { return true }
         return pendingHostSwitch != nil
     }
 
@@ -233,8 +235,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             showSpinner(true, in: button)
             return
         }
-        guard spinner != nil else { return }
-        button.image = Self.blankGlyph
+        guard spinner.isRunning else { return }
+        // Still turning through the grace period, over the glyph just set.
+        spinner.run(in: button)
         guard spinnerOffWork == nil else { return }
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
@@ -251,48 +254,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private var spinnerOffWork: DispatchWorkItem?
 
-    /// The system's own small spinner, in the glyph's place: the glyph stays
-    /// as the button's image (it holds the width) but is hidden underneath.
-    private var spinner: NSProgressIndicator?
+    /// The approved pyramid spinner, as the button's own image in the glyph's
+    /// place (MenuBarSpinner).
+    private let spinner = MenuBarSpinner()
 
     private func showSpinner(_ show: Bool, in button: NSStatusBarButton) {
         if show {
-            let indicator = spinner ?? {
-                let made = NSProgressIndicator()
-                made.style = .spinning
-                made.controlSize = .small
-                made.isDisplayedWhenStopped = false
-                made.translatesAutoresizingMaskIntoConstraints = false
-                made.setAccessibilityLabel("Connecting")
-                return made
-            }()
-            if indicator.superview !== button {
-                button.addSubview(indicator)
-                NSLayoutConstraint.activate([
-                    indicator.centerXAnchor.constraint(equalTo: button.centerXAnchor),
-                    indicator.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-                    indicator.widthAnchor.constraint(equalToConstant: 16),
-                    indicator.heightAnchor.constraint(equalToConstant: 16),
-                ])
-            }
-            if spinner == nil { Diag.info("menu bar spinner on", "MenuBar") }
-            spinner = indicator
-            button.image = Self.blankGlyph
-            indicator.startAnimation(nil)
-        } else if let indicator = spinner {
-            indicator.stopAnimation(nil)
-            indicator.removeFromSuperview()
-            spinner = nil
+            if !spinner.isRunning { Diag.info("menu bar spinner on", "MenuBar") }
+            button.setAccessibilityLabel("Shimmer, connecting")
+            spinner.run(in: button)
+        } else if spinner.isRunning {
+            spinner.stop()
             Diag.info("menu bar spinner off", "MenuBar")
         }
     }
-
-    /// Holds the spinner's width in the menu bar.
-    private static let blankGlyph: NSImage = {
-        let image = NSImage(size: NSSize(width: 18, height: 16))
-        image.isTemplate = true
-        return image
-    }()
 
     // MARK: - Menu
 
@@ -347,6 +322,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 // on the PC unless Settings › "Quit the game on the PC" is on,
                 // and "Back to X" is not offered again because the session is
                 // gone - the hero row relaunches / resumes it.
+                menu.addItem(action("End Stream", #selector(endStream),
+                                    image: Self.symbol("stop.circle")))
+            } else if model.streamCheckHostID != nil {
+                // Still asking the PC what it runs, before the connect: the
+                // stream is on its way, so the way out, not a second start.
                 menu.addItem(action("End Stream", #selector(endStream),
                                     image: Self.symbol("stop.circle")))
             } else {
