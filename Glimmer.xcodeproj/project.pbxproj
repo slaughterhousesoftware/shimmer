@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5D5607A40F1452059ED7508E /* HostSwitchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */; };
 		0E9ABE44A0336ECEE6D426FC /* StreamWindow+FullScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6AFAA6FEE298E82981E43E7 /* StreamWindow+FullScreen.swift */; };
 		1A3254E6A5D8C9C0B22E555F /* StreamFullScreenMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9727865743B938F1BD927F96 /* StreamFullScreenMemory.swift */; };
 		AAAE3210E97670F02FEC7761 /* StreamFullScreenMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 466158A6033CE682720F82A2 /* StreamFullScreenMemoryTests.swift */; };
@@ -389,6 +390,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostSwitchTests.swift; sourceTree = "<group>"; };
 		B6AFAA6FEE298E82981E43E7 /* StreamWindow+FullScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/StreamWindow+FullScreen.swift"; sourceTree = "<group>"; };
 		9727865743B938F1BD927F96 /* StreamFullScreenMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/StreamFullScreenMemory.swift; sourceTree = "<group>"; };
 		466158A6033CE682720F82A2 /* StreamFullScreenMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamFullScreenMemoryTests.swift; sourceTree = "<group>"; };
@@ -1115,6 +1117,7 @@
 		D2000016 /* GlimmerTests */ = {
 			isa = PBXGroup;
 			children = (
+				F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */,
 				466158A6033CE682720F82A2 /* StreamFullScreenMemoryTests.swift */,
 				801F05F69A957BD0FBE80966 /* PlayStationExtraPlayersTests.swift */,
 				189A3F19521EA4749F16B793 /* DualSensePadSignatureTests.swift */,
@@ -1598,6 +1601,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5D5607A40F1452059ED7508E /* HostSwitchTests.swift in Sources */,
 				AAAE3210E97670F02FEC7761 /* StreamFullScreenMemoryTests.swift in Sources */,
 				DDC1CDE70E491714681E04B3 /* PlayStationExtraPlayersTests.swift in Sources */,
 				C11055896EFA8E092F2C79CB /* DualSensePadSignatureTests.swift in Sources */,

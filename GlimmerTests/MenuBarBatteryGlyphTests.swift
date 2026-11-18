@@ -213,6 +213,30 @@ struct MenuBarVisibilityTests {
         #expect(ended?.glyph == .asset(MenuBarPresentation.idleAsset))
     }
 
+    /// Connecting, switching PCs, waking a PS5: a spinner, over the pad and
+    /// the app - but a warning still wins.
+    @Test func busyShowsTheSpinner() {
+        let busy = MenuBarPresentation(warning: false, busy: true, controller: ("xbox", (75, false)),
+                                       appGlyph: .asset("SteamGlyph"))
+        #expect(busy?.spinning == true)
+        let warning = MenuBarPresentation(warning: true, busy: true, controller: nil, appGlyph: nil)
+        #expect(warning?.spinning == false)
+        #expect(warning?.glyph == .symbol("exclamationmark.triangle.fill"))
+        let calm = MenuBarPresentation(warning: false, controller: ("xbox", (75, false)), appGlyph: nil)
+        #expect(calm?.spinning == false)
+    }
+
+    @Test @MainActor func aSwitchOrAConnectIsBusy() {
+        let model = AppModel()
+        #expect(!model.menuBarBusy)
+        model.streamPhase = .connecting(stage: "Connecting")
+        #expect(model.menuBarBusy)
+        model.streamPhase = .streaming
+        #expect(!model.menuBarBusy)
+        model.pendingHostSwitch = .init(hostID: "pc", inPictureInPicture: true, requestedAt: Date())
+        #expect(model.menuBarBusy)
+    }
+
     @Test func warningsStillTakePrecedenceOverControllerAndAppStatus() {
         let warning = MenuBarPresentation(warning: true, controller: ("xbox", (75, false)),
                                           appGlyph: .asset("SteamGlyph"))

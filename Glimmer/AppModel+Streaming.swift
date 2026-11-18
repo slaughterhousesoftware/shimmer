@@ -679,21 +679,12 @@ extension AppModel {
         guard streamingElsewhere, !StreamWindow.switchingHosts else { return }
         switchWakeTask?.cancel()
         switchWakeTask = nil
-        // In Picture in Picture both streams run for a moment: the next one
-        // connects in standby while this one keeps playing, then a one-frame
-        // cut (AppModel+StreamHandover). In a window or full screen, end this
-        // one and start the next.
-        let overlap = inPictureInPicture
-        if overlap {
-            cancelStandbyStream(reason: "another PC picked")
-            pendingHostSwitch = nil
-        } else {
-            pendingHostSwitch = PendingHostSwitch(hostID: host.id, inPictureInPicture: false, requestedAt: Date())
-        }
-        let begin: @MainActor () -> Void = { [weak self] in
-            guard let self else { return }
-            if overlap { self.startStandbyStream(on: host) } else { self.beginHostSwitch() }
-        }
+        // Never in place: this stream closes - its Picture in Picture window
+        // or its stream window - and the next opens the same way, fresh
+        // (startPendingHostSwitch). The menu bar spins until it's up.
+        pendingHostSwitch = PendingHostSwitch(hostID: host.id, inPictureInPicture: inPictureInPicture,
+                                              requestedAt: Date())
+        let begin: @MainActor () -> Void = { [weak self] in self?.beginHostSwitch() }
         guard host.isPlayStation else {
             begin()
             return
@@ -720,21 +711,15 @@ extension AppModel {
         _ = await PlayStationDiscovery.waitUntilReady(address: console.address, timeout: 40)
     }
 
-    /// End the current stream for the pending switch. In Picture in Picture
-    /// the PiP window stays: the old stream's last frame holds in it until the
-    /// new stream's first frame replaces it.
+    /// End the current stream for the pending switch: its PiP window or
+    /// stream window closes, and the next stream reopens it the same way.
     private func beginHostSwitch() {
         guard var next = pendingHostSwitch, isStreaming else { return }
         next.inPictureInPicture = nativeStreamPictureInPicture
         pendingHostSwitch = next
-        Diag.notice("Switching the stream now"
-            + (next.inPictureInPicture ? " (staying in Picture in Picture)" : ""), "Stream")
+        Diag.notice("Switching the stream now - closing this one, then opening the next"
+            + (next.inPictureInPicture ? " in Picture in Picture" : ""), "Stream")
         StreamWindow.switchingHosts = true
-        if next.inPictureInPicture {
-            let stage = PictureInPictureStage.shared
-            stage.onHoldEnded = { [weak self] restore in self?.heldPictureInPictureEnded(restore: restore) }
-            stage.holdForSwitch()
-        }
         endStream()
     }
 

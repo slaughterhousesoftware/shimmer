@@ -37,12 +37,16 @@ struct MenuBarPresentation: Equatable {
     let glyph: LibraryApp.Glyph
     let title: String
     let assetHeight: CGFloat?
+    /// Connecting, switching PCs or waking a PS5: a spinner in place of the
+    /// glyph. Only a warning outranks it.
+    let spinning: Bool
 
     /// `controller` is the connected pad's Steam glyph name and its battery,
     /// if it reports one; a pad without a battery reading still shows, as its
     /// plain glyph.
-    init?(warning: Bool, controller: (kind: String, battery: (percent: Int, charging: Bool)?)?,
+    init?(warning: Bool, busy: Bool = false, controller: (kind: String, battery: (percent: Int, charging: Bool)?)?,
           appGlyph: LibraryApp.Glyph?) {
+        spinning = busy && !warning
         if warning {
             glyph = .symbol("exclamationmark.triangle.fill")
             title = ""
@@ -80,9 +84,16 @@ extension AppModel {
         } else {
             nil
         }
-        return MenuBarPresentation(warning: menuBarShowsStreamError,
+        return MenuBarPresentation(warning: menuBarShowsStreamError, busy: menuBarBusy,
                                    controller: menuBarControllerKind.map { ($0, menuBarControllerBattery) },
                                    appGlyph: appGlyph)
+    }
+
+    /// A stream connecting, or a Switch PC under way (from the click, through
+    /// waking a PS5 and the old stream closing, to the new one connecting).
+    var menuBarBusy: Bool {
+        if case .connecting = streamPhase { return true }
+        return pendingHostSwitch != nil
     }
 
     var hasVisibleMenuBarItem: Bool {
@@ -174,6 +185,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     /// Precedence, worst news first:
     ///   error         -> the warning triangle alone (nothing else matters)
+    ///   busy          -> a spinner: connecting, or switching PCs
     ///   pad connected -> the controller's own glyph + its battery percentage
     ///   streaming     -> the streamed app's own glyph (Steam mark for Big
     ///                    Picture, each app's symbol otherwise)
@@ -205,7 +217,79 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .symbol(let name): button.image = Self.symbol(name)
         case .asset(let name): button.image = Self.asset(name, height: presentation.assetHeight)
         }
+        updateSpinner(presentation.spinning, in: button)
     }
+
+    /// Spins while busy, and keeps spinning through a gap under half a second
+    /// - switching PCs, the old stream closes a moment before the next one
+    /// starts connecting, and the glyph flashing in between reads as done.
+    private func updateSpinner(_ busy: Bool, in button: NSStatusBarButton) {
+        if busy {
+            spinnerOffWork?.cancel()
+            spinnerOffWork = nil
+            showSpinner(true, in: button)
+            return
+        }
+        guard spinner != nil else { return }
+        button.image = Self.blankGlyph
+        guard spinnerOffWork == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.spinnerOffWork = nil
+                guard self.model.menuBarPresentation?.spinning != true, let button = self.item.button else { return }
+                self.showSpinner(false, in: button)
+                self.applyLabel()
+            }
+        }
+        spinnerOffWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    private var spinnerOffWork: DispatchWorkItem?
+
+    /// The system's own small spinner, in the glyph's place: the glyph stays
+    /// as the button's image (it holds the width) but is hidden underneath.
+    private var spinner: NSProgressIndicator?
+
+    private func showSpinner(_ show: Bool, in button: NSStatusBarButton) {
+        if show {
+            let indicator = spinner ?? {
+                let made = NSProgressIndicator()
+                made.style = .spinning
+                made.controlSize = .small
+                made.isDisplayedWhenStopped = false
+                made.translatesAutoresizingMaskIntoConstraints = false
+                made.setAccessibilityLabel("Connecting")
+                return made
+            }()
+            if indicator.superview !== button {
+                button.addSubview(indicator)
+                NSLayoutConstraint.activate([
+                    indicator.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+                    indicator.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+                    indicator.widthAnchor.constraint(equalToConstant: 16),
+                    indicator.heightAnchor.constraint(equalToConstant: 16),
+                ])
+            }
+            if spinner == nil { Diag.info("menu bar spinner on", "MenuBar") }
+            spinner = indicator
+            button.image = Self.blankGlyph
+            indicator.startAnimation(nil)
+        } else if let indicator = spinner {
+            indicator.stopAnimation(nil)
+            indicator.removeFromSuperview()
+            spinner = nil
+            Diag.info("menu bar spinner off", "MenuBar")
+        }
+    }
+
+    /// Holds the spinner's width in the menu bar.
+    private static let blankGlyph: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 16))
+        image.isTemplate = true
+        return image
+    }()
 
     // MARK: - Menu
 

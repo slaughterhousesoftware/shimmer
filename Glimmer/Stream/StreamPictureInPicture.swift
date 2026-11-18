@@ -87,6 +87,13 @@ public final class StreamPictureInPicture: NSObject {
 
     public private(set) var isActive = false
 
+    /// Up, starting, or still animating closed: there is one PiP controller,
+    /// so a new start must wait for this to clear (a Switch PC in PiP closes
+    /// the old stream's PiP, then opens the next one's).
+    public var isInUse: Bool {
+        isActive || isStopping || controller?.isPictureInPictureActive == true
+    }
+
     /// One line of controller + adapter state for the env-gated debug probe
     /// (`--debug-pip-probe`); never read on a normal launch.
     public var debugState: String {

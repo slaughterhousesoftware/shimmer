@@ -62,17 +62,29 @@ extension StreamWindow {
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, !self.didClose, self.launchingIntoPiP else { return }
-                self.launchingIntoPiP = false
-                self.pipStartIsLaunch = true
-                self.enterPictureInPicture()
-                // enterPictureInPicture can decline without starting anything
-                // (it shows the window itself when PiP isn't possible).
-                if self.pipStartIsLaunch, !self.pictureInPicturePending, !self.isPictureInPictureActive {
-                    self.showWindowAfterFailedPiPLaunch("Picture in Picture didn't start")
-                }
+            MainActor.assumeIsolated { self?.startLaunchPiPOnceTheStageIsFree(attempt: 0) }
+        }
+    }
+
+    /// The previous stream's PiP may still be closing (Switch PC in PiP:
+    /// that one closes, this one opens). AVKit has one controller and won't
+    /// start it mid-close, so wait for it - up to ~3 s, then try anyway.
+    private func startLaunchPiPOnceTheStageIsFree(attempt: Int) {
+        guard !didClose, launchingIntoPiP else { return }
+        if pictureInPicture.isInUse, attempt < 60 {
+            if attempt == 0 { log.info("Waiting for the previous Picture in Picture to close") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                MainActor.assumeIsolated { self?.startLaunchPiPOnceTheStageIsFree(attempt: attempt + 1) }
             }
+            return
+        }
+        launchingIntoPiP = false
+        pipStartIsLaunch = true
+        enterPictureInPicture()
+        // enterPictureInPicture can decline without starting anything (it
+        // shows the window itself when PiP isn't possible).
+        if pipStartIsLaunch, !pictureInPicturePending, !isPictureInPictureActive {
+            showWindowAfterFailedPiPLaunch("Picture in Picture didn't start")
         }
     }
 
