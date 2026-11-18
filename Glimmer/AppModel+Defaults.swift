@@ -51,14 +51,6 @@ extension AppModel {
         return preset
     }
 
-    /// Decode a string-backed `RawRepresentable` from its persisted raw value.
-    static func persistedRawValue<T: RawRepresentable>(
-        _ key: String, _ type: T.Type
-    ) -> T? where T.RawValue == String {
-        guard let raw = UserDefaults.standard.string(forKey: key) else { return nil }
-        return T(rawValue: raw)
-    }
-
     /// JSON-decode a `Codable` from its persisted data blob.
     static func persistedDecoded<T: Decodable>(_ key: String, _ type: T.Type) -> T? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }

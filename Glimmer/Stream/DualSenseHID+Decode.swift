@@ -77,8 +77,8 @@ extension DualSenseHID {
     /// (USB full / BT simple) and 0x31 (BT full) carry the button bytes at the
     /// offsets below, so any other ID (0x05/0x09/0x20... feature echoes, a
     /// future firmware's extra reports) must NOT be read as button state - it
-    /// would flip the decoded bits to garbage, fire onChange, and the chord
-    /// path would cancel a live dwell on a phantom release. The 10-byte BT
+    /// would flip the decoded bits to garbage and fire onChange with phantom
+    /// presses and releases. The 10-byte BT
     /// simple report fails the length guard (its buttons sit at a different
     /// offset) and is likewise ignored.
     ///
@@ -105,8 +105,6 @@ extension DualSenseHID {
         let b1 = bytes[b1Index]
         let b2 = bytes[b2Index]
         var buttons = DualSenseExtraButtons()
-        buttons.l1 = (b1 & 0x01) != 0
-        buttons.r1 = (b1 & 0x02) != 0
         buttons.create = (b1 & 0x10) != 0
         buttons.options = (b1 & 0x20) != 0
         buttons.ps = (b2 & 0x01) != 0

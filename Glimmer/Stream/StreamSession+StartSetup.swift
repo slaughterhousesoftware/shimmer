@@ -13,7 +13,6 @@
 
 import Foundation
 import AppKit
-import GameController
 import os
 
 extension StreamSession {

@@ -45,10 +45,10 @@ struct DualSensePadSignatureTests {
     }
 
     @Test func mergedButtonsOrEveryPad() {
-        let a = DualSenseExtraButtons(options: true, create: false, ps: false, mute: false, l1: false, r1: false)
-        let b = DualSenseExtraButtons(options: false, create: false, ps: true, mute: false, l1: false, r1: true)
+        let a = DualSenseExtraButtons(options: true, create: false, ps: false, mute: false)
+        let b = DualSenseExtraButtons(options: false, create: false, ps: true, mute: false)
         let m = DualSenseHID.merged([a, b])
-        #expect(m.options && m.ps && m.r1 && !m.create && !m.mute && !m.l1)
+        #expect(m.options && m.ps && !m.create && !m.mute)
     }
 }
 

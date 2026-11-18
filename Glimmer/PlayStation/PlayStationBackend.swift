@@ -618,7 +618,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 events?.connectionTerminated(code: isError ? Self.terminatedWithError : Self.terminatedCleanly)
             }
         case CHIAKI_EVENT_RUMBLE:
-            guard ControllerFocus.allows(focusID) else { break }
+            // Vibration Off: no rumble either (PS4 games, players 2-4).
+            guard options.settings.controller.rumble, ControllerFocus.allows(focusID) else { break }
             if let slot = otherPlayerPad(seat: event.rumble.pad) {
                 lock.withLock { self.events }?.rumble(controller: UInt16(slot), lowFreq: UInt16(event.rumble.left) * 257,
                                                        highFreq: UInt16(event.rumble.right) * 257)
@@ -647,7 +648,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             }
             _ = pushPad()
         case CHIAKI_EVENT_LED_COLOR:
-            guard options.settings.lightBar, ControllerFocus.allows(focusID) else { break }
+            guard options.settings.controller.lightBar, ControllerFocus.allows(focusID) else { break }
             let (events, usbHaptics, player1) = lock.withLock { (self.events, audioHaptics != nil, primaryPad ?? 0) }
             let led = event.led_state
             // GameController's light setter would switch the pad's audio haptics off.
@@ -790,7 +791,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     /// One haptics frame: interleaved Int16 L/R samples. Sum |amplitude| per side.
     private func handleHapticsFrame(_ pcm: UnsafeRawBufferPointer) {
-        guard options.settings.haptics != .off else { return }
+        guard options.settings.controller.vibration != .off else { return }
         let arrival = DispatchTime.now().uptimeNanoseconds
         if lastHapticsArrivalNanos != 0 {
             hapticsJitter.add(gapMs: Double(arrival &- lastHapticsArrivalNanos) / 1_000_000)
@@ -864,12 +865,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// through its haptics report. Neither (another pad): rumble.
     private func startAudioHaptics(bluetoothWait: Int = 20) {
         guard !lock.withLock({ stopped }) else { return }
-        switch options.settings.haptics {
+        switch options.settings.controller.vibration {
         case .off:
-            Diag.info("PS5: haptics off (PlayStation settings)", Self.logCategory)
+            Diag.info("PS5: haptics off (Controller settings)", Self.logCategory)
             return
         case .rumble:
-            Diag.info("PS5: haptics play as rumble (PlayStation settings)", Self.logCategory)
+            Diag.info("PS5: haptics play as rumble (Controller settings)", Self.logCategory)
             hapticsQueue.async { [weak self] in self?.startHapticsTimer() }
             return
         case .actuators:
@@ -911,7 +912,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// Rumble stands in for the haptics: look for the pad's actuators again,
     /// quietly, until they turn up or the stream ends.
     private func retryActuators() {
-        guard options.settings.haptics == .actuators,
+        guard options.settings.controller.vibration == .actuators,
               !lock.withLock({ stopped || audioHaptics != nil }) else { return }
         startAudioHaptics(bluetoothWait: 0)
     }
@@ -954,7 +955,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// USB DualSense. Its output starts on the first frame, once the pad is
     /// tied to its USB device (DualSenseHID); no output, no haptics for them.
     private func handleOtherPlayerHaptics(seat: UInt8, _ pcm: UnsafeRawBufferPointer) {
-        guard options.settings.haptics == .actuators else { return }
+        guard options.settings.controller.vibration == .actuators else { return }
         let now = DispatchTime.now().uptimeNanoseconds
         let (player, tryStart) = lock.withLock { () -> (DualSenseHapticsOutput?, Bool) in
             if let player = otherHaptics[seat] { return (player, false) }
@@ -1090,7 +1091,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// The console's adaptive-trigger effect → the pad (unless trigger effects
     /// are switched off in the console's settings, or here).
     private func applyTriggerEffect(_ effect: ChiakiTriggerEffectsEvent) {
-        guard options.settings.adaptiveTriggers,
+        guard options.settings.controller.adaptiveTriggers,
               lock.withLock({ triggerNibble }) != Self.intensityOff & 0xF0 else { return }
         let left = withUnsafeBytes(of: effect.left) { Array($0) }
         let right = withUnsafeBytes(of: effect.right) { Array($0) }
@@ -1352,7 +1353,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 Diag.notice("PS5: controller \(seated) plays as player \(player)", Self.logCategory)
                 // With two USB pads player 1's haptics may have started on the
                 // other one: now both are known, put them on player 1's.
-                if options.settings.haptics == .actuators, lock.withLock({ audioHaptics }) is DualSenseAudioHaptics {
+                if options.settings.controller.vibration == .actuators, lock.withLock({ audioHaptics }) is DualSenseAudioHaptics {
                     restartAudioHaptics(reason: "player \(player) joined")
                 }
             }

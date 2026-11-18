@@ -3,9 +3,8 @@
 //
 //  The DualSense / DualShock touchpad SURFACE: the per-finger contact state and
 //  the down/move/up transitions forwarded to the host as controller touch
-//  events. Split from ControllerForwarder.swift - same idiom as the
-//  ControllerForwarder+QuitChord split, to keep that file under the length
-//  limit. The touchpad *click* is not here: it rides the normal button bitmask
+//  events. Split from ControllerForwarder.swift to keep that file under the
+//  length limit. The touchpad *click* is not here: it rides the normal button bitmask
 //  as TOUCHPAD_FLAG (ControllerForwarder+StatePush.swift). Per-slot finger state
 //  lives on `InputForwarder` proper (`touchpadStates`, `nextTouchPointerId`) -
 //  stored properties can't live in an extension - so the methods here rely on

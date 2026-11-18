@@ -30,15 +30,14 @@ extension InputForwarder {
     }
 
     /// Raw-HID side-channel update: fired ONLY when a decoded DualSense bit
-    /// changed - a center button (Options/Create/PS/Mute) or a shoulder
-    /// (DualSenseHID gates onChange on a real bit change). GameController
+    /// changed - a center button (Options/Create/PS/Mute) (DualSenseHID gates
+    /// onChange on a real bit change). GameController
     /// never delivers the center buttons and does NOT fire its valueChangedHandler
     /// for them, so this push is necessary to carry a center-button edge to the
     /// host - but it does NOT re-forward the touchpad (that stays on the
     /// GameController path) and the InputBatcher coalesces it with the latest
     /// GC-sourced axes for the slot, so it is not a double-feed of stick/axis
-    /// state. A shoulder edge here re-pushes the same GC-sourced state (the host
-    /// L1/R1 still come from GameController).
+    /// state.
     func sendCenterButtonUpdate(pad: GCExtendedGamepad, slot: UInt8) {
         pushControllerState(pad: pad, slot: slot)
     }

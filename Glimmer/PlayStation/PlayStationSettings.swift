@@ -42,7 +42,7 @@ final class PlayStationSettings {
     private static var byConsole: [String: PlayStationSettings] = [:]
 
     static let settingNames = ["height", "fps", "bitrateAuto", "bitrateMbps", "hdr", "hevc", "presentation",
-                               "haptics", "adaptiveTriggers", "lightBar", "restWhenStreamEnds"]
+                               "restWhenStreamEnds"]
 
     /// Once: consoles registered before per-console settings keep what they
     /// had (the bare "PS5." values). A console registered later starts from
@@ -60,9 +60,6 @@ final class PlayStationSettings {
             }
         }
     }
-
-    /// The pad's settings are shared with PC streams now (ControllerSettings).
-    typealias HapticsMode = ControllerSettings.Vibration
 
     enum Presentation: String, CaseIterable, Identifiable, Sendable {
         /// Each frame shown as soon as it is decoded.
@@ -141,8 +138,7 @@ final class PlayStationSettings {
     /// main actor).
     var snapshot: Snapshot {
         Snapshot(height: height, fps: fps, bitrateKbps: bitrateAuto ? nil : bitrateMbps * 1000, hdr: hdr,
-                 hevc: hevc, presentsDirect: presentation == .lowestLatency, haptics: controller.vibration,
-                 adaptiveTriggers: controller.adaptiveTriggers, lightBar: controller.lightBar,
+                 hevc: hevc, presentsDirect: presentation == .lowestLatency, controller: controller.snapshot,
                  restWhenStreamEnds: restWhenStreamEnds)
     }
 
@@ -154,9 +150,8 @@ final class PlayStationSettings {
         var hdr = false
         var hevc = true
         var presentsDirect = true
-        var haptics: HapticsMode = .actuators
-        var adaptiveTriggers = true
-        var lightBar = true
+        /// The Controller tab's settings, shared with PC streams.
+        var controller = ControllerSettings.Snapshot()
         var restWhenStreamEnds = false
     }
 }

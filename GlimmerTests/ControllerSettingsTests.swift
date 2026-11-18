@@ -44,6 +44,7 @@ struct ControllerSettingsTests {
         defaults.set("rumble", forKey: "PS5.ps5-abc.haptics")
         defaults.set(false, forKey: "PS5.ps5-abc.adaptiveTriggers")
         defaults.set(false, forKey: "PS5.ps5-abc.lightBar")
+        ControllerSettings.migrateFromConsoles(["ps5-abc"], defaults: defaults)
         let settings = ControllerSettings(defaults: defaults)
         #expect(settings.vibration == .rumble)
         #expect(!settings.adaptiveTriggers)
@@ -55,8 +56,29 @@ struct ControllerSettingsTests {
         defer { defaults.removePersistentDomain(forName: name) }
         defaults.set("off", forKey: "PS5.haptics")
         defaults.set(false, forKey: "PS5.adaptiveTriggers")
+        ControllerSettings.migrateFromConsoles([], defaults: defaults)
         #expect(ControllerSettings(defaults: defaults).vibration == .off)
         #expect(!ControllerSettings(defaults: defaults).adaptiveTriggers)
+    }
+
+    /// A console that's no longer registered left its keys behind; they
+    /// don't decide the settings for every machine.
+    @Test func aForgottenConsolesLeftoversAreIgnored() throws {
+        let (defaults, name) = try suite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set("off", forKey: "PS5.ps5-gone.haptics")
+        ControllerSettings.migrateFromConsoles(["ps5-here"], defaults: defaults)
+        #expect(ControllerSettings(defaults: defaults).vibration == .actuators)
+    }
+
+    /// The first registered console with a choice gives it.
+    @Test func registeredConsolesAreReadInOrder() throws {
+        let (defaults, name) = try suite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set("off", forKey: "PS5.ps5-b.haptics")
+        defaults.set("rumble", forKey: "PS5.ps5-a.haptics")
+        ControllerSettings.migrateFromConsoles(["ps5-b", "ps5-a"], defaults: defaults)
+        #expect(ControllerSettings(defaults: defaults).vibration == .off)
     }
 
     @Test func ownChoiceWinsOverAConsoles() throws {
@@ -64,7 +86,29 @@ struct ControllerSettingsTests {
         defer { defaults.removePersistentDomain(forName: name) }
         defaults.set("rumble", forKey: "PS5.ps5-abc.haptics")
         ControllerSettings(defaults: defaults).vibration = .actuators
+        ControllerSettings.migrateFromConsoles(["ps5-abc"], defaults: defaults)
         #expect(ControllerSettings(defaults: defaults).vibration == .actuators)
+    }
+
+    /// Once moved, the old keys no longer matter.
+    @Test func carriesOverOnlyOnce() throws {
+        let (defaults, name) = try suite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        ControllerSettings.migrateFromConsoles(["ps5-abc"], defaults: defaults)
+        defaults.set("off", forKey: "PS5.ps5-abc.haptics")
+        ControllerSettings.migrateFromConsoles(["ps5-abc"], defaults: defaults)
+        #expect(ControllerSettings(defaults: defaults).vibration == .actuators)
+    }
+
+    /// An instance made before the move (the shared one, if the window was
+    /// up first) picks up what was moved.
+    @Test func anExistingInstanceSeesTheMove() throws {
+        let (defaults, name) = try suite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let early = ControllerSettings(defaults: defaults)
+        defaults.set("rumble", forKey: "PS5.ps5-abc.haptics")
+        ControllerSettings.migrateFromConsoles(["ps5-abc"], defaults: defaults, reloading: [early])
+        #expect(early.vibration == .rumble)
     }
 
     /// The PC stream reads the settings on its own threads, not the main actor.
@@ -95,9 +139,16 @@ struct ControllerSettingsTests {
         controller.vibration = .rumble
         controller.adaptiveTriggers = false
         let console = PlayStationSettings(hostID: "ps5-a", defaults: defaults, controller: controller)
-        #expect(console.snapshot.haptics == .rumble)
-        #expect(!console.snapshot.adaptiveTriggers)
-        #expect(console.snapshot.lightBar)
+        #expect(console.snapshot.controller == controller.snapshot)
+    }
+
+    /// Vibration Off stops a PS5's plain rumble (PS4 games, players 2-4)
+    /// too, not only its haptics - the same as on a PC.
+    @Test func vibrationOffStopsPlayStationRumble() {
+        var settings = PlayStationSettings.Snapshot()
+        #expect(settings.controller.rumble)
+        settings.controller.vibration = .off
+        #expect(!settings.controller.rumble)
     }
 }
 
@@ -107,10 +158,20 @@ struct ControllerSettingsTests {
 struct PCControllerFeedbackTests {
     private typealias Wire = EnetInboundOrderTests
 
+    /// Passes the channel's feedback callbacks through the gate, as
+    /// NativeBackend's wiring installs them.
+    private func install(_ allowed: ControllerSettings.Snapshot, on channel: EnetControlChannel) {
+        let gate = ControllerFeedbackGate(allowed: allowed)
+        channel.onRumble = gate.rumble(channel.onRumble)
+        channel.onRumbleTriggers = gate.rumble(channel.onRumbleTriggers)
+        channel.onSetRgbLed = gate.lightBar(channel.onSetRgbLed)
+        channel.onSetAdaptiveTriggers = gate.adaptiveTriggers(channel.onSetAdaptiveTriggers)
+    }
+
     @Test func pcRumbleIsDroppedWhenVibrationIsOff() throws {
         let (channel, _) = try Wire.makeChannel()
         let events = Wire.rumbleEvents(channel)
-        ControllerFeedbackGate.apply(ControllerSettings.Snapshot(vibration: .off), to: channel)
+        install(ControllerSettings.Snapshot(vibration: .off), on: channel)
         channel.onDatagram(Wire.reliable(relSeq: 1, try Wire.rumble(1, seq: 1)))
         #expect(events.values.isEmpty)
     }
@@ -118,7 +179,7 @@ struct PCControllerFeedbackTests {
     @Test func pcRumbleArrivesWhenVibrationIsOn() throws {
         let (channel, _) = try Wire.makeChannel()
         let events = Wire.rumbleEvents(channel)
-        ControllerFeedbackGate.apply(ControllerSettings.Snapshot(vibration: .rumble), to: channel)
+        install(ControllerSettings.Snapshot(vibration: .rumble), on: channel)
         channel.onDatagram(Wire.reliable(relSeq: 1, try Wire.rumble(1, seq: 1)))
         #expect(events.values == [1])
     }
@@ -132,7 +193,7 @@ struct PCControllerFeedbackTests {
             channel.onRumbleTriggers = { _, _, _ in got.append("trigger rumble") }
             let allowed = ControllerSettings.Snapshot(vibration: on ? .actuators : .off,
                                                       adaptiveTriggers: on, lightBar: on)
-            ControllerFeedbackGate.apply(allowed, to: channel)
+            install(allowed, on: channel)
             channel.onSetRgbLed?(0, 255, 0, 0)
             channel.onSetAdaptiveTriggers?(0, 0x0C, 1, 1, [], [])
             channel.onRumbleTriggers?(0, 100, 100)
@@ -146,7 +207,7 @@ struct PCControllerFeedbackTests {
         channel.onRumble = { _, _, _ in got.append("rumble") }
         channel.onSetRgbLed = { _, _, _, _ in got.append("light") }
         channel.onSetAdaptiveTriggers = { _, _, _, _, _, _ in got.append("triggers") }
-        ControllerFeedbackGate.apply(ControllerSettings.Snapshot(adaptiveTriggers: false), to: channel)
+        install(ControllerSettings.Snapshot(adaptiveTriggers: false), on: channel)
         channel.onRumble?(0, 1, 1)
         channel.onSetRgbLed?(0, 1, 2, 3)
         channel.onSetAdaptiveTriggers?(0, 0x0C, 1, 1, [], [])

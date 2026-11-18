@@ -229,8 +229,11 @@ extension NativeBackend {
         // What the host asked of the pad while in standby, replayed at the cut
         // (it asks once, when the game wants it, and not again).
         let deferred = DeferredPadRequests()
+        // The Controller tab's switches: a switched-off feedback's callback is
+        // never installed, so nothing it would carry reaches the pad.
+        let gate = ControllerFeedbackGate(allowed: controllerFeedback)
         ControllerFocus.activate(focus) { ControllerHaptics.shared.streamActivated() }
-        enet.onRumble = { controllerNumber, lowFreq, highFreq in
+        enet.onRumble = gate.rumble { controllerNumber, lowFreq, highFreq in
             guard ControllerFocus.allows(focus) else { return }
             events.rumble(controller: controllerNumber, lowFreq: lowFreq, highFreq: highFreq)
         }
@@ -255,11 +258,11 @@ extension NativeBackend {
         // LI_CCAP_RGB_LED on gamepad.light), and both are parked by the same
         // stopAll/teardown path above (trigger motors at zero; the light bar
         // needs no parking - it is lit hardware state, not motion).
-        enet.onRumbleTriggers = { controllerNumber, left, right in
+        enet.onRumbleTriggers = gate.rumble { controllerNumber, left, right in
             guard ControllerFocus.allows(focus) else { return }
             events.rumbleTriggers(controller: controllerNumber, left: left, right: right)
         }
-        enet.onSetRgbLed = { controllerNumber, red, green, blue in
+        enet.onSetRgbLed = gate.lightBar { controllerNumber, red, green, blue in
             guard ControllerFocus.allows(focus) else { return }
             events.setControllerLED(controller: controllerNumber, r: red, g: green, b: blue)
         }
@@ -289,7 +292,7 @@ extension NativeBackend {
         // receive this (Sunshine extension). Parked by the same teardown path
         // above - DualSenseHID resets the trigger blocks to "off" on the final
         // release(), so a stream ending mid-effect can't strand a stiff trigger.
-        enet.onSetAdaptiveTriggers = { controllerNumber, eventFlags, typeLeft, typeRight, left, right in
+        enet.onSetAdaptiveTriggers = gate.adaptiveTriggers { controllerNumber, eventFlags, typeLeft, typeRight, left, right in
             guard ControllerFocus.allows(focus) else {
                 deferred.triggers(controllerNumber, eventFlags, typeLeft, typeRight, left, right)
                 return
@@ -298,8 +301,6 @@ extension NativeBackend {
                                        typeLeft: typeLeft, typeRight: typeRight,
                                        left: left, right: right)
         }
-        // Last, so it wraps everything above: the Controller tab's switches.
-        ControllerFeedbackGate.apply(controllerFeedback, to: enet)
     }
 
     /// FAST-START (mid-handshake, at SETUP-audio): construct the RtpAudioReceiver
@@ -585,18 +586,16 @@ final class DeferredPadRequests: @unchecked Sendable {
     }
 }
 
-/// The Controller tab's switches for a PC stream: wraps the control
-/// channel's feedback callbacks so what is switched off never reaches the
-/// pad - rumble and trigger rumble (Vibration off), the light bar's colour,
-/// and trigger effects (dropped before a standby stream would defer them).
-/// Motion is not feedback and isn't gated.
-enum ControllerFeedbackGate {
-    static func apply(_ allowed: ControllerSettings.Snapshot, to enet: EnetControlChannel) {
-        if !allowed.rumble {
-            enet.onRumble = nil
-            enet.onRumbleTriggers = nil
-        }
-        if !allowed.lightBar { enet.onSetRgbLed = nil }
-        if !allowed.adaptiveTriggers { enet.onSetAdaptiveTriggers = nil }
-    }
+/// The Controller tab's switches for a PC stream: each feedback callback
+/// is passed through its switch before it's installed on the control
+/// channel, and comes back nil when that feedback is off - so rumble and
+/// trigger rumble (Vibration Off), the light bar's colour and trigger
+/// effects never reach the pad, and a standby stream never defers them.
+/// Motion is input, not feedback, and isn't gated.
+struct ControllerFeedbackGate {
+    let allowed: ControllerSettings.Snapshot
+
+    func rumble<Callback>(_ callback: Callback?) -> Callback? { allowed.rumble ? callback : nil }
+    func lightBar<Callback>(_ callback: Callback?) -> Callback? { allowed.lightBar ? callback : nil }
+    func adaptiveTriggers<Callback>(_ callback: Callback?) -> Callback? { allowed.adaptiveTriggers ? callback : nil }
 }

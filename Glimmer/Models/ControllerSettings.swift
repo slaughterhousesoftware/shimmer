@@ -5,8 +5,8 @@
 //  and a PC stream let the game do to the pad - vibrate it, stiffen its
 //  triggers, colour its light bar. Shown on Settings' Controller tab.
 //  Before this, each PS5 had its own (under "PS5.<host id>."), and a PC
-//  stream always allowed all three; a console's choices carry over the
-//  first time these are read.
+//  stream always allowed all three; a registered console's choices move
+//  here once, at launch (`migrateFromConsoles`).
 //
 
 import Foundation
@@ -15,7 +15,13 @@ import Observation
 @MainActor
 @Observable
 final class ControllerSettings {
-    static let shared = ControllerSettings()
+    static var shared: ControllerSettings {
+        if let made = sharedIfMade { return made }
+        let made = ControllerSettings()
+        sharedIfMade = made
+        return made
+    }
+    private static var sharedIfMade: ControllerSettings?
 
     enum Vibration: String, CaseIterable, Identifiable, Sendable {
         /// A PS5's haptics on the DualSense's actuators; a PC's rumble.
@@ -43,12 +49,42 @@ final class ControllerSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        reload()
+    }
+
+    /// Re-reads the saved settings (after `migrateFromConsoles` moved some).
+    func reload() {
         loading = true
         defer { loading = false }
         let snapshot = Snapshot.load(defaults)
         vibration = snapshot.vibration
         adaptiveTriggers = snapshot.adaptiveTriggers
         lightBar = snapshot.lightBar
+    }
+
+    /// Once: the PS5 choices from before these were shared become these.
+    /// Each setting not already chosen here takes the first registered
+    /// console's (`consoleIDs`, in order) that has one, else the shared
+    /// value from before per-console settings ("PS5.<name>"). A console
+    /// that's no longer registered doesn't count. `reloading`: instances to
+    /// refresh (default: the shared one, if made).
+    static func migrateFromConsoles(_ consoleIDs: [String], defaults: UserDefaults = .standard,
+                                    reloading: [ControllerSettings]? = nil) {
+        let flag = Snapshot.key("migratedFromConsoles")
+        guard !defaults.bool(forKey: flag) else { return }
+        defaults.set(true, forKey: flag)
+        let moves: [(name: String, ps5Name: String, valid: (Any) -> Bool)] = [
+            ("vibration", "haptics", { ($0 as? String).flatMap(Vibration.init) != nil }),
+            ("adaptiveTriggers", "adaptiveTriggers", { $0 is Bool }),
+            ("lightBar", "lightBar", { $0 is Bool }),
+        ]
+        for move in moves where defaults.object(forKey: Snapshot.key(move.name)) == nil {
+            let keys = consoleIDs.map { "PS5.\($0).\(move.ps5Name)" } + ["PS5.\(move.ps5Name)"]
+            if let value = keys.lazy.compactMap({ defaults.object(forKey: $0) }).first(where: move.valid) {
+                defaults.set(value, forKey: Snapshot.key(move.name))
+            }
+        }
+        for settings in reloading ?? [sharedIfMade].compactMap({ $0 }) { settings.reload() }
     }
 
     var snapshot: Snapshot {
@@ -72,29 +108,13 @@ final class ControllerSettings {
 
         static func key(_ name: String) -> String { "Controller.\(name)" }
 
-        /// Reads the saved settings. A setting never saved here yet takes a
-        /// PS5's earlier choice: a console's own ("PS5.<id>.<name>", the
-        /// first console by id), else the shared one from before per-console
-        /// settings ("PS5.<name>").
+        /// Reads the saved settings (the defaults for any never saved).
         static func load(_ defaults: UserDefaults) -> Snapshot {
             var snapshot = Snapshot()
-            if let v = value(defaults, "vibration", ps5Name: "haptics").flatMap({ $0 as? String })
-                .flatMap(Vibration.init) { snapshot.vibration = v }
-            if let v = value(defaults, "adaptiveTriggers", ps5Name: "adaptiveTriggers") as? Bool {
-                snapshot.adaptiveTriggers = v
-            }
-            if let v = value(defaults, "lightBar", ps5Name: "lightBar") as? Bool { snapshot.lightBar = v }
+            if let v = defaults.string(forKey: key("vibration")).flatMap(Vibration.init) { snapshot.vibration = v }
+            if let v = defaults.object(forKey: key("adaptiveTriggers")) as? Bool { snapshot.adaptiveTriggers = v }
+            if let v = defaults.object(forKey: key("lightBar")) as? Bool { snapshot.lightBar = v }
             return snapshot
-        }
-
-        private static func value(_ defaults: UserDefaults, _ name: String, ps5Name: String) -> Any? {
-            if let own = defaults.object(forKey: key(name)) { return own }
-            let suffix = "." + ps5Name
-            let console = defaults.dictionaryRepresentation().keys
-                .filter { $0.hasPrefix("PS5.") && $0.hasSuffix(suffix) && $0 != "PS5" + suffix }
-                .sorted()
-                .first
-            return console.flatMap { defaults.object(forKey: $0) } ?? defaults.object(forKey: "PS5" + suffix)
         }
     }
 }

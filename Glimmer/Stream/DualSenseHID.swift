@@ -10,8 +10,7 @@
 //  open - it never seizes the device, so GCController keeps everything it
 //  already provides: sticks, face, shoulders, triggers, touchpad, battery).
 //
-//  Surfaces the centre buttons GameController drops (plus the two shoulder bits
-//  from the same byte). Everything else stays
+//  Surfaces the centre buttons GameController drops. Everything else stays
 //  on the GameController path.
 //
 //  REQUIRES the "Input Monitoring" privacy permission (TCC kTCCServiceListenEvent
@@ -28,17 +27,12 @@ import IOKit.hid
 import os.log
 
 /// The DualSense buttons GameController doesn't expose, mapped to the host's
-/// button semantics by `ControllerForwarder`, plus the two shoulder bits from
-/// the same report byte. The shoulders are NOT forwarded from here (GameController
-/// stays the host's source for L1/R1); a change in them only re-pushes the
-/// pad's state, like a centre-button edge.
+/// button semantics by `ControllerForwarder`.
 struct DualSenseExtraButtons: Equatable, Sendable {
     var options = false    // ≡  → Start  (PLAY_FLAG)
     var create = false     // Share/Create → Back/Select (BACK_FLAG)
     var ps = false         // PS → Guide  (SPECIAL_FLAG)
     var mute = false       // Mic mute → MISC_FLAG
-    var l1 = false         // not forwarded; host L1 rides GameController
-    var r1 = false         // not forwarded; host R1 rides GameController
 }
 
 /// Battery decoded straight from the DualSense report. We read this ourselves
@@ -258,7 +252,6 @@ final class DualSenseHID: @unchecked Sendable {
         for b in all {
             m.options = m.options || b.options; m.create = m.create || b.create
             m.ps = m.ps || b.ps; m.mute = m.mute || b.mute
-            m.l1 = m.l1 || b.l1; m.r1 = m.r1 || b.r1
         }
         return m
     }

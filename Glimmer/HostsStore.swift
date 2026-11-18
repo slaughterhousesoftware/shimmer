@@ -173,6 +173,7 @@ extension AppModel {
     private func settleStreamSettingsAfterLoad() {
         migrateStreamSettingsToHosts(hosts)
         PlayStationSettings.migrateGlobalToConsoles(hosts.filter(\.isPlayStation).map(\.id))
+        ControllerSettings.migrateFromConsoles(hosts.filter(\.isPlayStation).map(\.id))
         if let host = selectedHost { applyStreamSettings(forSelected: host) }
     }
 
