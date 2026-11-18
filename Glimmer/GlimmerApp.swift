@@ -27,7 +27,7 @@ extension GlimmerApp {
         let defaults = UserDefaults.standard
         let launchedBefore = defaults.bool(forKey: hasLaunchedBeforeKey)
         defaults.set(true, forKey: hasLaunchedBeforeKey)
-        return launchedAtLogin || (launchedBefore && MenuBarPreferences.isVisible(in: defaults))
+        return launchedAtLogin || launchedBefore
     }()
 }
 

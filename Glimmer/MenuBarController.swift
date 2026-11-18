@@ -22,10 +22,13 @@ import AppKit
 import SwiftUI
 
 enum MenuBarPreferences {
-    static let visibilityKey = "showMenuBarItem"
+    /// Settings used to have "Show status in the menu bar". The menu bar item
+    /// carries the pad's battery, warnings and the playing app, so it is no
+    /// longer optional (Kevin, 2026-11-18); a Mac that had it off gets it back.
+    static let retiredVisibilityKey = "showMenuBarItem"
 
-    static func isVisible(in defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: visibilityKey) as? Bool ?? true
+    static func forgetRetiredSwitch(in defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: retiredVisibilityKey)
     }
 }
 
@@ -97,7 +100,7 @@ extension AppModel {
     }
 
     var hasVisibleMenuBarItem: Bool {
-        showMenuBarItem && menuBarPresentation != nil
+        menuBarPresentation != nil
     }
 }
 
@@ -204,7 +207,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// only when NO pad is connected. Idle: the Shimmer prism.
     private func applyLabel() {
         let presentation = model.menuBarPresentation
-        let visible = model.showMenuBarItem && presentation != nil
+        let visible = presentation != nil
         // Establish the Dock fallback before an idle status item disappears.
         AppDelegate.refreshActivationPolicy()
         if item.isVisible != visible { item.isVisible = visible }

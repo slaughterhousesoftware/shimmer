@@ -42,11 +42,6 @@ struct AppPane: View {
         @Bindable var model = model
         Group {
             Section {
-                Toggle(isOn: $model.showMenuBarItem) {
-                    Text("Show status in the menu bar")
-                    Text("The app you’re playing, the controller’s battery, or a warning. "
-                        + "With it off, Shimmer stays in the Dock.")
-                }
                 // The login helper suppresses the window; Dock access remains
                 // available whenever there is no useful menu-bar status.
                 // Waiting for approval it isn't on, so no switch: a red dot

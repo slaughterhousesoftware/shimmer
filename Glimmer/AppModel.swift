@@ -57,15 +57,6 @@ final class AppModel {
     var hosts: [Host] = []
     var selectedHost: Host?
 
-    var showMenuBarItem = true {
-        didSet {
-            guard !isRestoringDefaults else { return }
-            UserDefaults.standard.set(showMenuBarItem, forKey: MenuBarPreferences.visibilityKey)
-            // Keep the Dock available before the menu-bar entry disappears.
-            AppDelegate.refreshActivationPolicy()
-        }
-    }
-
     /// Box art for the launcher's app tiles, fetched from the host and cached
     /// on disk. Owned here so one store serves every view.
     let artwork = AppArtworkStore()
@@ -676,7 +667,7 @@ final class AppModel {
         // stays under the complexity bar). The persisted-key set is unchanged.
         isRestoringDefaults = true
         defer { isRestoringDefaults = false }
-        showMenuBarItem = MenuBarPreferences.isVisible()
+        MenuBarPreferences.forgetRetiredSwitch()
         // The artwork store builds its own paired clients; hand it the same
         // Host → ServerInfo bridge the stream path uses (authoritative cert
         // pin included), rather than letting it reach into AppModel.

@@ -171,14 +171,15 @@ struct MenuBarVisibilityTests {
                                              otherAppFullScreen: true) == .regular)
     }
 
-    @Test func hidingTheMenuBarSurvivesRelaunch() throws {
+    /// The old "Show status in the menu bar" switch is gone; a Mac that had
+    /// it off forgets that and shows the menu bar item again.
+    @Test func aMacThatHidTheMenuBarItemGetsItBack() throws {
         let name = "shimmer-menu-bar-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
-        #expect(MenuBarPreferences.isVisible(in: defaults))
-        defaults.set(false, forKey: MenuBarPreferences.visibilityKey)
-        let reloaded = try #require(UserDefaults(suiteName: name))
-        #expect(!MenuBarPreferences.isVisible(in: reloaded))
+        defaults.set(false, forKey: MenuBarPreferences.retiredVisibilityKey)
+        MenuBarPreferences.forgetRetiredSwitch(in: defaults)
+        #expect(defaults.object(forKey: MenuBarPreferences.retiredVisibilityKey) == nil)
     }
 
     @Test func idleShowsTheShimmerPrismAndLeavesTheDock() {
