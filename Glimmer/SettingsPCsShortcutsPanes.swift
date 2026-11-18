@@ -135,7 +135,7 @@ private struct ControllerTestSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                ControllerInputTest()
+                ControllerInputTest(showsDiagnostics: false)
                     .padding(20)
             }
             Divider()
