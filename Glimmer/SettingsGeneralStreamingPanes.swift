@@ -69,32 +69,9 @@ struct AppPane: View {
                 FormSectionHeader("App")
             }
 
-            // Deliberately NOT behind the `showDiagnostics` reveal. This switch
-            // is the first thing to flip when a stream misbehaves - it starts
-            // the recorder whose output (one JSON object per second, plus GET
-            // /snapshot on loopback) is how anyone, human or otherwise, finds
-            // out WHY. A troubleshooting switch nobody can find troubleshoots
-            // nothing.
-            Section {
-                Toggle("Show stats over the picture", isOn: $model.showStreamStats)
-                Toggle(isOn: $model.telemetryEnabled) {
-                    Text("Record while streaming")
-                    Text("Saves local recordings for diagnosing stream issues.")
-                }
-                if model.telemetryEnabled {
-                    LabeledContent("Recordings") {
-                        Button("Show in Finder") {
-                            let dir = FileManager.default.homeDirectoryForCurrentUser
-                                .appendingPathComponent("Library/Logs/Shimmer", isDirectory: true)
-                            try? FileManager.default.createDirectory(
-                                at: dir, withIntermediateDirectories: true)
-                            NSWorkspace.shared.open(dir)
-                        }
-                    }
-                }
-            } header: {
-                FormSectionHeader("Stream health")
-            }
+            // Recording a stream and the stats overlay have no switch here:
+            // an agent turns them on when a stream needs diagnosing
+            // (`shimmerctl set recording on`; AgentControl.hiddenSettings).
 
             // The agent finds the bundled shimmerctl itself (the instructions
             // carry its path), so there's nothing to install or type here.

@@ -36,3 +36,55 @@ struct SettingsLayoutTests {
         #expect(AppModel.defaultAutoPictureInPicture == false)
     }
 }
+
+/// What left Settings stays reachable from `shimmerctl set` (an agent turns
+/// recording on to diagnose a stream), and `shimmerctl state` shows it.
+@MainActor
+struct AgentSettingsTests {
+    private static let keys = ["telemetryEnabled", "showStreamStats", "autoPictureInPicture",
+                               KeepAwakePolicy.defaultsKey]
+
+    private static func preservingDefaults(_ body: () -> Void) {
+        let d = UserDefaults.standard
+        let saved = keys.map { ($0, d.object(forKey: $0)) }
+        defer { for (key, value) in saved { d.set(value, forKey: key) } }
+        body()
+    }
+
+    @Test func recordingTurnsOnAndOff() {
+        Self.preservingDefaults {
+            let model = AppModel()
+            #expect(AgentControl.applySetting("recording", "on", to: model).hasPrefix("recording on"))
+            #expect(model.telemetryEnabled)
+            _ = AgentControl.applySetting("recording", "off", to: model)
+            #expect(!model.telemetryEnabled)
+        }
+    }
+
+    @Test func everyHiddenSettingIsReachable() {
+        Self.preservingDefaults {
+            let model = AppModel()
+            _ = AgentControl.applySetting("stats", "on", to: model)
+            _ = AgentControl.applySetting("auto-pip", "on", to: model)
+            _ = AgentControl.applySetting("keep-awake", "on", to: model)
+            #expect(model.showStreamStats)
+            #expect(model.autoPictureInPicture)
+            #expect(model.keepAwakePolicy == .always)
+            let settings = AgentControl.settingsState(model)
+            #expect(settings["stats"] as? Bool == true)
+            #expect(settings["auto-pip"] as? Bool == true)
+            #expect(settings["keep-awake"] as? Bool == true)
+            #expect((settings["recordings_folder"] as? String)?.hasSuffix("Library/Logs/Shimmer") == true)
+        }
+    }
+
+    @Test func unknownSettingOrValueChangesNothing() {
+        Self.preservingDefaults {
+            let model = AppModel()
+            let before = model.telemetryEnabled
+            #expect(AgentControl.applySetting("volume", "on", to: model).contains("known:"))
+            #expect(AgentControl.applySetting("recording", "maybe", to: model).contains("on or off"))
+            #expect(model.telemetryEnabled == before)
+        }
+    }
+}

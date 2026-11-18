@@ -25,8 +25,10 @@ enum ShimmerCLIAgentInstructions {
         anything stuck loading, permissions, its background helpers), launchd's view
         of those helpers, the PC's ports, and the commands that fix what it finds.
         Then `fix auto` applies every fix that needs no person and lists the rest.
-        `state` prints the app's live state; `logs --last 10m` has the detail. If
-        the app doesn't answer, `fix relaunch`. To check a specific PC: \(doctor).
+        `state` prints the app's live state; `logs --last 10m` has the detail. To
+        find out why a stream misbehaves, `set recording on` records the next
+        stream (one JSON object per second, in ~/Library/Logs/Shimmer); `set` also
+        takes stats, auto-pip and keep-awake. If the app doesn't answer, `fix relaunch`. To check a specific PC: \(doctor).
         If no apps appear, check the paired /applist request, hidden apps and
         Sunshine's configuration; the doctor command
         does not by itself verify pairing or the app list.

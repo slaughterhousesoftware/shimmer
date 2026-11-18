@@ -306,7 +306,7 @@ def main():
                         "helpers, anything still loading, and known issues with their fixes")
     repair = commands.add_parser("fix", help="Repair a known issue (auto applies every safe fix)")
     repair.add_argument("what", choices=["auto", "relaunch"] + sorted(FIXES))
-    repair.add_argument("--tab", choices=["computers", "stream", "general", "about"],
+    repair.add_argument("--tab", choices=["computers", "stream", "general", "controller", "about"],
                         help="For open-settings")
     logs = commands.add_parser("logs", help="Structured Shimmer unified logs")
     logs.add_argument("--last", default="10m")
@@ -315,6 +315,11 @@ def main():
     check.add_argument("--http-port", type=int, default=47989)
     check.add_argument("--https-port", type=int, default=47984)
     check.add_argument("--last", default="10m")
+    setting = commands.add_parser("set", help="Turn on or off a setting with no switch in the app: "
+                                  "recording (record streams to diagnose them), stats (overlay), "
+                                  "auto-pip, keep-awake")
+    setting.add_argument("setting", choices=["recording", "stats", "auto-pip", "keep-awake"])
+    setting.add_argument("value", choices=["on", "off"])
     stream = commands.add_parser("test-stream", help="Launch the real client, stream its saved default app, then quit")
     stream.add_argument("--host", required=True, help="Saved host name or address match")
     stream.add_argument("--seconds", type=int, choices=range(3, 61), default=12, metavar="3-60")
@@ -331,6 +336,11 @@ def main():
         code = 0 if not result.get("issues") else 1
     elif args.command == "fix":
         result, code = fix(args)
+    elif args.command == "set":
+        state = send(args.app, "set", setting=args.setting, value=args.value)
+        result = {"result": state.get("last_command", {}).get("result"),
+                  "settings": state.get("settings", {})}
+        code = 0 if result["result"] and result["result"].startswith(args.setting) else 1
     elif args.command == "logs":
         result, code = {"entries": log_entries(args.last)}, 0
     else:

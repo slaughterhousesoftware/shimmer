@@ -20,6 +20,7 @@ scripts/shimmerctl doctor              # start here: app state, helpers, PC port
 scripts/shimmerctl fix auto            # apply every safe fix, list what needs a person
 scripts/shimmerctl state               # what the running app is showing and doing
 scripts/shimmerctl logs --last 10m
+scripts/shimmerctl set recording on    # record the next stream to find out why it misbehaves
 scripts/shimmerctl test-stream --host gaming-pc --seconds 12
 ```
 
@@ -40,12 +41,28 @@ scripts/shimmerctl test-stream --host gaming-pc --seconds 12
 4. `shimmerctl fix relaunch` quits and reopens Shimmer when the app itself is
    stuck or doesn't answer.
 
+## Settings with no switch in the app
+
+Some settings are only reachable here, for diagnosing:
+
+```sh
+scripts/shimmerctl set recording on    # record streams: one JSON object per second,
+                                       # plus a session report, in ~/Library/Logs/Shimmer
+scripts/shimmerctl set stats on        # the stats overlay over the picture
+scripts/shimmerctl set auto-pip on     # Picture in Picture when you switch away
+scripts/shimmerctl set keep-awake on   # hold off sleep while streaming
+```
+
+Each takes `on` or `off`, applies from the next stream (auto-pip from the next
+switch-away), and shows in `state` under `settings`. Recording is off unless
+turned on; turn it off again when you're done.
+
 How it works: the app keeps `~/Library/Application Support/Shimmer/agent-state.json`
 current (owner-only, local, no network listener), and runs a fixed allowlist of
 harmless commands that shimmerctl drops as files into the owner-only
 `agent-commands` folder beside it - refresh, repair a helper, show a screen,
-cancel a connect. It works the same over SSH. None of them starts a stream, quits a
-game, unpairs or changes a setting. `state` and `doctor` flag a state file left
+cancel a connect - and `set`, for the settings above. It works the same over SSH.
+None of them starts a stream, quits a game or unpairs. `state` and `doctor` flag a state file left
 by a Shimmer that is no longer running as `stale`.
 
 `logs`, `doctor` and `test-stream` read the unified log, where PC names and

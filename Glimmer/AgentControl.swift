@@ -16,7 +16,8 @@
 //  ~/Library/Application Support/Shimmer/agent-commands/ (owner-only); the app
 //  watches that folder, runs the command and deletes the file. A fixed allowlist
 //  of harmless actions - refresh, repair a helper, show a screen, cancel a stuck
-//  connect. The result lands in the state file as `last_command`, matched by
+//  connect - plus `set`, for the settings that have no switch in the window
+//  (recording a stream to diagnose it, the stats overlay, ...). The result lands in the state file as `last_command`, matched by
 //  `id`, which is how shimmerctl knows the app acted.
 //
 //  A folder rather than a URL scheme: SwiftUI takes over Apple Event URL
@@ -41,7 +42,8 @@ final class AgentControl: NSObject {
     static var commandsURL: URL { folder.appendingPathComponent("agent-commands", isDirectory: true) }
 
     /// Everything an agent may ask for. Nothing here starts a stream, unpairs,
-    /// quits a game on the PC, or changes a setting.
+    /// or quits a game on the PC; `set` changes only the settings in
+    /// `hiddenSettings`.
     enum Command: String, CaseIterable {
         case state, refresh
         case repairLoginItem = "repair-login-item"
@@ -57,6 +59,47 @@ final class AgentControl: NSObject {
         case showStream = "show-stream"
         /// As the menu bar's End Stream.
         case endStream = "end-stream"
+        /// params: setting (a `hiddenSettings` name), value = on | off.
+        case set
+    }
+
+    /// The settings with no switch in the window, by the name `shimmerctl set`
+    /// takes: what each turns, and when a change applies.
+    static let hiddenSettings: [(name: String, applies: String)] = [
+        ("recording", "from the next stream; recordings go to ~/Library/Logs/Shimmer"),
+        ("stats", "from the next stream (the stats shortcut toggles them mid-stream)"),
+        ("auto-pip", "the next time the stream window is switched away from"),
+        ("keep-awake", "from the next stream"),
+    ]
+
+    /// `set`: turns one of `hiddenSettings` on or off and says what happened.
+    static func applySetting(_ name: String, _ value: String, to model: AppModel) -> String {
+        guard let entry = hiddenSettings.first(where: { $0.name == name }) else {
+            return "unknown setting; known: " + hiddenSettings.map(\.name).joined(separator: ", ")
+        }
+        let on: Bool
+        switch value.lowercased() {
+        case "on", "true", "1", "yes": on = true
+        case "off", "false", "0", "no": on = false
+        default: return "value must be on or off"
+        }
+        switch name {
+        case "recording": model.telemetryEnabled = on
+        case "stats": model.showStreamStats = on
+        case "auto-pip": model.autoPictureInPicture = on
+        default: model.keepAwakePolicy = on ? .always : .never
+        }
+        return "\(name) \(on ? "on" : "off"); applies \(entry.applies)"
+    }
+
+    /// The `hiddenSettings` as they stand, for the state file.
+    static func settingsState(_ model: AppModel) -> [String: Any] {
+        ["recording": model.telemetryEnabled,
+         "stats": model.showStreamStats,
+         "auto-pip": model.autoPictureInPicture,
+         "keep-awake": model.keepAwakePolicy == .always,
+         "recordings_folder": FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Shimmer").path]
     }
 
     private weak var model: AppModel?
@@ -202,6 +245,11 @@ final class AgentControl: NSObject {
             }
             model.endStream()
             finish(id: id, name: name, result: "ok")
+        case .set:
+            guard let model else { return }
+            let setting = query.first { $0.name == "setting" }?.value ?? ""
+            let value = query.first { $0.name == "value" }?.value ?? ""
+            finish(id: id, name: name, result: Self.applySetting(setting, value, to: model))
         case .cancelConnect:
             if case .connecting = model?.streamPhase {
                 model?.cancelConnect()
@@ -346,6 +394,7 @@ final class AgentControl: NSObject {
             "controller": ["connected": model.controllerConnected,
                            "kind": model.menuBarControllerKind ?? "",
                            "battery_percent": model.menuBarControllerBattery?.percent ?? -1],
+            "settings": settingsState(model),
             "permissions": ["input_monitoring": inputMonitoring,
                             "raw_controller_buttons_enabled": model.rawHIDControllerEnabled],
             "login_item": ["wanted": wantsLogin,
