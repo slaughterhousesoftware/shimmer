@@ -173,6 +173,10 @@ public final class StreamWindow {
     public var pipLayer: AVSampleBufferDisplayLayer { pipSource.layer }
     /// True from `hideStreamWindow()` (orderOut) until `reengageForeground()`.
     var isBackgrounded = false
+    /// Every display is asleep (NSWorkspace's screens-did-sleep until
+    /// screens-did-wake). Nothing can be seen, in the window or in Picture
+    /// in Picture, so presentation is suppressed like any other hidden state.
+    var displaysAsleep = false
     /// True while the system PiP window is up (AVKit didStart → didStop).
     public private(set) var isPictureInPictureActive = false
     /// True between our `start()` and AVKit's didStart / failedToStart, so

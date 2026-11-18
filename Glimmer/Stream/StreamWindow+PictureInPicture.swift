@@ -472,22 +472,27 @@ extension StreamWindow {
     ///    regardless of the rest.
     ///  * opening straight into PiP (hidden, PiP not started yet) → NOT
     ///    suppressed: the first frames must decode to start it.
+    ///  * every display asleep → suppressed, Picture in Picture or not: a
+    ///    stream left running kept decoding at full rate into a dark screen
+    ///    (an hour of it, measured, on a laptop).
     nonisolated static func presentSuppressedState(
         backgrounded: Bool, pipActive: Bool, pipPending: Bool, pipPaused: Bool,
-        launchingIntoPiP: Bool = false
+        launchingIntoPiP: Bool = false, displaysAsleep: Bool = false
     ) -> Bool {
-        if pipPaused { return true }
+        if pipPaused || displaysAsleep { return true }
         return backgrounded && !pipActive && !pipPending && !launchingIntoPiP
     }
 
     /// Recompute and forward the suppression state, edge-triggered.
     func publishPresentSuppression() {
         let suppressed = Self.presentSuppressedState(
-            backgrounded: isBackgrounded,
+            // A miniaturized window shows nothing either (it is in the Dock).
+            backgrounded: isBackgrounded || window.isMiniaturized,
             pipActive: isPictureInPictureActive,
             pipPending: pictureInPicturePending,
             pipPaused: pictureInPicturePaused,
-            launchingIntoPiP: launchingIntoPiP)
+            launchingIntoPiP: launchingIntoPiP,
+            displaysAsleep: displaysAsleep)
         guard suppressed != lastEmittedPresentSuppressed else { return }
         lastEmittedPresentSuppressed = suppressed
         onPresentSuppressionChanged?(suppressed)

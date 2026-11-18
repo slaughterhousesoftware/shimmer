@@ -44,6 +44,15 @@ struct PictureInPictureTests {
                                                     pipPaused: true, launchingIntoPiP: true) == true)
     }
 
+    @Test func aSleepingDisplaySuppressesEvenPictureInPicture() {
+        #expect(StreamWindow.presentSuppressedState(backgrounded: true, pipActive: true, pipPending: false,
+                                                    pipPaused: false, displaysAsleep: true))
+        #expect(StreamWindow.presentSuppressedState(backgrounded: false, pipActive: false, pipPending: false,
+                                                    pipPaused: false, displaysAsleep: true))
+        #expect(!StreamWindow.presentSuppressedState(backgrounded: true, pipActive: true, pipPending: false,
+                                                     pipPaused: false, displaysAsleep: false))
+    }
+
     @Test func launchUsesTheLastPiPFrameOnlyWhenItIsStillOnScreen() {
         let screen = NSRect(x: 0, y: 0, width: 2560, height: 1440)
         let corner = NSRect(x: 2000, y: 1100, width: 480, height: 270)

@@ -150,6 +150,10 @@ extension StreamWindow {
             MainActor.assumeIsolated {
                 guard let self, !self.didClose else { return }
                 self.onBackgroundedChanged?(true)
+                // Said so in the log, and never did it: the decoder kept
+                // decoding and the present watchdog kept "recovering" a
+                // picture nobody could see.
+                self.publishPresentSuppression()
                 self.log.info("Stream window miniaturized - present suppressed until it returns")
             }
         })
@@ -159,6 +163,7 @@ extension StreamWindow {
             MainActor.assumeIsolated {
                 guard let self, !self.didClose else { return }
                 self.onBackgroundedChanged?(false)
+                self.publishPresentSuppression()
             }
         })
     }

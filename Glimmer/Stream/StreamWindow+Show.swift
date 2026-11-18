@@ -119,6 +119,20 @@ extension StreamWindow {
         // center - a common gotcha. Tracked in `workspaceObservers` so close()
         // removes it from the right center.
         let wsnc = NSWorkspace.shared.notificationCenter
+        // Display sleep: nothing is on screen until the wake below. Sound
+        // keeps playing; the picture stops being decoded and presented.
+        workspaceObservers.append(wsnc.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.didClose else { return }
+                self.log.info("Displays asleep - present suppressed until they wake")
+                self.displaysAsleep = true
+                self.publishPresentSuppression()
+            }
+        })
         workspaceObservers.append(wsnc.addObserver(
             forName: NSWorkspace.screensDidWakeNotification,
             object: nil,
@@ -127,6 +141,8 @@ extension StreamWindow {
             MainActor.assumeIsolated {
                 guard let self, !self.didClose else { return }
                 self.log.info("Displays woke - rebinding pacer link")
+                self.displaysAsleep = false
+                self.publishPresentSuppression()
                 self.onScreenChanged?()
                 // Display sleep-wake re-shows the cursor behind the latch too;
                 // re-assert the hide (no-op unless we're the desired-hidden owner

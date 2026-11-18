@@ -166,7 +166,11 @@ extension StreamSession {
         let decodeIdle = dec.secondsSinceLastDecodedFrame()
         guard decodeIdle.isFinite else { return }
 
-        guard let live = dec.pacingLiveness(), live.running else {
+        // A stream that presents directly (a PS5's default) has a pacer that
+        // carries no frames: its liveness says nothing about the screen. The
+        // direct-present check below is the one that watches that path - it
+        // was unreachable for these streams while their idle pacer was running.
+        guard let live = dec.pacingLiveness(), live.running, !dec.presentsDirect else {
             // DIRECT (no-pacer) mode. This branch used to be a blind spot - it
             // assumed the direct path "can't wedge the way the pacer can" and
             // only tried to re-enable pacing. That false assumption is the

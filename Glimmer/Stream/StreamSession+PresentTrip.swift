@@ -153,6 +153,24 @@ extension StreamSession {
         !inStartupGrace && rejectStreak >= rendererStarvationStreakTrip
     }
 
+    /// The link-dead trip: no tick across two evaluations AND frames waiting
+    /// on one. A silent link with nothing queued behind it is not keeping
+    /// anything off the screen: a PS5 stream presents every frame directly
+    /// (its pacer's queue stays empty), and so does a re-enabled pacer for as
+    /// long as its link hasn't ticked (warm handover). Tripping there anyway
+    /// "healed" a picture that was fine - flush the layer, ask the host for a
+    /// keyframe - went back to direct, re-enabled the pacer five seconds
+    /// later, and tripped again on the same silent link. Measured on a PS5
+    /// stream in Picture in Picture (2026-11-18): 614 flush + keyframe cycles
+    /// in 55 minutes, one every 5.4 s, each a bitrate spike from the console.
+    /// A link that is truly stranding frames has them queued: nothing else
+    /// drains the queue.
+    nonisolated static func linkDeadTripped(
+        linkSilent: Bool, ticksUnchanged: Bool, silentLastEvaluation: Bool, depth: Int
+    ) -> Bool {
+        linkSilent && ticksUnchanged && silentLastEvaluation && depth > 0
+    }
+
     /// Compute the present-path trip flags for one watchdog evaluation. Also
     /// advances the two-tick link-silent tracking state (`sawLinkSilentLastTick`,
     /// `lastWatchdogTotalTicks`) - it MUST run every evaluation, trip or not, so
@@ -171,7 +189,9 @@ extension StreamSession {
         // not ticking - a re-priming link advances totalTicks and clears the latch.
         let linkSilent = live.secondsSinceLastTick > StreamSession.presentLinkDeadThreshold
         let ticksUnchanged = self.lastWatchdogTotalTicks == live.totalTicks
-        let linkDead = linkSilent && ticksUnchanged && self.sawLinkSilentLastTick
+        let linkDead = StreamSession.linkDeadTripped(
+            linkSilent: linkSilent, ticksUnchanged: ticksUnchanged,
+            silentLastEvaluation: self.sawLinkSilentLastTick, depth: live.depth)
         self.sawLinkSilentLastTick = linkSilent
         self.lastWatchdogTotalTicks = live.totalTicks
 

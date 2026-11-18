@@ -49,6 +49,24 @@ struct PresentTripTests {
         #expect(!StreamSession.rendererStarvationTripped(rejectStreak: 500, inStartupGrace: true))
     }
 
+    /// A silent link only strands the frames queued behind it. With the queue
+    /// empty - a PS5 stream presenting directly, a re-enabled pacer still in
+    /// warm handover - nothing is being kept off the screen, and "recovering"
+    /// (flush + keyframe request) every few seconds was the only fault.
+    @Test func aSilentLinkWithNothingQueuedIsNotAStall() {
+        #expect(!StreamSession.linkDeadTripped(
+            linkSilent: true, ticksUnchanged: true, silentLastEvaluation: true, depth: 0))
+        #expect(StreamSession.linkDeadTripped(
+            linkSilent: true, ticksUnchanged: true, silentLastEvaluation: true, depth: 1))
+        // The two-evaluation rule is unchanged: one silent sample is not dead.
+        #expect(!StreamSession.linkDeadTripped(
+            linkSilent: true, ticksUnchanged: true, silentLastEvaluation: false, depth: 3))
+        #expect(!StreamSession.linkDeadTripped(
+            linkSilent: true, ticksUnchanged: false, silentLastEvaluation: true, depth: 3))
+        #expect(!StreamSession.linkDeadTripped(
+            linkSilent: false, ticksUnchanged: true, silentLastEvaluation: true, depth: 3))
+    }
+
     /// The trip threshold must sit far above the classification threshold:
     /// classification re-aims an already-open episode cheaply; OPENING an
     /// episode from the streak alone demands the deep-wedge shape.
