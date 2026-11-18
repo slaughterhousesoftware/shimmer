@@ -311,6 +311,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menuIsOpen = false
         hoveredRow = nil
         expandedHostID = nil
+        serversList?.stopAnimating()
+        serversList = nil
         applyLabel()
     }
 
@@ -318,10 +320,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// until the menu closes.
     private var expandedHostID: String?
 
+    /// The Servers rows, one item's view so the opened settings can animate
+    /// in place (MenuDisclosureList); kept to toggle it and to carry its
+    /// motion across a rebuild of the open menu.
+    private weak var serversList: MenuDisclosureList?
+
     /// The Servers rows draw their own highlight, and the menu doesn't
     /// redraw a custom row when the highlight leaves it - so the controller
     /// tells each row, for the pointer and the arrow keys alike.
     func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        // The Servers list moves its own band among its rows.
+        if !(item?.view is MenuDisclosureList) { serversList?.clearHover() }
         let row = item?.view as? MenuRowView
         guard row !== hoveredRow else { return }
         hoveredRow?.isHovered = false
@@ -429,32 +438,29 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             // else the selection - so the disc moves the moment you pick.
             let current = model.pendingHostSwitch?.hostID
                 ?? (model.isStreaming ? model.activeStreamHostID : model.selectedHost?.id)
-            for host in model.hosts {
+            var rows: [MenuRowView] = []
+            var inUseIndex: Int?
+            for (index, host) in model.hosts.enumerated() {
                 // A custom row, for a click that keeps the menu open, as the
-                // Sound menu's outputs do (MenuServerRow). The item's own
-                // action is for the keyboard (arrow to it, Return).
-                let row = action(host.displayName, #selector(switchHost))
-                row.representedObject = host.id
-                let appearance = menu.effectiveAppearance
+                // Sound menu's outputs do (MenuServerRow).
                 let mark = MenuHostMark.image(for: host, look: host.id == current ? .current : .off,
-                                              appearance: appearance)
+                                              appearance: menu.effectiveAppearance)
                 // The one in use (once the selection has caught up with a
                 // switch) carries the chevron to its stream settings, like
                 // the AirPods in use in the Sound menu.
                 let inUse = host.id == current && host.id == model.selectedHost?.id
-                let expanded = inUse && expandedHostID == host.id
-                row.view = MenuServerRow(title: host.displayName, mark: mark,
-                                         disclosure: inUse ? (expanded ? .expanded : .collapsed) : nil) {
+                if inUse { inUseIndex = index }
+                rows.append(MenuServerRow(title: host.displayName, mark: mark, hasDisclosure: inUse) {
                     [weak self] in self?.pickServer(host.id)
-                }
-                menu.addItem(row)
-                if expanded {
-                    addStreamSettings(for: host, to: menu)
-                    // Closed off from the next server, if there is one (the
-                    // Stream Audio section brings its own separator).
-                    if host.id != model.hosts.last?.id { menu.addItem(.separator()) }
-                }
+                })
             }
+            let settings = inUseIndex.map { (under: $0, view: streamSettingsWell(for: model.hosts[$0]) as NSView) }
+            let expanded = inUseIndex.map { model.hosts[$0].id == expandedHostID } ?? false
+            let list = MenuDisclosureList(rows: rows, well: settings, expanded: expanded, continuing: serversList)
+            serversList = list
+            let item = NSMenuItem()
+            item.view = list
+            menu.addItem(item)
         }
 
         // Stream audio - the stream's own level, not the Mac's: the Sound
@@ -542,12 +548,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         model.cancelWake(host)
     }
 
-    @objc private func switchHost(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String,
-              let host = model.hosts.first(where: { $0.id == id }) else { return }
-        model.switchHost(to: host)
-    }
-
     /// A click in the Servers list: switch, and keep the menu open on the
     /// new server, the way picking a Sound output does.
     private func pickServer(_ id: String) {
@@ -558,8 +558,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             expandedHostID = nil
             model.switchHost(to: host)
         } else if host.id == model.selectedHost?.id {
-            // The one in use: open or close its settings.
+            // The one in use: open or close its settings, in place - the
+            // list animates it; nothing else in the menu changes.
             expandedHostID = expandedHostID == host.id ? nil : host.id
+            serversList?.setExpanded(expandedHostID == host.id)
+            return
         }
         rebuildOpenMenu()
     }
@@ -572,14 +575,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// stream; the menu stays open. A PS5 offers its own: 720p or 1080p,
     /// 30 or 60, up to 100 Mbps. Kevin chose this layout from real
     /// mock-ups (design/menu-bar, 2026-11-18).
-    private func addStreamSettings(for host: Host, to menu: NSMenu) {
-        func section(_ title: String, _ view: NSView) {
-            menu.addItem(.sectionHeader(title: title))
-            let item = NSMenuItem()
-            item.view = view
-            menu.addItem(item)
-        }
-        menu.addItem(.separator())
+    private func streamSettingsWell(for host: Host) -> MenuDisclosureWell {
+        var groups: [MenuDisclosureWell.Group] = []
+        func section(_ title: String, _ view: NSView) { groups.append(.init(title: title, view: view)) }
         if host.isPlayStation {
             let settings = PlayStationSettings.forConsole(host.id)
             let heights = [720, 1080], rates = [30, 60]
@@ -622,10 +620,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                                           accessibilityTitle: "HDR") { model.customHDR = $0 == 1 })
         }
         if model.isStreaming, model.activeStreamHostID == host.id {
-            let note = NSMenuItem()
-            note.view = MenuNoteRow("Changes apply to the next stream.")
-            menu.addItem(note)
+            groups.append(.init(title: nil, view: MenuNoteRow("Changes apply to the next stream.")))
         }
+        return MenuDisclosureWell(groups: groups)
     }
 
     /// A verb that flips with the state. Listed idle too: the choice persists,

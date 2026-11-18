@@ -286,6 +286,9 @@ class MenuRowView: NSView {
 
     func drawContent(in bounds: NSRect) {}
 
+    /// Redraws the content (a subclass's state changed), not the band.
+    func redrawContent() { content.needsDisplay = true }
+
     static let titleAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.labelColor,
     ]
@@ -359,22 +362,30 @@ final class MenuActionRow: MenuRowView {
 /// A server in the Servers list: its round mark and its name, and a click
 /// that switches without closing the menu, as the Sound menu's outputs do.
 /// The one in use carries a chevron, as the AirPods in use do: a click
-/// opens its stream settings under it.
+/// opens its stream settings under it, and the chevron turns from right to
+/// down with the rows (MenuDisclosureList sets `disclosureProgress`).
 final class MenuServerRow: MenuRowView {
-    enum Disclosure { case collapsed, expanded }
-
     private let title: String
     private let mark: NSImage
-    private let disclosure: Disclosure?
+    let hasDisclosure: Bool
+
+    /// The chevron's turn: 0 points right (closed), 1 points down (open).
+    /// Driven by the disclosure's spring, so it overshoots a touch with it.
+    var disclosureProgress: CGFloat = 0 {
+        didSet {
+            guard disclosureProgress != oldValue else { return }
+            redrawContent()
+        }
+    }
 
     static let height: CGFloat = 32
 
-    init(title: String, mark: NSImage, disclosure: Disclosure? = nil, onPick: @escaping () -> Void) {
+    init(title: String, mark: NSImage, hasDisclosure: Bool = false, onPick: @escaping () -> Void) {
         self.title = title
         self.mark = mark
-        self.disclosure = disclosure
+        self.hasDisclosure = hasDisclosure
         super.init(height: Self.height, accessibilityTitle: title, onPick: onPick)
-        if let disclosure { setAccessibilityExpanded(disclosure == .expanded) }
+        if hasDisclosure { setAccessibilityExpanded(false) }
         sizeToContent()
     }
 
@@ -383,8 +394,12 @@ final class MenuServerRow: MenuRowView {
     /// Wide enough for the name, so the menu sizes itself around it.
     override var intrinsicContentSize: NSSize {
         let text = (title as NSString).size(withAttributes: Self.titleAttributes).width
-        return NSSize(width: 16 + MenuHostMark.diameter + 8 + text + (disclosure == nil ? 24 : 44), height: Self.height)
+        return NSSize(width: 16 + MenuHostMark.diameter + 8 + text + (hasDisclosure ? 44 : 24), height: Self.height)
     }
+
+    private static let chevron: NSImage? = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+            .applying(.init(paletteColors: [.secondaryLabelColor])))
 
     override func drawContent(in bounds: NSRect) {
         let d = MenuHostMark.diameter
@@ -392,18 +407,19 @@ final class MenuServerRow: MenuRowView {
         let size = (title as NSString).size(withAttributes: Self.titleAttributes)
         (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
                                  withAttributes: Self.titleAttributes)
-        if let disclosure {
-            // The Sound menu's chevron: right when closed, down when open.
-            let name = disclosure == .expanded ? "chevron.down" : "chevron.right"
-            let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
-                .applying(.init(paletteColors: [.secondaryLabelColor]))
-            if let chevron = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-                .withSymbolConfiguration(config) {
-                let s = chevron.size
-                chevron.draw(in: NSRect(x: bounds.maxX - 18 - s.width, y: ((bounds.height - s.height) / 2).rounded(),
-                                        width: s.width, height: s.height))
-            }
-        }
+        guard hasDisclosure, let chevron = Self.chevron else { return }
+        // The Sound menu's chevron: one glyph, turned about its centre -
+        // right when closed, down when open (clockwise, as it opens).
+        let s = chevron.size
+        // At rest exactly where the fixed glyph sat (whole points vertically).
+        let centre = NSPoint(x: bounds.maxX - 18 - s.width / 2, y: ((bounds.height - s.height) / 2).rounded() + s.height / 2)
+        NSGraphicsContext.saveGraphicsState()
+        let turn = NSAffineTransform()
+        turn.translateX(by: centre.x, yBy: centre.y)
+        turn.rotate(byDegrees: -90 * disclosureProgress)
+        turn.concat()
+        chevron.draw(in: NSRect(x: -s.width / 2, y: -s.height / 2, width: s.width, height: s.height))
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 

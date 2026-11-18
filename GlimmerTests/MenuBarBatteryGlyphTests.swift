@@ -466,3 +466,89 @@ struct MenuBitrateRowTests {
         #expect(slider?.doubleValue == 2)
     }
 }
+
+/// The Servers list's disclosure - the server in use opening its stream
+/// settings under it - moving the way Apple's Sound menu opens the AirPods
+/// (measured off a 60 fps recording, 2026-11-18): the rows below and the
+/// band's fade on one spring, the menu's height chasing them on a slower one.
+@MainActor
+struct MenuDisclosureListTests {
+    private func rows(_ n: Int) -> [MenuRowView] {
+        (0..<n).map { i in
+            MenuServerRow(title: "PC \(i)", mark: NSImage(size: NSSize(width: 26, height: 26)),
+                          hasDisclosure: i == 1) {}
+        }
+    }
+
+    private func well(height: CGFloat = 120) -> NSView { NSView(frame: NSRect(x: 0, y: 0, width: 200, height: height)) }
+
+    /// Runs the springs as the display link would, at 120 Hz.
+    private func run(_ list: MenuDisclosureList, for seconds: Double) {
+        for _ in 0..<Int((seconds * 120).rounded()) { list.advance(by: 1.0 / 120) }
+    }
+
+    @Test func collapsedItIsTheRowsExpandedTheBandJoinsUnderItsRow() {
+        let r = rows(3), w = well()
+        let closed = MenuDisclosureList(rows: r, well: (under: 1, view: w), expanded: false)
+        #expect(closed.frame.height == 96)
+        #expect(w.isHidden)
+        let r2 = rows(3), w2 = well()
+        let open = MenuDisclosureList(rows: r2, well: (under: 1, view: w2), expanded: true)
+        #expect(open.frame.height == 216)
+        #expect(!w2.isHidden && w2.frame.minY == 64)
+        #expect(r2[2].frame.minY == 184)
+        #expect((r2[1] as? MenuServerRow)?.disclosureProgress == 1)
+    }
+
+    @Test func expandingTheRowsLeadAndTheMenuFollows() {
+        let r = rows(3), w = well()
+        let list = MenuDisclosureList(rows: r, well: (under: 1, view: w), expanded: false)
+        list.setExpanded(true)
+        run(list, for: 0.1)
+        let rowsDone = (r[2].frame.minY - 64) / 120
+        let heightDone = (list.frame.height - 96) / 120
+        #expect(rowsDone > 0.3 && heightDone > 0 && heightDone < rowsDone)
+        // The band fades in with the rows, where it will stay.
+        #expect(abs(Double(w.alphaValue) - Double(min(rowsDone, 1))) < 0.05 && w.frame.minY == 64)
+        run(list, for: 2)
+        #expect(list.frame.height == 216 && r[2].frame.minY == 184 && w.alphaValue == 1 && !list.isAnimating)
+    }
+
+    @Test func collapsingTheRowsSlideOverTheFadingBand() {
+        let r = rows(3), w = well()
+        let list = MenuDisclosureList(rows: r, well: (under: 1, view: w), expanded: true)
+        list.setExpanded(false)
+        run(list, for: 0.1)
+        let rowsLeft = (r[2].frame.minY - 64) / 120
+        let heightLeft = (list.frame.height - 96) / 120
+        #expect(rowsLeft < heightLeft)
+        #expect(w.alphaValue > 0 && w.alphaValue < 1)
+        // Closing, the band takes no clicks.
+        let inBand = NSPoint(x: 100, y: 64 + 110)
+        let hit = list.hitTest(list.convert(inBand, to: list.superview))
+        #expect(hit == nil || !(hit!.isDescendant(of: w)))
+        run(list, for: 2)
+        #expect(list.frame.height == 96 && w.isHidden && r[2].frame.minY == 64)
+    }
+
+    @Test func theChevronTurnsWithTheRows() {
+        let r = rows(3)
+        let list = MenuDisclosureList(rows: r, well: (under: 1, view: well()), expanded: false)
+        list.setExpanded(true)
+        run(list, for: 0.1)
+        let chevron = (r[1] as? MenuServerRow)?.disclosureProgress ?? 0
+        #expect(abs(chevron - (r[2].frame.minY - 64) / 120) < 0.02)
+    }
+
+    @Test func aRebuildMidFlightCarriesTheMotionOn() {
+        let list = MenuDisclosureList(rows: rows(3), well: (under: 1, view: well()), expanded: false)
+        list.setExpanded(true)
+        run(list, for: 0.08)
+        let r = rows(3)
+        let rebuilt = MenuDisclosureList(rows: r, well: (under: 1, view: well()), expanded: true, continuing: list)
+        #expect(rebuilt.frame.height == list.frame.height)
+        #expect(rebuilt.isAnimating)
+        run(rebuilt, for: 2)
+        #expect(rebuilt.frame.height == 216)
+    }
+}
