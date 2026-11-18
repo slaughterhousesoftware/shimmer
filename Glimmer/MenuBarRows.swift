@@ -20,10 +20,18 @@ final class MenuVolumeSlider: NSView {
         self.onChange = onChange
         super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 30))
         autoresizingMask = [.width]
-        let quiet = NSImageView(image: NSImage(systemSymbolName: "speaker.fill", accessibilityDescription: nil) ?? NSImage())
-        let loud = NSImageView(image: NSImage(systemSymbolName: "speaker.wave.3.fill", accessibilityDescription: nil) ?? NSImage())
+        // The Sound menu's speakers, measured off it at 2x (macOS 27): the
+        // loud one 21 x 15 pt - the symbols at 15.5 pt - in the secondary
+        // grey, not the text colour.
+        let size = NSImage.SymbolConfiguration(pointSize: 15.5, weight: .regular)
+        func speaker(_ name: String) -> NSImageView {
+            NSImageView(image: NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(size) ?? NSImage())
+        }
+        let quiet = speaker("speaker.fill")
+        let loud = speaker("speaker.wave.3.fill")
         for end in [quiet, loud] {
-            end.contentTintColor = .labelColor
+            end.contentTintColor = .secondaryLabelColor
             end.setAccessibilityElement(false)
         }
         slider.minValue = 0
