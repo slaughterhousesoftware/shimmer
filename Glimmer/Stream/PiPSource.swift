@@ -72,6 +72,28 @@ final class PiPSource {
         layer.frame = view.bounds
     }
 
+    /// Visible, in the PiP's place, for its closing animation: rounded like
+    /// the PiP window. `backToInvisible()` undoes it.
+    func showInPlaceOfPiP() {
+        layer.cornerRadius = Self.pipCornerRadius
+        layer.masksToBounds = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.alphaValue = 1
+        window.orderFrontRegardless()
+    }
+
+    func backToInvisible() {
+        window.alphaValue = 0
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
+        layer.cornerRadius = 0
+        layer.masksToBounds = false
+    }
+
+    /// The PiP window's corner radius on macOS 27.2 (measured off a capture).
+    static let pipCornerRadius: CGFloat = 12
+
     func hide() {
         window.orderOut(nil)
     }

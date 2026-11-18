@@ -55,15 +55,16 @@ final class PictureInPictureStage {
     /// waits for this - AVKit has one controller and won't start mid-close.
     var isFree: Bool { !isClosing && !pictureInPicture.isInUse }
 
-    /// Close PiP as its × does: where it is, nothing growing. Stopping PiP
-    /// from code plays the "return to app" animation instead, flying the
-    /// picture back to the source layer - which sat elsewhere and was hidden at
-    /// once, so a black rectangle grew out of the PiP towards the middle of the
-    /// screen (recorded 2026-11-17). So the source goes exactly where the PiP
-    /// is (the return has nowhere to go) and leaves the screen only once AVKit
-    /// reports PiP gone. Call it while the stream still feeds the layer
-    /// (`StreamWindow.closePictureInPicture`): the return draws the layer, and
-    /// an ended stream's is empty - black, for a moment, where the PiP was.
+    /// Close PiP the way its × does - it shrinks into its centre and fades,
+    /// still playing. There is no way to press ×: the PiP's controls are drawn
+    /// outside Shimmer's process, and the PiP window itself ignores our frame
+    /// and alpha (measured 2026-11-17). Stopping PiP from code plays the
+    /// "return to app" animation instead, flying the picture to the source
+    /// layer - a black rectangle grew out of the PiP when the source sat
+    /// elsewhere, hidden. So the source window - ours, animatable - takes the
+    /// PiP's exact place showing the same live picture, PiP stops into it with
+    /// nothing to fly, and the source does the × animation. Call it while the
+    /// stream still feeds the layer (`StreamWindow.closePictureInPicture`).
     func close(by window: StreamWindow) {
         guard owner === window else { return }
         owner = nil
@@ -72,9 +73,42 @@ final class PictureInPictureStage {
             return
         }
         isClosing = true
-        if let panel = fitter.panel { source.place(at: panel.frame) }
+        guard let panel = fitter.panel else {
+            pictureInPicture.reset()
+            awaitClosed(attempt: 0)
+            return
+        }
+        // The source takes the PiP's place, showing the same live picture,
+        // and PiP stops: its return lands where it already is, so nothing
+        // moves. Then the source closes the way × does.
+        let rect = panel.frame
+        source.place(at: rect)
+        source.showInPlaceOfPiP()
         pictureInPicture.reset()
-        awaitClosed(attempt: 0)
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            awaitClosed(attempt: 0)
+            return
+        }
+        let window = source.window
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = Self.closeDuration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            window.animator().setFrame(Self.closedFrame(of: rect), display: true)
+            window.animator().alphaValue = 0
+        }, completionHandler: {
+            MainActor.assumeIsolated { self.awaitClosed(attempt: 0) }
+        })
+    }
+
+    /// The × animation, measured from a recording of a real × click on macOS
+    /// 27.2 (2026-11-17): the picture shrinks to about half size around its
+    /// centre while fading out, still playing - about 10 frames at 75 Hz. An
+    /// eased-in 0.2 s reads the same length (0.16 s looked short, 7 frames).
+    static let closeDuration: TimeInterval = 0.2
+
+    /// Where the × animation ends: half size, around the same centre.
+    nonisolated static func closedFrame(of frame: NSRect) -> NSRect {
+        frame.insetBy(dx: frame.width / 4, dy: frame.height / 4)
     }
 
     /// Poll until AVKit has let go (up to ~3 s), then clear the stage.
@@ -91,6 +125,7 @@ final class PictureInPictureStage {
     private func finishClosing() {
         fitter.detach()
         source.hide()
+        source.backToInvisible()
         isClosing = false
     }
 
