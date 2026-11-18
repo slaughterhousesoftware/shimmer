@@ -187,6 +187,34 @@ struct PictureInPictureTests {
         #expect(StreamPictureInPicture.canHidePlaybackControls)
     }
 
+    /// The PiP window's "return to app" button is hidden by standing in for
+    /// AVKit's adapter as the system PiP controller's delegate. If a macOS
+    /// update changes those private pieces the button comes back - and this
+    /// test says so.
+    @MainActor @Test func theReturnButtonCanBeHiddenOnThisMacOS() {
+        #expect(StreamPictureInPicture.canHideReturnButton)
+    }
+
+    /// The stand-in drops exactly one action: macOS offers "return to app"
+    /// only to a delegate that handles it. Everything else - × above all -
+    /// still reaches AVKit's adapter.
+    @Test func theDelegateStandInHidesOnlyTheReturnAction() {
+        final class Adapter: NSObject {
+            var closed = false
+            @objc func pipActionRestore(_ sender: Any?) {}
+            @objc func pipActionClose(_ sender: Any?) { closed = true }
+        }
+        let adapter = Adapter()
+        let standIn = PiPDelegateStandIn(adapter: adapter)
+        let restore = NSSelectorFromString("pipActionRestore:"), close = NSSelectorFromString("pipActionClose:")
+        #expect(adapter.responds(to: restore))
+        #expect(!standIn.responds(to: restore))
+        #expect(standIn.responds(to: close))
+        #expect(!standIn.responds(to: NSSelectorFromString("pipActionPlay:")))
+        _ = standIn.perform(close, with: nil)
+        #expect(adapter.closed)
+    }
+
     @Test func defaultPiPChordCarriesNoCommandModifier() {
         // No Cmd, so it is intercepted before the sys-keys gate and fires
         // regardless of the "use ⌘ shortcuts inside the game" toggle.

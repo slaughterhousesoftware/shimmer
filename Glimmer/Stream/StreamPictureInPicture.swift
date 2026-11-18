@@ -282,6 +282,51 @@ public final class StreamPictureInPicture: NSObject {
         setStyle(controller, Self.controlsStyleSelector, Self.controlsStyleWithoutTransport)
     }
 
+    // MARK: - No return button
+
+    /// Stands in for AVKit's adapter while PiP is up (`hideReturnButton`).
+    /// The system's PiP controller holds its delegate weakly, and without one
+    /// a × click never reaches AVKit - so this stays until the next start
+    /// replaces it.
+    private var delegateStandIn: PiPDelegateStandIn?
+
+    private static let platformAdapterSelector = NSSelectorFromString("platformAdapter")
+    private static let systemControllerSelector = NSSelectorFromString("systemPIPViewController")
+    private static let delegateSelector = NSSelectorFromString("delegate")
+    private static let setDelegateSelector = NSSelectorFromString("setDelegate:")
+
+    /// Whether this macOS still has the private pieces `hideReturnButton`
+    /// goes through. Without them the button shows, and works, as before.
+    static var canHideReturnButton: Bool {
+        guard let adapter = NSClassFromString("AVPictureInPicturePlatformAdapter"),
+              let system = NSClassFromString("PIPViewController") else { return false }
+        return AVPictureInPictureController.instancesRespond(to: platformAdapterSelector)
+            && adapter.instancesRespond(to: systemControllerSelector)
+            && adapter.instancesRespond(to: PiPDelegateStandIn.returnAction)
+            && system.instancesRespond(to: delegateSelector)
+            && system.instancesRespond(to: setDelegateSelector)
+    }
+
+    /// Take "return to app" off the PiP window; the stream window comes back
+    /// from the menu bar or the PiP shortcut instead. macOS's PIPAgent draws
+    /// the button only for a delegate that handles `pipActionRestore:`, and
+    /// tells the agent so the moment the delegate is set (screenshots,
+    /// 2026-11-17, macOS 27.0). Every PiP start makes a new system controller
+    /// with AVKit's adapter as its delegate, so this runs on each start.
+    ///
+    /// The × stays: the agent draws it in its own window whatever the
+    /// delegate, control style or content type says (all tried).
+    private func hideReturnButton() {
+        guard Self.canHideReturnButton, let controller,
+              let adapter = controller.perform(Self.platformAdapterSelector)?.takeUnretainedValue() as? NSObject,
+              let system = adapter.perform(Self.systemControllerSelector)?.takeUnretainedValue() as? NSObject,
+              let current = system.perform(Self.delegateSelector)?.takeUnretainedValue() as? NSObject,
+              !(current is PiPDelegateStandIn) else { return }
+        let standIn = PiPDelegateStandIn(adapter: current)
+        delegateStandIn = standIn
+        _ = system.perform(Self.setDelegateSelector, with: standIn)
+    }
+
     private func close(_ controller: AVPictureInPictureController) {
         guard Self.canCloseAsTheCloseButtonDoes else {
             log.notice("Picture in Picture: no × close on this macOS - stopping the public way")
@@ -338,11 +383,19 @@ public final class StreamPictureInPicture: NSObject {
 // MARK: - AVPictureInPictureControllerDelegate
 
 extension StreamPictureInPicture: AVPictureInPictureControllerDelegate {
+    public nonisolated func pictureInPictureControllerWillStartPictureInPicture(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) {
+        // As early as the system controller exists (didStart asks again).
+        onMain { [self] in hideReturnButton() }
+    }
+
     public nonisolated func pictureInPictureControllerDidStartPictureInPicture(
         _ pictureInPictureController: AVPictureInPictureController
     ) {
         onMain { [self] in
             isActive = true
+            hideReturnButton()
             log.info("Picture in Picture started")
             onDidStart?()
         }
@@ -471,4 +524,27 @@ extension StreamPictureInPicture: AVPictureInPictureSampleBufferPlaybackDelegate
     ) -> Bool {
         false
     }
+}
+
+// MARK: - The system PiP controller's delegate, minus "return to app"
+
+/// AVKit's platform adapter with one action taken away. macOS's PiP window
+/// shows a button only for an action its delegate handles; this answers "no"
+/// for `pipActionRestore:` and passes everything else (× above all) straight
+/// to the adapter.
+final class PiPDelegateStandIn: NSObject {
+    static let returnAction = NSSelectorFromString("pipActionRestore:")
+
+    private let adapter: NSObject
+
+    init(adapter: NSObject) { self.adapter = adapter }
+
+    override func responds(to selector: Selector!) -> Bool {
+        guard let selector, selector != Self.returnAction else { return false }
+        return adapter.responds(to: selector)
+    }
+
+    override func forwardingTarget(for selector: Selector!) -> Any? { adapter }
+
+    override func conforms(to proto: Protocol) -> Bool { adapter.conforms(to: proto) }
 }
