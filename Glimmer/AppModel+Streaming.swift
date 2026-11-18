@@ -719,7 +719,13 @@ extension AppModel {
         }
         guard isStreaming, let session = nativeSession else { return }
         Diag.notice("User ended the stream from the menu bar", "Stream")
-        Task { await session.stop() }
+        // In Picture in Picture: close the PiP first, as its × does, while
+        // the stream still feeds it - closed after, its closing animation
+        // draws an empty (black) picture.
+        Task {
+            await session.closePictureInPicture()
+            await session.stop()
+        }
     }
 
     /// (and its ⎋ shortcut). Routes through the SESSION's own teardown so

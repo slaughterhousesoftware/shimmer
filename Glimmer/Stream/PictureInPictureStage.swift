@@ -48,6 +48,52 @@ final class PictureInPictureStage {
         owner = nil
     }
 
+    /// Closing as its × does (`close(by:)`), until AVKit reports PiP gone.
+    private(set) var isClosing = false
+
+    /// Nothing on the stage: no PiP up, starting, or closing. A new PiP start
+    /// waits for this - AVKit has one controller and won't start mid-close.
+    var isFree: Bool { !isClosing && !pictureInPicture.isInUse }
+
+    /// Close PiP as its × does: where it is, nothing growing. Stopping PiP
+    /// from code plays the "return to app" animation instead, flying the
+    /// picture back to the source layer - which sat elsewhere and was hidden at
+    /// once, so a black rectangle grew out of the PiP towards the middle of the
+    /// screen (recorded 2026-11-17). So the source goes exactly where the PiP
+    /// is (the return has nowhere to go) and leaves the screen only once AVKit
+    /// reports PiP gone. Call it while the stream still feeds the layer
+    /// (`StreamWindow.closePictureInPicture`): the return draws the layer, and
+    /// an ended stream's is empty - black, for a moment, where the PiP was.
+    func close(by window: StreamWindow) {
+        guard owner === window else { return }
+        owner = nil
+        guard pictureInPicture.isInUse else {
+            finishClosing()
+            return
+        }
+        isClosing = true
+        if let panel = fitter.panel { source.place(at: panel.frame) }
+        pictureInPicture.reset()
+        awaitClosed(attempt: 0)
+    }
+
+    /// Poll until AVKit has let go (up to ~3 s), then clear the stage.
+    private func awaitClosed(attempt: Int) {
+        if pictureInPicture.isInUse, attempt < 60 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                MainActor.assumeIsolated { self?.awaitClosed(attempt: attempt + 1) }
+            }
+            return
+        }
+        finishClosing()
+    }
+
+    private func finishClosing() {
+        fitter.detach()
+        source.hide()
+        isClosing = false
+    }
+
     /// A new stream is about to feed the layer: start its timeline over. Keeps
     /// the picture that's up - a previous stream's PiP may still be animating
     /// closed - until the new frames arrive.

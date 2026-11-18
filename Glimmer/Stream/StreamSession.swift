@@ -97,6 +97,18 @@ public actor StreamSession {
         await MainActor.run { win?.toggleFullScreenByUser() }
     }
 
+    /// Close Picture in Picture the way its × does, and return once it's
+    /// gone. The stream keeps running (End Stream and Switch PC stop it next).
+    public func closePictureInPicture() async {
+        let win = self.window
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            Task { @MainActor in
+                guard let win else { done.resume(); return }
+                win.closePictureInPicture { done.resume() }
+            }
+        }
+    }
+
     public func enterPictureInPicture() async {
         let win = self.window
         await MainActor.run {

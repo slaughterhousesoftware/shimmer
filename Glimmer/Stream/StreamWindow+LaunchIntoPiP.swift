@@ -58,7 +58,7 @@ extension StreamWindow {
     /// start it mid-close, so wait for it - up to ~3 s, then try anyway.
     private func startLaunchPiPOnceTheStageIsFree(attempt: Int) {
         guard !didClose, launchingIntoPiP else { return }
-        if pictureInPicture.isInUse, attempt < 60 {
+        if !PictureInPictureStage.shared.isFree, attempt < 60 {
             if attempt == 0 { log.info("Waiting for the previous Picture in Picture to close") }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 MainActor.assumeIsolated { self?.startLaunchPiPOnceTheStageIsFree(attempt: attempt + 1) }

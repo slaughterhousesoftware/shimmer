@@ -406,6 +406,30 @@ extension StreamWindow {
         }
     }
 
+    /// Close PiP as its × does, while the stream still feeds it, then `done`.
+    /// The window stays hidden; this is the first step of ending the stream.
+    func closePictureInPicture(done: @escaping @MainActor () -> Void) {
+        let stage = PictureInPictureStage.shared
+        guard !didClose, stage.isOwned(by: self), isPictureInPictureActive || pictureInPicturePending else {
+            done()
+            return
+        }
+        log.info("Closing Picture in Picture before the stream ends")
+        stage.close(by: self)
+        pipSourceMode = false
+        awaitStageFree(attempt: 0, then: done)
+    }
+
+    private func awaitStageFree(attempt: Int, then done: @escaping @MainActor () -> Void) {
+        guard !PictureInPictureStage.shared.isFree, attempt < 60 else { done(); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { done(); return }
+                self.awaitStageFree(attempt: attempt + 1, then: done)
+            }
+        }
+    }
+
     /// PiP teardown for `close()`: PiP closes with the stream (a Switch PC
     /// opens the next stream's own), and the controller-background flag goes
     /// back.
@@ -413,9 +437,9 @@ extension StreamWindow {
         pictureInPicturePending = false
         let stage = PictureInPictureStage.shared
         if stage.isOwned(by: self) {
-            pictureInPicture.reset()
-            leavePiPSource()
-            stage.release(by: self)
+            // As its × closes it: no fly-back to a window that's going away.
+            stage.close(by: self)
+            pipSourceMode = false
         }
         setPictureInPictureActive(false)
         restoreBackgroundControllerEvents()
