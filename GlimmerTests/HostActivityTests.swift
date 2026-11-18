@@ -141,3 +141,64 @@ struct HostActivityTests {
         #expect(later != near)
     }
 }
+
+/// The sidebar's status dots come from the app model, not the Servers page,
+/// so they survive switching tabs (and closing the window): a machine that
+/// was green stays green instead of going grey until it's checked again.
+@MainActor
+struct SidebarReachabilityTests {
+    private static let now = Date(timeIntervalSince1970: 50_000)
+    private static let keys = ["glimmer.selectedHostID"]
+
+    private static func host(_ id: String) -> Glimmer.Host {
+        Glimmer.Host(id: id, name: id, customName: nil, localAddress: nil, manualAddress: nil,
+                     apps: [], lastConnected: nil, serverCertPEM: nil, appVersion: nil,
+                     gfeVersion: nil, macAddress: nil)
+    }
+
+    private static func preservingDefaults(_ body: () -> Void) {
+        let d = UserDefaults.standard
+        let saved = keys.map { ($0, d.object(forKey: $0)) }
+        defer { for (key, value) in saved { d.set(value, forKey: key) } }
+        body()
+    }
+
+    @Test func aRecordedCheckLivesInTheModel() {
+        let model = AppModel()
+        model.recordReachability(true, for: "pc-x", at: Self.now)
+        #expect(model.sidebarIndicator(for: "pc-x", at: Self.now.addingTimeInterval(5)) == .online)
+        #expect(model.sidebarStatusText(for: "pc-x", at: Self.now.addingTimeInterval(5)) == "Online")
+        model.recordReachability(false, for: "pc-x", at: Self.now)
+        #expect(model.sidebarIndicator(for: "pc-x", at: Self.now) == .offline)
+    }
+
+    @Test func anOldCheckGoesGrey() {
+        let model = AppModel()
+        model.recordReachability(true, for: "pc-x", at: Self.now)
+        let later = Self.now.addingTimeInterval(HostLiveStatus.stale + 1)
+        #expect(model.sidebarIndicator(for: "pc-x", at: later) == .neutral)
+        #expect(model.sidebarStatusText(for: "pc-x", at: later) == "Checking…")
+    }
+
+    /// Just selected, its own status not in yet: the last check shows, not grey.
+    @Test func aJustSelectedMachineKeepsItsLastCheck() {
+        Self.preservingDefaults {
+            let model = AppModel()
+            let pc = Self.host("pc-sel-\(UUID().uuidString)")
+            model.selectHost(pc)
+            model.hostLiveStatus = nil
+            model.recordReachability(true, for: pc.id, at: .now)
+            #expect(model.sidebarIndicator(for: pc.id) == .online)
+        }
+    }
+
+    /// The selected machine's own status feeds the same record, so it stays
+    /// green when another machine is selected.
+    @Test func theSelectedMachinesStatusIsRecorded() {
+        let model = AppModel()
+        model.recordReachability(from: HostLiveStatus(hostID: "pc-y", state: .idle, capturedAt: Self.now))
+        #expect(model.sidebarIndicator(for: "pc-y", at: Self.now) == .online)
+        model.recordReachability(from: HostLiveStatus(hostID: "pc-y", state: .asleep, capturedAt: Self.now))
+        #expect(model.sidebarIndicator(for: "pc-y", at: Self.now) == .offline)
+    }
+}

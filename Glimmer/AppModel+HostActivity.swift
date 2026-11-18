@@ -4,7 +4,60 @@ enum HostStatusIndicator {
     case neutral, online, attention, offline, error
 }
 
+/// One online check of a machine, for its sidebar dot.
+struct HostReachabilitySample: Equatable {
+    let reachable: Bool
+    let capturedAt: Date
+
+    func isFresh(at now: Date) -> Bool { now.timeIntervalSince(capturedAt) <= HostLiveStatus.stale }
+}
+
 extension AppModel {
+    func recordReachability(_ reachable: Bool, for hostID: String, at now: Date = .now) {
+        hostReachability[hostID] = HostReachabilitySample(reachable: reachable, capturedAt: now)
+    }
+
+    /// The selected machine's own status counts as a check too, so it stays
+    /// green once another machine is selected.
+    func recordReachability(from live: HostLiveStatus) {
+        switch live.state {
+        case .unknown: return
+        case .asleep: recordReachability(false, for: live.hostID, at: live.capturedAt)
+        case .idle, .reachable, .streamingApp, .streamingUnknownApp, .certMismatch:
+            recordReachability(true, for: live.hostID, at: live.capturedAt)
+        }
+    }
+
+    private func freshReachability(for hostID: String, at now: Date) -> HostReachabilitySample? {
+        hostReachability[hostID].flatMap { $0.isFresh(at: now) ? $0 : nil }
+    }
+
+    /// The selected (or streaming) machine shows its own detailed status;
+    /// until that's in, and for every other machine, its last online check.
+    private func showsOwnStatus(_ hostID: String) -> Bool {
+        selectedHost?.id == hostID || (isStreaming && activeStreamHostID == hostID)
+    }
+
+    /// A machine's sidebar dot.
+    func sidebarIndicator(for hostID: String, at now: Date = .now) -> HostStatusIndicator {
+        if showsOwnStatus(hostID) {
+            let own = hostStatusIndicator(for: hostID, at: now)
+            if own != .neutral || (isStreaming && activeStreamHostID == hostID) { return own }
+        }
+        guard let sample = freshReachability(for: hostID, at: now) else { return .neutral }
+        return sample.reachable ? .online : .offline
+    }
+
+    /// The words behind a machine's sidebar dot (its tooltip).
+    func sidebarStatusText(for hostID: String, at now: Date = .now) -> String {
+        if showsOwnStatus(hostID) {
+            let own = hostStatusLine(for: hostID, at: now)
+            if own != "Checking…" { return own }
+        }
+        guard let sample = freshReachability(for: hostID, at: now) else { return "Checking…" }
+        return sample.reachable ? "Online" : "Asleep or offline"
+    }
+
     /// One freshness/identity check for the status text and launch target.
     func liveStatus(for hostID: String, at now: Date = .now) -> HostLiveStatus? {
         guard let live = hostLiveStatus, live.hostID == hostID,

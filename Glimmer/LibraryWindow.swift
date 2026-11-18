@@ -24,14 +24,8 @@ struct ComputersTab: View {
     @State private var refreshingApps = false
     @State private var appRefreshFailed = false
     @State private var copiedAgentPrompt = false
-    @State private var sidebarProbes: [String: SidebarProbe] = [:]
     /// The app the Stream row will start (nil: the last one played).
     @State private var chosenAppName: String?
-
-    private struct SidebarProbe {
-        let reachable: Bool
-        let capturedAt: Date
-    }
 
     private struct SidebarProbeTarget: Hashable, Sendable {
         let id: String
@@ -132,7 +126,7 @@ struct ComputersTab: View {
                     }
                     for await (id, reachable) in group {
                         guard !Task.isCancelled else { continue }
-                        sidebarProbes[id] = SidebarProbe(reachable: reachable, capturedAt: .now)
+                        model.recordReachability(reachable, for: id)
                     }
                 }
                 do { try await Task.sleep(for: .seconds(AppModel.hostStatusPollSeconds)) }
@@ -414,19 +408,11 @@ struct ComputersTab: View {
 
 
     private func connectionIndicator(for host: Host) -> HostStatusIndicator {
-        if model.selectedHost?.id == host.id || (model.isStreaming && model.activeStreamHostID == host.id) {
-            return model.hostStatusIndicator(for: host.id)
-        }
-        guard let probe = sidebarProbes[host.id], Date().timeIntervalSince(probe.capturedAt) <= HostLiveStatus.stale else { return .neutral }
-        return probe.reachable ? .online : .offline
+        model.sidebarIndicator(for: host.id)
     }
 
     private func connectionStatusText(for host: Host) -> String {
-        if model.selectedHost?.id == host.id || (model.isStreaming && model.activeStreamHostID == host.id) {
-            return model.hostStatusLine(for: host.id)
-        }
-        guard let probe = sidebarProbes[host.id], Date().timeIntervalSince(probe.capturedAt) <= HostLiveStatus.stale else { return "Checking…" }
-        return probe.reachable ? "Online" : "Asleep or offline"
+        model.sidebarStatusText(for: host.id)
     }
 
 

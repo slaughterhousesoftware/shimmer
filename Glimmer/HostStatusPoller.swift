@@ -285,6 +285,7 @@ extension AppModel {
             guard let self else { return }
             guard let host = self.selectedHost, host.id == expectedHostID else { return }
             self.hostLiveStatus = status
+            self.recordReachability(from: status)
             self.clearRecoveredInterruption(status)
         }
     }

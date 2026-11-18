@@ -282,6 +282,11 @@ final class AppModel {
     /// safe read accessor used by the UI.
     var hostLiveStatus: HostLiveStatus?
 
+    /// Every machine's last online check, by host id: the sidebar's dots.
+    /// Kept here, not in the Servers page, so a tab switch or a closed
+    /// window doesn't send them back to grey (see recordReachability).
+    var hostReachability: [String: HostReachabilitySample] = [:]
+
     /// Set when a launch would TAKE OVER a session already running on the host
     /// (someone else streaming, not ours). The launcher binds a confirmation
     /// dialog to this; confirming calls `stream(app:on:)`, cancelling clears it.
