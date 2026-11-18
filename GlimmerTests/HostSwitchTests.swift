@@ -25,7 +25,10 @@ struct HostSwitchTests {
     private static let touchedKeys = ["glimmer.selectedHostID", "qualityPreset", "customWidth", "customHeight",
                                       "customFPS", "bitrateAuto", "manualBitrateMbps", "customHDR",
                                       "quitAppWhenStreamEnds", HostStreamSettings.storageKey(for: "den"),
-                                      "glimmer.codecPreference.den"]
+                                      HostStreamSettings.storageKey(for: "attic"),
+                                      HostStreamSettings.storageKey(for: "tower"),
+                                      "glimmer.codecPreference.den", "glimmer.codecPreference.attic",
+                                      "glimmer.codecPreference.tower", "pipLaunchRequestedAt"]
 
     private func preservingAppDefaults(_ body: () -> Void) {
         let d = UserDefaults.standard
@@ -57,6 +60,40 @@ struct HostSwitchTests {
         // The old stream ends (its PiP closes); the new one opens its own.
         #expect(model.pendingHostSwitch?.hostID == "den")
         #expect(model.pendingHostSwitch?.inPictureInPicture == true)
+    } }
+
+    /// Picking another machine while the old stream is still closing changes
+    /// where the next one opens. It used to be ignored, and then the cleanup
+    /// found the selection no longer matched: the stream ended and nothing
+    /// started.
+    @Test func aSecondPickWhileTheOldStreamClosesRetargetsTheSwitch() { preservingAppDefaults {
+        let model = AppModel()
+        model.isStreaming = true
+        model.activeStreamHostID = "tower"
+        defer { StreamWindow.switchingHosts = false }
+        model.switchHost(to: host("den"))
+        #expect(StreamWindow.switchingHosts)
+        model.switchHost(to: host("attic"))
+        #expect(model.pendingHostSwitch?.hostID == "attic")
+        // Back to the machine that was playing: it reopens there.
+        model.switchHost(to: host("tower"))
+        #expect(model.pendingHostSwitch?.hostID == "tower")
+    } }
+
+    /// The switch opens on the machine it was asked for, whatever page is
+    /// being looked at when the old stream finishes closing.
+    @Test func theSwitchGoesWhereItWasAsked() { preservingAppDefaults {
+        let model = AppModel()
+        let den = host("den")
+        model.hosts = [host("tower"), den]
+        model.selectedHost = model.hosts[0]
+        model.startPendingHostSwitch(.init(hostID: "den", inPictureInPicture: true, requestedAt: Date()))
+        #expect(model.selectedHost?.id == "den")
+        // Too late is still too late.
+        model.selectedHost = model.hosts[0]
+        model.startPendingHostSwitch(.init(hostID: "den", inPictureInPicture: true,
+                                           requestedAt: Date().addingTimeInterval(-AppModel.hostSwitchWindowSeconds - 1)))
+        #expect(model.selectedHost?.id == "tower")
     } }
 
     @Test func switchingInAWindowClosesItAndReopens() { preservingAppDefaults {

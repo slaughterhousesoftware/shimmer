@@ -50,7 +50,7 @@ extension AppModel {
             default: occupant = nil
             }
             if Self.isTakeover(occupant: occupant, launching: app.name) {
-                pendingTakeover = PendingTakeover(app: app, host: host, occupantApp: occupant ?? "")
+                askToTakeOver(PendingTakeover(app: app, host: host, occupantApp: occupant ?? ""))
                 return
             }
             stream(app: app, on: host)
@@ -77,11 +77,54 @@ extension AppModel {
             let occupant = Self.occupantName(currentGameID: fresh.currentGameID, apps: host.apps)
             if Self.isTakeover(occupant: occupant, launching: app.name) {
                 Diag.notice("Takeover check: \(host.displayName, privacy: .private) is running \(occupant ?? "?") - asking before launching \(app.name)", "Stream")
-                self.pendingTakeover = PendingTakeover(app: app, host: host, occupantApp: occupant ?? "")
+                self.askToTakeOver(PendingTakeover(app: app, host: host, occupantApp: occupant ?? ""))
                 return
             }
             self.stream(app: app, on: host)
         }
+    }
+
+    /// Ask before starting an app over the one the PC is running. The main
+    /// window shows the question as its own dialog; with no window open -
+    /// Stream from the menu bar, a Switch PC, the usual way in now that
+    /// Shimmer lives there - there was nowhere for it to appear: the click
+    /// did nothing, later clicks were dropped while the question stood, and
+    /// the dialog popped up whenever the window was next opened. Then it is
+    /// an alert of its own.
+    func askToTakeOver(_ pending: PendingTakeover) {
+        pendingTakeover = pending
+        guard !Self.mainWindowIsVisible else { return }
+        // Next turn: this can be reached from inside the menu's own tracking.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.pendingTakeover == pending, !Self.mainWindowIsVisible else { return }
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Take over the stream?"
+            alert.informativeText = Self.takeoverQuestion(pending)
+            alert.addButton(withTitle: "Take Over").hasDestructiveAction = true
+            alert.addButton(withTitle: "Cancel")
+            NSApp.activate(ignoringOtherApps: true)
+            let answer = alert.runModal()
+            // The window may have opened and answered meanwhile.
+            guard self.pendingTakeover == pending else { return }
+            if answer == .alertFirstButtonReturn {
+                self.confirmPendingTakeover()
+            } else {
+                self.pendingTakeover = nil
+            }
+        }
+    }
+
+    /// Both apps get named: this only comes up when they DIFFER (asking for
+    /// the running app resumes it instead - see requestStream), so "what am
+    /// I losing, and for what" is the whole question being asked.
+    nonisolated static func takeoverQuestion(_ pending: PendingTakeover) -> String {
+        "\(pending.host.displayName) is already streaming \(pending.occupantApp). "
+            + "Starting \(pending.app.name) will quit it and end that session."
+    }
+
+    static var mainWindowIsVisible: Bool {
+        NSApp.windows.contains { $0.identifier?.rawValue == "main" && $0.isVisible }
     }
 
     /// What the takeover dialog calls an app the host reports by an id we
@@ -609,15 +652,22 @@ extension AppModel {
         let streamingElsewhere = isStreaming && activeStreamHostID != host.id
         let inPictureInPicture = nativeStreamPictureInPicture
         selectHost(host)
+        // The old stream is already closing for a switch: it can't be kept,
+        // but where the next one opens still can change. The last pick wins -
+        // back to the machine that was playing included (it reopens there).
+        // Ignored, this ended the stream and started nothing.
+        if StreamWindow.switchingHosts, pendingHostSwitch != nil {
+            pendingHostSwitch?.hostID = host.id
+            return
+        }
         // Back to the PC already playing: drop a switch still connecting.
         if isStreaming, activeStreamHostID == host.id {
             switchWakeTask?.cancel()
             switchWakeTask = nil
-            if !StreamWindow.switchingHosts { pendingHostSwitch = nil }
+            pendingHostSwitch = nil
             return
         }
-        // Once the old stream is ending, the switch is committed.
-        guard streamingElsewhere, !StreamWindow.switchingHosts else { return }
+        guard streamingElsewhere else { return }
         switchWakeTask?.cancel()
         switchWakeTask = nil
         // Never in place: this stream closes - its Picture in Picture window
@@ -634,22 +684,35 @@ extension AppModel {
         // game keeps playing, and connect once it answers.
         Diag.notice("Switching the stream to \(host.displayName, privacy: .private) - waking it first", "Stream")
         switchWakeTask = Task { [weak self] in
-            await self?.wakePlayStationForSwitch(host)
-            guard let self, !Task.isCancelled, self.selectedHost?.id == host.id, self.isStreaming,
+            let ready = await self?.wakePlayStationForSwitch(host) ?? false
+            guard let self, !Task.isCancelled, self.pendingHostSwitch?.hostID == host.id, self.isStreaming,
                   self.activeStreamHostID != host.id, !StreamWindow.switchingHosts else { return }
             self.switchWakeTask = nil
+            guard ready else {
+                // The console never came up: the game that is playing keeps
+                // playing. Closing it for a stream that can't start left the
+                // user with neither.
+                self.pendingHostSwitch = nil
+                self.nativeStreamError = StreamFailureCopy.playStation(.didNotWake, hostName: host.displayName)
+                self.streamErrorHostID = host.id
+                self.markStreamInterruption(hostID: host.id)
+                Diag.error("Switch to \(host.displayName, privacy: .private) dropped - it didn't wake; "
+                    + "the current stream stays", "Stream")
+                return
+            }
             begin()
         }
     }
 
     /// Wake a PS5 that isn't ready, waiting until it answers (up to 40 s).
-    private func wakePlayStationForSwitch(_ host: Host) async {
-        guard let console = playStationConsole(for: host) else { return }
+    /// False when it still isn't ready at the end of the wait.
+    private func wakePlayStationForSwitch(_ host: Host) async -> Bool {
+        guard let console = playStationConsole(for: host) else { return false }
         let status = await PlayStationDiscovery.probe(address: console.address)
-        guard status?.power != .ready, !Task.isCancelled else { return }
+        if status?.power == .ready { return true }
+        guard !Task.isCancelled else { return false }
         Diag.notice("PS5: waking \(console.nickname) before switching to it", "PlayStation")
-        PlayStationDiscovery.wake(console: console)
-        _ = await PlayStationDiscovery.waitUntilReady(address: console.address, timeout: 40)
+        return await PlayStationDiscovery.wakeAndWait(console: console, timeout: Self.playStationWakeSeconds)
     }
 
     /// End the current stream for the pending switch: its PiP window or
@@ -657,6 +720,9 @@ extension AppModel {
     private func beginHostSwitch() {
         guard var next = pendingHostSwitch, isStreaming else { return }
         next.inPictureInPicture = nativeStreamPictureInPicture
+        // The switch's 30 s start now, not at the click: a PS5 that took
+        // most of them to wake had its stream dropped as "too late".
+        next.requestedAt = Date()
         pendingHostSwitch = next
         Diag.notice("Switching the stream now - closing this one, then opening the next"
             + (next.inPictureInPicture ? " in Picture in Picture" : ""), "Stream")
@@ -666,11 +732,17 @@ extension AppModel {
 
     func startPendingHostSwitch(_ next: PendingHostSwitch) {
         StreamWindow.switchingHosts = false
-        guard selectedHost?.id == next.hostID, Date().timeIntervalSince(next.requestedAt) < 30 else {
+        guard Date().timeIntervalSince(next.requestedAt) < Self.hostSwitchWindowSeconds,
+              let target = hosts.first(where: { $0.id == next.hostID }) ?? selectedHost.flatMap({
+                  $0.id == next.hostID ? $0 : nil }) else {
             nativeStreamBackgrounded = false
             nativeStreamPictureInPicture = false
             return
         }
+        // The switch goes where it was asked to go: looking at another
+        // machine's page while the old stream closed is not a change of mind
+        // (that is another Switch PC, which re-targets the pending switch).
+        if selectedHost?.id != target.id { selectHost(target) }
         if next.inPictureInPicture {
             pictureInPictureLaunchRequestedAt = Date()
         } else {
@@ -679,6 +751,8 @@ extension AppModel {
         }
         streamDefaultApp()
     }
+
+    nonisolated static let hostSwitchWindowSeconds: TimeInterval = 30
 
     func endStream() {
         // Ending the stream yourself while a switch is still waking its PS5

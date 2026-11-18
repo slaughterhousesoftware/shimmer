@@ -377,14 +377,19 @@ final class AppModel {
     /// with a stop, so its control requests abort instead of timing out.
     @ObservationIgnored var streamStartTask: Task<AsyncStream<StreamEvent>, Error>?
     struct PendingHostSwitch {
-        let hostID: String
+        /// The machine the next stream opens on. A second Switch PC while
+        /// the old stream is still closing changes it (the last pick wins).
+        var hostID: String
         var inPictureInPicture: Bool
-        let requestedAt: Date
+        /// When the old stream began to close - the switch's clock, so a PS5
+        /// that took its time waking doesn't use it up first.
+        var requestedAt: Date
     }
+    nonisolated static let pictureInPictureLaunchWindowSeconds: TimeInterval = 60
     func consumePictureInPictureLaunch() -> Bool {
         defer { pictureInPictureLaunchRequestedAt = nil }
         guard let at = pictureInPictureLaunchRequestedAt else { return false }
-        return Date().timeIntervalSince(at) < 60
+        return Date().timeIntervalSince(at) < Self.pictureInPictureLaunchWindowSeconds
     }
     /// Force macOS Game Mode while a stream is live with a Bluetooth controller
     /// (GameModeBoost): it doubles the controller's Bluetooth polling, in full

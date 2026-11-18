@@ -91,11 +91,7 @@ struct MainWindow: View {
             Button("Take over", role: .destructive) { model.confirmPendingTakeover() }
             Button("Cancel", role: .cancel) { model.pendingTakeover = nil }
         } message: { pending in
-            // Both apps get named: this only fires when they DIFFER (asking for
-            // the running app resumes it instead - see requestStream), so "what
-            // am I losing, and for what" is the whole question being asked.
-            Text("\(pending.host.displayName) is already streaming \(pending.occupantApp). "
-                 + "Starting \(pending.app.name) will quit it and end that session.")
+            Text(AppModel.takeoverQuestion(pending))
         }
         .background {
             // ⌘1-⌘9 host switching (multi-PC households only) - invisible,
