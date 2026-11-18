@@ -212,8 +212,12 @@ public final class StreamPictureInPicture: NSObject {
             if !isStopping {
                 stoppingProgrammatically = true
                 isStopping = true
-                close(controller)
+                // Armed first: AVKit answers willStop inside the call, and
+                // that is what stands the watchdog down. (Armed after, it
+                // stayed up until didStop, ~0.47 s later - a slow close would
+                // have had it ask again, the public way, in mid-fade.)
                 armStopWatchdog(attempt: 1)
+                close(controller)
             }
         }
         pausedState.withLock { $0 = false }
