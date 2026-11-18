@@ -24,9 +24,7 @@ struct ControllerTabPage: View {
     var body: some View {
         @Bindable var settings = ControllerSettings.shared
         Form {
-            Section {
-                ControllerList()
-            }
+            ControllerList()
             Section {
                 Picker("Vibration", selection: $settings.vibration) {
                     ForEach(ControllerSettings.Vibration.allCases) { Text($0.displayName).tag($0) }
@@ -105,8 +103,9 @@ struct ControllerEntry: Identifiable {
     }
 }
 
-/// The connected pads, one row each; none: one row saying so. Every row
-/// has a button that opens System Settings' Game Controllers.
+/// The connected pads, one row each, in a card of their own; with none
+/// connected there is no card at all, and the tab starts at Feedback. Every
+/// row has a button that opens System Settings' Game Controllers.
 private struct ControllerList: View {
     @Environment(AppModel.self) private var model
 
@@ -120,11 +119,11 @@ private struct ControllerList: View {
 
     var body: some View {
         let entries = entries
-        if entries.isEmpty {
-            ControllerRow(kind: "generic", name: "No controller connected", entry: nil)
-        } else {
-            ForEach(entries) { entry in
-                ControllerRow(kind: entry.kind, name: entry.name, entry: entry)
+        if !entries.isEmpty {
+            Section {
+                ForEach(entries) { entry in
+                    ControllerRow(entry: entry)
+                }
             }
         }
     }
@@ -134,32 +133,27 @@ private struct ControllerList: View {
 /// "Connected – [battery] Battery 85%", and a button to that pane. Laid out
 /// like a machine's Stream row.
 private struct ControllerRow: View {
-    let kind: String
-    let name: String
-    let entry: ControllerEntry?
+    let entry: ControllerEntry
 
     var body: some View {
         HStack(spacing: RowIcon.gap) {
-            RowIcon(asset: ControllerArt.assetName(kind: kind), side: 30, column: 34)
-                .foregroundStyle(entry == nil ? .tertiary : .primary)
+            RowIcon(asset: ControllerArt.assetName(kind: entry.kind), side: 30, column: 34)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).lineLimit(1)
-                if let entry {
-                    HStack(spacing: 4) {
-                        Text("Connected")
-                        if let batteryText = entry.batteryText, let symbol = entry.batterySymbol {
-                            Text("–")
-                            Image(systemName: symbol)
-                            Text(batteryText)
-                        }
+                Text(entry.name).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text("Connected")
+                    if let batteryText = entry.batteryText, let symbol = entry.batterySymbol {
+                        Text("–")
+                        Image(systemName: symbol)
+                        Text(batteryText)
                     }
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(entry.accessibilityStatus)
                 }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(entry.accessibilityStatus)
             }
             .accessibilityElement(children: .combine)
             Spacer(minLength: 8)
