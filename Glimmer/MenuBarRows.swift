@@ -81,7 +81,7 @@ final class MenuVolumeSlider: NSView {
 enum MenuHostMark {
     static let diameter: CGFloat = 26
 
-    enum Look { case current, off, offHighlighted }
+    enum Look { case current, off }
 
     /// The mark's artwork and its brand's disc colours (two for a gradient).
     struct Art {
@@ -132,10 +132,6 @@ enum MenuHostMark {
         case .off:
             disc = [dark ? NSColor.white.withAlphaComponent(0.12) : NSColor.black.withAlphaComponent(0.08)]
             ink = dark ? NSColor.white.withAlphaComponent(0.55) : NSColor.black.withAlphaComponent(0.5)
-        case .offHighlighted:
-            // On the menu's blue highlight: white, as a template image turns.
-            disc = [NSColor.white.withAlphaComponent(0.22)]
-            ink = .white
         }
 
         // The sidebar's size for this mark's ink, scaled to the menu's disc.
@@ -227,50 +223,50 @@ enum MenuHostMark {
     }
 }
 
-/// A server in the Servers list: its round mark and its name, highlighted the
-/// way every other row of the menu is (the menu's own blue selection, the
-/// name in white), and a click that switches without closing the menu, as
-/// the Sound menu's outputs do. The controller says when it's highlighted
-/// (`isHovered`, from NSMenuDelegate's willHighlight): a custom row isn't
-/// redrawn by the menu when the highlight moves on, which left the grey
-/// band behind on the last row the pointer crossed.
-final class MenuServerRow: NSView {
-    private let title: String
-    private let marks: (normal: NSImage, highlighted: NSImage)
+/// A custom menu row with the hover of Apple's own menu bar menus (Focus,
+/// Sound, Wi-Fi): a soft grey band under the pointer, the text staying as it
+/// is - not the accent-blue bar AppKit gives a plain menu item, which no
+/// Apple menu bar menu shows (Kevin, 2026-11-18). Measured off the Focus
+/// menu at 2x: the band is the row's full height, ~6 pt in from each side,
+/// its corners ~9 pt on a 32 pt row.
+///
+/// The controller says when it's highlighted (`isHovered`, from
+/// NSMenuDelegate's willHighlight): a custom row isn't redrawn by the menu
+/// when the highlight moves on, which left the band behind on the last row
+/// the pointer crossed. Subclasses draw their content (`drawContent`).
+class MenuRowView: NSView {
     private let onPick: () -> Void
-    private let selection = NSVisualEffectView()
+    private let hover = HoverFill()
     private let content = Content()
-
-    static let height: CGFloat = 32
 
     var isHovered = false {
         didSet {
             guard isHovered != oldValue else { return }
-            selection.isHidden = !isHovered
+            hover.isHidden = !isHovered
             content.needsDisplay = true
         }
     }
 
-    init(title: String, marks: (normal: NSImage, highlighted: NSImage), onPick: @escaping () -> Void) {
-        self.title = title
-        self.marks = marks
+    /// The hover band, drawn with vibrancy so it darkens whatever the
+    /// menu's glass shows through, as the system's own does.
+    private final class HoverFill: NSView {
+        override var allowsVibrancy: Bool { true }
+        override func draw(_ dirtyRect: NSRect) {
+            let radius: CGFloat = bounds.height >= 30 ? 9 : 7
+            NSColor.quaternaryLabelColor.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        }
+    }
+
+    init(height: CGFloat, accessibilityTitle: String, onPick: @escaping () -> Void) {
         self.onPick = onPick
-        super.init(frame: .zero)
-        // The menu sizes itself to its widest row; the view then stretches.
-        setFrameSize(intrinsicContentSize)
+        super.init(frame: NSRect(x: 0, y: 0, width: 100, height: height))
         autoresizingMask = [.width]
 
-        // The menu's own selection material - the blue (accent) band the
-        // plain rows above and below get, 5 pt in from each side.
-        selection.material = .selection
-        selection.state = .active
-        selection.isEmphasized = true
-        selection.blendingMode = .behindWindow
-        selection.maskImage = Self.selectionMask
-        selection.isHidden = true
-        selection.frame = bounds.insetBy(dx: 5, dy: 0)
-        selection.autoresizingMask = [.width, .height]
-        addSubview(selection)
+        hover.isHidden = true
+        hover.frame = bounds.insetBy(dx: 6, dy: 0)
+        hover.autoresizingMask = [.width, .height]
+        addSubview(hover)
 
         content.row = self
         content.frame = bounds
@@ -279,54 +275,26 @@ final class MenuServerRow: NSView {
 
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel(title)
+        setAccessibilityLabel(accessibilityTitle)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// The selection's corners, measured off a plain row's highlight on
-    /// macOS 27 (6 pt).
-    private static let selectionMask: NSImage = {
-        let radius: CGFloat = 6
-        let side = radius * 2 + 1
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
-    }()
+    /// Called once the subclass is set up: the menu sizes itself to its
+    /// widest row, then the row stretches to the menu.
+    func sizeToContent() { setFrameSize(intrinsicContentSize) }
 
-    /// Wide enough for the name, so the menu sizes itself around it.
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: 16 + MenuHostMark.diameter + 8 + titleSize(highlighted: false).width + 24, height: Self.height)
-    }
+    func drawContent(in bounds: NSRect) {}
 
-    fileprivate func titleAttributes(highlighted: Bool) -> [NSAttributedString.Key: Any] {
-        [.font: NSFont.menuFont(ofSize: 0),
-         .foregroundColor: highlighted ? NSColor.selectedMenuItemTextColor : NSColor.labelColor]
-    }
+    static let titleAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.labelColor,
+    ]
 
-    fileprivate func titleSize(highlighted: Bool) -> NSSize {
-        (title as NSString).size(withAttributes: titleAttributes(highlighted: highlighted))
-    }
-
-    /// The disc and the name, above the selection band.
+    /// The content, above the hover band.
     private final class Content: NSView {
-        weak var row: MenuServerRow?
+        weak var row: MenuRowView?
 
-        override func draw(_ dirtyRect: NSRect) {
-            guard let row else { return }
-            let lit = row.isHovered
-            let d = MenuHostMark.diameter
-            (lit ? row.marks.highlighted : row.marks.normal)
-                .draw(in: NSRect(x: 16, y: ((bounds.height - d) / 2).rounded(), width: d, height: d))
-            let size = row.titleSize(highlighted: lit)
-            (row.title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
-                                         withAttributes: row.titleAttributes(highlighted: lit))
-        }
+        override func draw(_ dirtyRect: NSRect) { row?.drawContent(in: bounds) }
 
         // The row takes the clicks.
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -344,5 +312,78 @@ final class MenuServerRow: NSView {
     override func accessibilityPerformPress() -> Bool {
         onPick()
         return true
+    }
+}
+
+/// A plain command row - a title and, if it has one, its shortcut at the
+/// trailing edge - drawn by Shimmer so it hovers grey like the rest. A
+/// click closes the menu and then sends the item's action, as a plain item
+/// does.
+final class MenuActionRow: MenuRowView {
+    private let title: String
+    private let shortcut: String?
+
+    static let height: CGFloat = 24
+
+    init(title: String, shortcut: String?, onPick: @escaping () -> Void) {
+        self.title = title
+        self.shortcut = shortcut
+        super.init(height: Self.height, accessibilityTitle: title, onPick: onPick)
+        sizeToContent()
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    private static let shortcutAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.tertiaryLabelColor,
+    ]
+
+    override var intrinsicContentSize: NSSize {
+        let text = (title as NSString).size(withAttributes: Self.titleAttributes).width
+        let key = shortcut.map { ($0 as NSString).size(withAttributes: Self.shortcutAttributes).width + 24 } ?? 0
+        return NSSize(width: 16 + text + key + 24, height: Self.height)
+    }
+
+    override func drawContent(in bounds: NSRect) {
+        let size = (title as NSString).size(withAttributes: Self.titleAttributes)
+        (title as NSString).draw(at: NSPoint(x: 16, y: (bounds.height - size.height) / 2),
+                                 withAttributes: Self.titleAttributes)
+        if let shortcut {
+            let s = (shortcut as NSString).size(withAttributes: Self.shortcutAttributes)
+            (shortcut as NSString).draw(at: NSPoint(x: bounds.maxX - 16 - s.width, y: (bounds.height - s.height) / 2),
+                                        withAttributes: Self.shortcutAttributes)
+        }
+    }
+}
+
+/// A server in the Servers list: its round mark and its name, and a click
+/// that switches without closing the menu, as the Sound menu's outputs do.
+final class MenuServerRow: MenuRowView {
+    private let title: String
+    private let mark: NSImage
+
+    static let height: CGFloat = 32
+
+    init(title: String, mark: NSImage, onPick: @escaping () -> Void) {
+        self.title = title
+        self.mark = mark
+        super.init(height: Self.height, accessibilityTitle: title, onPick: onPick)
+        sizeToContent()
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Wide enough for the name, so the menu sizes itself around it.
+    override var intrinsicContentSize: NSSize {
+        let text = (title as NSString).size(withAttributes: Self.titleAttributes).width
+        return NSSize(width: 16 + MenuHostMark.diameter + 8 + text + 24, height: Self.height)
+    }
+
+    override func drawContent(in bounds: NSRect) {
+        let d = MenuHostMark.diameter
+        mark.draw(in: NSRect(x: 16, y: ((bounds.height - d) / 2).rounded(), width: d, height: d))
+        let size = (title as NSString).size(withAttributes: Self.titleAttributes)
+        (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
+                                 withAttributes: Self.titleAttributes)
     }
 }

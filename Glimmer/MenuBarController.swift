@@ -317,14 +317,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// redraw a custom row when the highlight leaves it - so the controller
     /// tells each row, for the pointer and the arrow keys alike.
     func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
-        let row = item?.view as? MenuServerRow
+        let row = item?.view as? MenuRowView
         guard row !== hoveredRow else { return }
         hoveredRow?.isHovered = false
         row?.isHovered = true
         hoveredRow = row
     }
 
-    private weak var hoveredRow: MenuServerRow?
+    private weak var hoveredRow: MenuRowView?
 
     private var menuIsOpen = false
 
@@ -431,11 +431,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 let row = action(host.displayName, #selector(switchHost))
                 row.representedObject = host.id
                 let appearance = menu.effectiveAppearance
-                let normal = MenuHostMark.image(for: host, look: host.id == current ? .current : .off,
-                                                appearance: appearance)
-                let lit = host.id == current ? normal
-                    : MenuHostMark.image(for: host, look: .offHighlighted, appearance: appearance)
-                row.view = MenuServerRow(title: host.displayName, marks: (normal, lit)) {
+                let mark = MenuHostMark.image(for: host, look: host.id == current ? .current : .off,
+                                              appearance: appearance)
+                row.view = MenuServerRow(title: host.displayName, mark: mark) {
                     [weak self] in self?.pickServer(host.id)
                 }
                 menu.addItem(row)
@@ -565,10 +563,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Item helpers
 
+    /// A command row. Drawn by Shimmer (MenuActionRow) so its hover is the
+    /// soft grey of Apple's own menu bar menus, not AppKit's accent-blue bar;
+    /// the item keeps its action and shortcut for the keyboard. The image
+    /// is for accessibility only - macOS 27 hides a status menu item's image
+    /// unless asked, and the rows have always shown without one.
     private func action(_ title: String, _ selector: Selector, key: String = "", image: NSImage? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
         item.target = self
         item.image = image
+        let shortcut = key.isEmpty ? nil : "⌘" + key.uppercased()
+        item.view = MenuActionRow(title: title, shortcut: shortcut) { [weak self, weak item] in
+            // A plain item's click: the menu closes, then the action runs.
+            guard let item else { return }
+            item.menu?.cancelTracking()
+            DispatchQueue.main.async { NSApp.sendAction(selector, to: self, from: item) }
+        }
         return item
     }
 

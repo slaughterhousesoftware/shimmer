@@ -433,12 +433,13 @@ struct MenuServerRowTests {
     }
 
     @Test func aRowsHighlightGoesWhenThePointerMovesOn() {
-        let row = MenuServerRow(title: "PS5", marks: (NSImage(), NSImage())) {}
-        let selection = row.subviews.compactMap { $0 as? NSVisualEffectView }.first
-        #expect(selection?.isHidden == true)
+        let row = MenuServerRow(title: "PS5", mark: NSImage()) {}
+        // The grey band is the row's first subview, hidden until hovered.
+        let band = row.subviews.first
+        #expect(band?.isHidden == true)
         row.isHovered = true
-        #expect(selection?.isHidden == false)
+        #expect(band?.isHidden == false)
         row.isHovered = false
-        #expect(selection?.isHidden == true)
+        #expect(band?.isHidden == true)
     }
 }
