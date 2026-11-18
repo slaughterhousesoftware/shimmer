@@ -18,7 +18,9 @@ final class MenuVolumeSlider: NSView {
 
     init(level: Double, onChange: @escaping (Double) -> Void) {
         self.onChange = onChange
-        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 30))
+        // 26 pt: the slider's middle 18.5 pt above the separator's line, as
+        // the Sound menu's.
+        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 26))
         autoresizingMask = [.width]
         // The Sound menu's speakers, measured off it at 2x (macOS 27): the
         // loud one 21 x 15 pt - the symbols at 15.5 pt - in the secondary
@@ -45,15 +47,15 @@ final class MenuVolumeSlider: NSView {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
-        // 16 pt in from the edge lines the quiet speaker up with the titles of
-        // the plain rows (measured off a real menu at 2x).
+        // Control Center's inset lines the quiet speaker up with the rows'
+        // discs and titles.
         NSLayoutConstraint.activate([
-            quiet.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            quiet.leadingAnchor.constraint(equalTo: leadingAnchor, constant: MenuRowView.contentInset),
             quiet.centerYAnchor.constraint(equalTo: centerYAnchor),
             slider.leadingAnchor.constraint(equalTo: quiet.trailingAnchor, constant: 6),
             slider.centerYAnchor.constraint(equalTo: centerYAnchor),
             loud.leadingAnchor.constraint(equalTo: slider.trailingAnchor, constant: 6),
-            loud.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            loud.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuRowView.contentInset),
             loud.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
@@ -67,7 +69,7 @@ final class MenuVolumeSlider: NSView {
 /// (HostAvatar) for the machine in use - its brand's disc with the mark in
 /// white (PlayStation blue, Bazzite's blue-to-purple) - and, for the rest,
 /// the same mark at the same size and place in grey, as Control Center's
-/// Focus list draws what's off (an 8% grey disc, a 50% grey mark; measured
+/// Focus list draws what's off (a 9% grey disc, a 50% grey mark; measured
 /// off a macOS 27 Focus menu at 2x, 2026-11-18). 26 pt, like Focus's discs.
 ///
 /// Sized and placed by the sidebar's rule, which Kevin approved there
@@ -130,7 +132,7 @@ enum MenuHostMark {
             // Tux stays black on its yellow, as in Settings.
             ink = mark == .icon(.linux) ? .black : .white
         case .off:
-            disc = [dark ? NSColor.white.withAlphaComponent(0.12) : NSColor.black.withAlphaComponent(0.08)]
+            disc = [dark ? NSColor.white.withAlphaComponent(0.12) : NSColor.black.withAlphaComponent(0.09)]
             ink = dark ? NSColor.white.withAlphaComponent(0.55) : NSColor.black.withAlphaComponent(0.5)
         }
 
@@ -227,8 +229,12 @@ enum MenuHostMark {
 /// Sound, Wi-Fi): a soft grey band under the pointer, the text staying as it
 /// is - not the accent-blue bar AppKit gives a plain menu item, which no
 /// Apple menu bar menu shows (Kevin, 2026-11-18). Measured off the Focus
-/// menu at 2x: the band is the row's full height, ~6 pt in from each side,
-/// its corners ~9 pt on a 32 pt row.
+/// menu at 2x: the band is the row's full height, 7 pt in from each side,
+/// 10 pt corners on a 32 pt row, ~8% darker than the menu.
+///
+/// Every row lays out on Control Center's grid (measured off the Sound and
+/// Focus menus at 2x, 2026-11-18): content 14 pt in from the row's edges
+/// (`contentInset`) - discs, titles, headers and separators all start there.
 ///
 /// The controller says when it's highlighted (`isHovered`, from
 /// NSMenuDelegate's willHighlight): a custom row isn't redrawn by the menu
@@ -252,10 +258,21 @@ class MenuRowView: NSView {
     private final class HoverFill: NSView {
         override var allowsVibrancy: Bool { true }
         override func draw(_ dirtyRect: NSRect) {
-            let radius: CGFloat = bounds.height >= 30 ? 9 : 7
-            NSColor.quaternaryLabelColor.setFill()
+            let radius: CGFloat = bounds.height >= 30 ? 10 : 7
+            MenuRowView.hoverColour.setFill()
             NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
         }
+    }
+
+    /// Control Center's content inset: where discs, titles, headers and
+    /// separators start, from either side of the row.
+    static let contentInset: CGFloat = 14
+
+    /// The band's grey: ~8% over the menu, as measured (light); a light
+    /// band of the same weight in the dark.
+    static let hoverColour = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.10) : NSColor.black.withAlphaComponent(0.075)
     }
 
     init(height: CGFloat, accessibilityTitle: String, onPick: @escaping () -> Void) {
@@ -264,7 +281,7 @@ class MenuRowView: NSView {
         autoresizingMask = [.width]
 
         hover.isHidden = true
-        hover.frame = bounds.insetBy(dx: 6, dy: 0)
+        hover.frame = bounds.insetBy(dx: 7, dy: 0)
         hover.autoresizingMask = [.width, .height]
         addSubview(hover)
 
@@ -326,7 +343,8 @@ final class MenuActionRow: MenuRowView {
     private let title: String
     private let shortcut: String?
 
-    static let height: CGFloat = 24
+    /// Control Center's footer rows (Sound Settings…): 22 pt.
+    static let height: CGFloat = 22
 
     init(title: String, shortcut: String?, onPick: @escaping () -> Void) {
         self.title = title
@@ -344,16 +362,17 @@ final class MenuActionRow: MenuRowView {
     override var intrinsicContentSize: NSSize {
         let text = (title as NSString).size(withAttributes: Self.titleAttributes).width
         let key = shortcut.map { ($0 as NSString).size(withAttributes: Self.shortcutAttributes).width + 24 } ?? 0
-        return NSSize(width: 16 + text + key + 24, height: Self.height)
+        return NSSize(width: Self.contentInset + text + key + 24, height: Self.height)
     }
 
     override func drawContent(in bounds: NSRect) {
         let size = (title as NSString).size(withAttributes: Self.titleAttributes)
-        (title as NSString).draw(at: NSPoint(x: 16, y: (bounds.height - size.height) / 2),
+        (title as NSString).draw(at: NSPoint(x: Self.contentInset, y: (bounds.height - size.height) / 2),
                                  withAttributes: Self.titleAttributes)
         if let shortcut {
             let s = (shortcut as NSString).size(withAttributes: Self.shortcutAttributes)
-            (shortcut as NSString).draw(at: NSPoint(x: bounds.maxX - 16 - s.width, y: (bounds.height - s.height) / 2),
+            (shortcut as NSString).draw(at: NSPoint(x: bounds.maxX - Self.contentInset - s.width,
+                                                    y: (bounds.height - s.height) / 2),
                                         withAttributes: Self.shortcutAttributes)
         }
     }
@@ -364,7 +383,21 @@ final class MenuActionRow: MenuRowView {
 /// The one in use carries a chevron, as the AirPods in use do: a click
 /// opens its stream settings under it, and the chevron turns from right to
 /// down with the rows (MenuDisclosureList sets `disclosureProgress`).
+///
+/// Laid out as the Sound menu's AirPods row, measured at 2x off Kevin's
+/// recording (2026-11-18): a 32 pt row - two lines or one - the 26 pt disc
+/// 14 pt in, the name 8 pt after it; with a second line, the name's
+/// baseline 14.5 pt from the top and the line's 28.5 pt, the line in 11 pt
+/// secondary grey with a solid glyph before each value, its ink 10 pt tall
+/// and centred on the figures, 6 pt from glyph to figure and 10.5 pt from
+/// figure to the next glyph. The chevron's ink 18.5 pt in from the right.
 final class MenuServerRow: MenuRowView {
+    /// One value on the second line: its glyph (an SF Symbol) and text.
+    struct Stat: Equatable {
+        var symbol: String?
+        var text: String
+    }
+
     private let title: String
     private let mark: NSImage
     let hasDisclosure: Bool
@@ -378,66 +411,115 @@ final class MenuServerRow: MenuRowView {
         }
     }
 
-    /// The second line under the name, as the AirPods' batteries sit under
-    /// theirs: the server streaming now shows the stream's numbers there
-    /// (MenuServerRow.statsLine), refreshed while the menu is open.
-    var detail: NSAttributedString? {
+    /// The second line, as the AirPods' batteries sit under their name: the
+    /// server streaming now shows the stream's numbers there, refreshed
+    /// while the menu is open. Empty: one line.
+    var stats: [Stat] = [] {
         didSet {
+            guard stats != oldValue else { return }
             redrawContent()
-            setAccessibilityValue(detail?.string)
+            setAccessibilityValue(stats.isEmpty ? nil : stats.map(\.text).joined(separator: ", "))
         }
     }
 
     static let height: CGFloat = 32
-    /// With a second line - the AirPods row's height.
-    static let twoLineHeight: CGFloat = 42
+    private static let discX: CGFloat = MenuRowView.contentInset
+    private static let textX: CGFloat = MenuRowView.contentInset + MenuHostMark.diameter + 8
 
-    /// `twoLines`: the row keeps room for a `detail` line (its height is
-    /// fixed when it's made; the line's text can change after).
-    init(title: String, mark: NSImage, hasDisclosure: Bool = false, twoLines: Bool = false,
-         onPick: @escaping () -> Void) {
+    init(title: String, mark: NSImage, hasDisclosure: Bool = false, onPick: @escaping () -> Void) {
         self.title = title
         self.mark = mark
         self.hasDisclosure = hasDisclosure
-        super.init(height: twoLines ? Self.twoLineHeight : Self.height, accessibilityTitle: title, onPick: onPick)
+        super.init(height: Self.height, accessibilityTitle: title, onPick: onPick)
         if hasDisclosure { setAccessibilityExpanded(false) }
         sizeToContent()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Wide enough for the name, so the menu sizes itself around it.
+    /// Wide enough for the name and its line, so the menu sizes itself
+    /// around them.
     override var intrinsicContentSize: NSSize {
         let text = (title as NSString).size(withAttributes: Self.titleAttributes).width
-        let line = detail.map { $0.size().width } ?? 0
-        return NSSize(width: 16 + MenuHostMark.diameter + 8 + max(text, line) + (hasDisclosure ? 44 : 24),
-                      height: frame.height)
+        return NSSize(width: Self.textX + max(text, statsWidth) + (hasDisclosure ? 40 : 20), height: Self.height)
+    }
+
+    // MARK: Drawing
+
+    static let statFont = NSFont.systemFont(ofSize: 11)
+    private static var statAttributes: [NSAttributedString.Key: Any] {
+        [.font: statFont, .foregroundColor: NSColor.secondaryLabelColor]
+    }
+
+    /// A text's ink, from its drawing origin: where the first glyph's ink
+    /// starts and how wide it runs.
+    private static func ink(of text: String) -> (left: CGFloat, width: CGFloat) {
+        let bounds = NSAttributedString(string: text, attributes: [.font: statFont])
+            .boundingRect(with: .zero, options: [.usesLineFragmentOrigin, .usesDeviceMetrics])
+        return (bounds.minX, bounds.width)
+    }
+
+    var statsWidth: CGFloat {
+        var x: CGFloat = 1
+        for (i, stat) in stats.enumerated() {
+            if i > 0 { x += 10.5 }
+            if let symbol = stat.symbol, let glyph = MenuStatGlyph.image(symbol) { x += glyph.size.width + 6 }
+            x += Self.ink(of: stat.text).width
+        }
+        return x
+    }
+
+    override func drawContent(in bounds: NSRect) {
+        let d = MenuHostMark.diameter
+        mark.draw(in: NSRect(x: Self.discX, y: ((bounds.height - d) / 2).rounded(), width: d, height: d))
+        let font = Self.titleAttributes[.font] as? NSFont ?? .menuFont(ofSize: 0)
+        if stats.isEmpty {
+            let size = (title as NSString).size(withAttributes: Self.titleAttributes)
+            (title as NSString).draw(at: NSPoint(x: Self.textX, y: (bounds.height - size.height) / 2),
+                                     withAttributes: Self.titleAttributes)
+        } else {
+            // Baselines 14.5 and 28.5 pt down from the row's top.
+            (title as NSString).draw(at: NSPoint(x: Self.textX, y: bounds.maxY - 14.5 + font.descender),
+                                     withAttributes: Self.titleAttributes)
+            drawStats(baseline: bounds.maxY - 28.5)
+        }
+        if hasDisclosure { drawChevron(in: bounds) }
+    }
+
+    private func drawStats(baseline: CGFloat) {
+        let font = Self.statFont
+        // The glyphs' ink centred on the figures' (their cap height's middle).
+        let middle = baseline + font.capHeight / 2
+        // The first glyph's ink under the name's first letter.
+        var x = Self.textX + 1
+        for (i, stat) in stats.enumerated() {
+            if i > 0 { x += 10.5 }
+            if let symbol = stat.symbol, let glyph = MenuStatGlyph.image(symbol) {
+                let s = glyph.size
+                MenuStatGlyph.draw(glyph, in: NSRect(x: x, y: middle - s.height / 2, width: s.width, height: s.height),
+                                   colour: .secondaryLabelColor)
+                x += s.width + 6
+            }
+            let ink = Self.ink(of: stat.text)
+            (stat.text as NSString).draw(at: NSPoint(x: x - ink.left, y: baseline + font.descender),
+                                         withAttributes: Self.statAttributes)
+            x += ink.width
+        }
     }
 
     private static let chevron: NSImage? = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)?
         .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
             .applying(.init(paletteColors: [.secondaryLabelColor])))
 
-    override func drawContent(in bounds: NSRect) {
-        let d = MenuHostMark.diameter
-        mark.draw(in: NSRect(x: 16, y: ((bounds.height - d) / 2).rounded(), width: d, height: d))
-        let size = (title as NSString).size(withAttributes: Self.titleAttributes)
-        if let detail, bounds.height >= Self.twoLineHeight {
-            // The name over its line, the pair centred on the row.
-            let lineHeight = detail.size().height, gap: CGFloat = 1
-            let top = ((bounds.height + size.height + gap + lineHeight) / 2).rounded()
-            (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: top - size.height), withAttributes: Self.titleAttributes)
-            detail.draw(at: NSPoint(x: 16 + d + 8, y: top - size.height - gap - lineHeight))
-        } else {
-            (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
-                                     withAttributes: Self.titleAttributes)
-        }
-        guard hasDisclosure, let chevron = Self.chevron else { return }
+    private func drawChevron(in bounds: NSRect) {
+        guard let chevron = Self.chevron else { return }
         // The Sound menu's chevron: one glyph, turned about its centre -
-        // right when closed, down when open (clockwise, as it opens).
+        // right when closed, down when open (clockwise, as it opens). Its
+        // ink 18.5 pt in from the right and half a point below the row's
+        // middle, as measured.
         let s = chevron.size
-        // At rest exactly where the fixed glyph sat (whole points vertically).
-        let centre = NSPoint(x: bounds.maxX - 18 - s.width / 2, y: ((bounds.height - s.height) / 2).rounded() + s.height / 2)
+        let centre = NSPoint(x: bounds.maxX - 17.5 - s.width / 2,
+                             y: ((bounds.height - s.height) / 2).rounded() + s.height / 2 - 1)
         NSGraphicsContext.saveGraphicsState()
         let turn = NSAffineTransform()
         turn.translateX(by: centre.x, yBy: centre.y)
@@ -448,28 +530,109 @@ final class MenuServerRow: MenuRowView {
     }
 }
 
-extension MenuServerRow {
-    /// The AirPods' battery line, for a stream: a small glyph, its number;
-    /// a small glyph, its number - in the secondary grey.
-    static func statsLine(_ items: [(symbol: String, text: String)]) -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: 11)
-        let colour = NSColor.secondaryLabelColor
-        let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium).applying(.init(paletteColors: [colour]))
-        let line = NSMutableAttributedString()
-        for (i, item) in items.enumerated() {
-            if i > 0 { line.append(NSAttributedString(string: "   ", attributes: [.font: font])) }
-            if let image = NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(config) {
-                let attachment = NSTextAttachment()
-                attachment.image = image
-                attachment.bounds = NSRect(x: 0, y: ((font.capHeight - image.size.height) / 2).rounded(),
-                                           width: image.size.width, height: image.size.height)
-                line.append(NSAttributedString(attachment: attachment))
-                line.append(NSAttributedString(string: " ", attributes: [.font: font]))
+/// The small solid glyphs of a server's second line, cut to their ink and
+/// sized to the AirPods' (10 pt tall), so every glyph sits exactly where
+/// the measurements put it whatever padding its symbol carries.
+@MainActor
+enum MenuStatGlyph {
+    static let inkHeight: CGFloat = 10
+    private static var cache: [String: NSImage] = [:]
+
+    static func image(_ symbol: String) -> NSImage? {
+        if let cached = cache[symbol] { return cached }
+        guard let source = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 80, weight: .regular)),
+              let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let w = cg.width, h = cg.height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let data = ctx.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h {
+            for x in 0..<w where data[(y * w + x) * 4 + 3] > 16 {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
             }
-            line.append(NSAttributedString(string: item.text, attributes: [.font: font, .foregroundColor: colour]))
         }
-        return line
+        // Bitmap memory runs top down, as CGImage cropping counts.
+        guard maxX >= minX, let cropped = cg.cropping(to: CGRect(x: minX, y: minY, width: maxX - minX + 1,
+                                                                   height: maxY - minY + 1)) else { return nil }
+        let scale = inkHeight / CGFloat(cropped.height)
+        let image = NSImage(cgImage: cropped, size: NSSize(width: CGFloat(cropped.width) * scale, height: inkHeight))
+        cache[symbol] = image
+        return image
+    }
+
+    /// Drawn in a dynamic colour: the glyph filled opaque in the colour,
+    /// then laid down at the colour's alpha - a translucent fill over the
+    /// black artwork would leave the black showing.
+    static func draw(_ glyph: NSImage, in rect: NSRect, colour: NSColor) {
+        let resolved = colour.usingColorSpace(.sRGB) ?? colour
+        let opaque = resolved.withAlphaComponent(1)
+        let tinted = NSImage(size: rect.size, flipped: false) { r in
+            glyph.draw(in: r)
+            opaque.setFill()
+            r.fill(using: .sourceAtop)
+            return true
+        }
+        tinted.draw(in: rect, from: .zero, operation: .sourceOver, fraction: resolved.alphaComponent)
+    }
+}
+
+/// Control Center's separator: a 1 pt line in the separator grey, 10 pt of
+/// row with the line 5.75 pt down - measured off the Sound menu at 2x
+/// (2026-11-18), where NSMenu's own sits taller and 2 pt further in.
+final class MenuSeparatorRow: NSView {
+    private let inset: CGFloat
+
+    init(inset: CGFloat) {
+        self.inset = inset
+        super.init(frame: NSRect(x: 0, y: 0, width: 100, height: 10))
+        autoresizingMask = [.width]
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.separatorColor.setFill()
+        // 5.75 pt from the top, in this unflipped view.
+        NSRect(x: inset, y: bounds.height - 6.25, width: bounds.width - inset * 2, height: 1).fill()
+    }
+}
+
+/// Control Center's section header ("Output" in the Sound menu): 12 pt
+/// semibold in the secondary grey, 14 pt in, its baseline 16.75 pt down a
+/// 23 pt row - measured at 2x (2026-11-18). NSMenu's own is 11 pt in the
+/// tertiary grey, 2 pt further in.
+final class MenuSectionHeaderRow: NSView {
+    private let title: String
+
+    static let attributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor,
+    ]
+    static let height: CGFloat = 23
+    static let baseline: CGFloat = 16.75
+
+    init(_ title: String, height: CGFloat = MenuSectionHeaderRow.height) {
+        self.title = title
+        super.init(frame: NSRect(x: 0, y: 0, width: 100, height: height))
+        autoresizingMask = [.width]
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(title)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let font = Self.attributes[.font] as? NSFont ?? .systemFont(ofSize: 12)
+        // draw(at:) takes the top of the line box in a flipped view.
+        (title as NSString).draw(at: NSPoint(x: MenuRowView.contentInset, y: Self.baseline - font.ascender),
+                                 withAttributes: Self.attributes)
     }
 }
 
@@ -487,7 +650,7 @@ final class MenuSegmentRow: NSView {
     init(labels: [String], selected: Int?, accessibilityTitle: String, onChange: @escaping (Int) -> Void) {
         control = NSSegmentedControl(labels: labels, trackingMode: .selectOne, target: nil, action: nil)
         self.onChange = onChange
-        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 32))
+        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 30))
         autoresizingMask = [.width]
         control.selectedSegment = selected ?? -1
         control.segmentDistribution = .fillEqually
@@ -497,8 +660,8 @@ final class MenuSegmentRow: NSView {
         control.translatesAutoresizingMaskIntoConstraints = false
         addSubview(control)
         NSLayoutConstraint.activate([
-            control.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            control.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            control.leadingAnchor.constraint(equalTo: leadingAnchor, constant: MenuRowView.contentInset),
+            control.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuRowView.contentInset),
             control.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
@@ -553,13 +716,13 @@ final class MenuBitrateRow: NSView {
         // The value's width fixed to its widest, so the slider holds still.
         let widest = ("300 Mbps" as NSString).size(withAttributes: [.font: value.font!]).width + 2
         NSLayoutConstraint.activate([
-            auto.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            auto.leadingAnchor.constraint(equalTo: leadingAnchor, constant: MenuRowView.contentInset),
             auto.centerYAnchor.constraint(equalTo: centerYAnchor),
             slider.leadingAnchor.constraint(equalTo: auto.trailingAnchor, constant: 8),
             slider.centerYAnchor.constraint(equalTo: centerYAnchor),
             value.leadingAnchor.constraint(equalTo: slider.trailingAnchor, constant: 8),
             value.widthAnchor.constraint(equalToConstant: widest),
-            value.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            value.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuRowView.contentInset),
             value.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         showValue()
@@ -598,7 +761,7 @@ final class MenuNoteRow: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func draw(_ dirtyRect: NSRect) {
-        (text as NSString).draw(at: NSPoint(x: 16, y: 5), withAttributes: [
+        (text as NSString).draw(at: NSPoint(x: MenuRowView.contentInset, y: 5), withAttributes: [
             .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
             .foregroundColor: NSColor.secondaryLabelColor,
         ])

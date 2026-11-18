@@ -235,22 +235,24 @@ final class MenuDisclosureList: NSView {
 }
 
 /// The band a server opens under it: the Sound menu's AirPods band, measured
-/// at 2x - full width, ~4.5% darker than the menu, a hairline at its top and
-/// bottom, and between its groups a hairline 4.5 pt in from each side (the
-/// dark-mode fill isn't measured: a guess at the same recess). Each
-/// group is a header in the menu's own section-header type (NSMenu's: 11 pt
-/// semibold, tertiary grey; measured against a real one) over its control.
+/// at 2x off Kevin's recording (2026-11-18) - full width, ~4.5% darker than
+/// the menu, a 1 pt line at its top and bottom, and between its groups a
+/// line 4.5 pt in from each side (the dark-mode fill isn't measured: a guess
+/// at the same recess). Each group is a header in Control Center's type
+/// (MenuSectionHeaderRow: 12 pt semibold, secondary grey) over its control.
+/// The spacing is the band's: the first header's baseline 25.25 pt below the
+/// top, a later one's 20.5 pt below its divider; 7.25 pt from a baseline to
+/// its rows; a divider 5.25 pt under a group's last row; the band's bottom
+/// 5 pt under its last.
 final class MenuDisclosureWell: NSView {
     struct Group {
         var title: String?
         var view: NSView
     }
 
-    private static let topInset: CGFloat = 4, bottomInset: CGFloat = 6
-    private static let headerHeight: CGFloat = 23, gap: CGFloat = 9
     private var dividers: [CGFloat] = []
 
-    /// The hairline under the band, where rows follow it.
+    /// The line under the band, where rows follow it.
     var showsBottomEdge = true { didSet { needsDisplay = true } }
 
     override var isFlipped: Bool { true }
@@ -258,25 +260,31 @@ final class MenuDisclosureWell: NSView {
     init(groups: [Group]) {
         super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 0))
         autoresizingMask = [.width]
-        var y = Self.topInset
+        let baseline = MenuSectionHeaderRow.baseline
+        var y: CGFloat = 0
         for (i, group) in groups.enumerated() {
-            if i > 0, group.title != nil {
-                dividers.append(y + Self.gap / 2)
-                y += Self.gap
-            }
             if let title = group.title {
-                let header = MenuWellHeader(title)
-                header.frame = NSRect(x: 0, y: y, width: frame.width, height: Self.headerHeight)
+                let headerTop: CGFloat
+                if i == 0 {
+                    headerTop = 25.25 - baseline
+                } else {
+                    y += 5.25
+                    dividers.append(y)
+                    headerTop = y + 20.5 - baseline
+                }
+                // The header's row runs on to where its control starts.
+                let header = MenuSectionHeaderRow(title, height: baseline + 7.25)
+                header.frame = NSRect(x: 0, y: headerTop, width: frame.width, height: baseline + 7.25)
                 header.autoresizingMask = [.width]
                 addSubview(header)
-                y += Self.headerHeight
+                y = header.frame.maxY
             }
             group.view.frame = NSRect(x: 0, y: y, width: frame.width, height: group.view.frame.height)
             group.view.autoresizingMask = [.width]
             addSubview(group.view)
             y += group.view.frame.height
         }
-        setFrameSize(NSSize(width: frame.width, height: y + Self.bottomInset))
+        setFrameSize(NSSize(width: frame.width, height: y + 5))
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -292,39 +300,11 @@ final class MenuDisclosureWell: NSView {
     override func draw(_ dirtyRect: NSRect) {
         Self.fill.setFill()
         bounds.fill()
-        let hairline = 1 / (window?.backingScaleFactor ?? 2)
         NSColor.separatorColor.setFill()
-        NSRect(x: 0, y: 0, width: bounds.width, height: hairline).fill()
-        if showsBottomEdge { NSRect(x: 0, y: bounds.height - hairline, width: bounds.width, height: hairline).fill() }
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+        if showsBottomEdge { NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill() }
         for y in dividers {
-            NSRect(x: 4.5, y: y, width: bounds.width - 9, height: hairline).fill()
+            NSRect(x: 4.5, y: y - 0.5, width: bounds.width - 9, height: 1).fill()
         }
-    }
-}
-
-/// A group's title inside the band, set like the menu's own section headers.
-final class MenuWellHeader: NSView {
-    private let title: String
-
-    static let attributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: NSColor.tertiaryLabelColor,
-    ]
-
-    init(_ title: String) {
-        self.title = title
-        super.init(frame: NSRect(x: 0, y: 0, width: 200, height: 23))
-        setAccessibilityElement(true)
-        setAccessibilityRole(.staticText)
-        setAccessibilityLabel(title)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override var isFlipped: Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        // NSMenu's header sits low in its row: its ink centred 13.5 pt down.
-        let size = (title as NSString).size(withAttributes: Self.attributes)
-        (title as NSString).draw(at: NSPoint(x: 16, y: (13.5 - size.height / 2).rounded()), withAttributes: Self.attributes)
     }
 }

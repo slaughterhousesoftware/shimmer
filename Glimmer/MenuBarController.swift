@@ -387,7 +387,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // A stream's error, under the card's own controls rather than
         // between the card and its slider.
         if let error = model.nativeStreamError {
-            menu.addItem(.separator())
+            menu.addItem(separator())
             menu.addItem(hosted(
                 Text(error)
                     .font(.system(size: 12))
@@ -407,8 +407,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Listed for a single server too: its row carries the stream's
         // stats and opens its settings.
         if !model.hosts.isEmpty {
-            menu.addItem(.separator())
-            menu.addItem(.sectionHeader(title: "Servers"))
+            menu.addItem(separator())
+            menu.addItem(header("Servers"))
             // The one in use: where a switch is headed, else what streams,
             // else the selection - so the disc moves the moment you pick.
             let current = model.pendingHostSwitch?.hostID
@@ -428,11 +428,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 // The one streaming now shows the stream's numbers under its
                 // name, as the AirPods show their batteries.
                 let streamingHere = model.isStreaming && host.id == model.activeStreamHostID
-                let row = MenuServerRow(title: host.displayName, mark: mark, hasDisclosure: inUse,
-                                        twoLines: streamingHere) { [weak self] in self?.pickServer(host.id) }
+                let row = MenuServerRow(title: host.displayName, mark: mark, hasDisclosure: inUse) {
+                    [weak self] in self?.pickServer(host.id)
+                }
                 if streamingHere {
                     statsRow = row
-                    row.detail = statsLine(rttMs: lastStreamNumbers.rttMs, mbps: lastStreamNumbers.mbps)
+                    row.stats = streamStats(rttMs: lastStreamNumbers.rttMs, mbps: lastStreamNumbers.mbps)
+                    row.sizeToContent()
                 }
                 rows.append(row)
             }
@@ -451,7 +453,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // The window rows and Quit at the bottom - Tailscale's layout, where
         // the window is the exception, not the point. Both open the same
         // tabbed window: Settings on its tab, Open Shimmer on the last one.
-        menu.addItem(.separator())
+        // The line above them runs nearly the menu's width, as the Sound
+        // menu's above its Settings rows.
+        menu.addItem(separator(footer: true))
         // Plain text at the left edge, like Tailscale's. macOS 26 decorates a
         // menu item with a gear of its own when its ACTION is named
         // `openSettings` (measured: the title, the ⌘, and the exact standard
@@ -461,7 +465,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // would suppress the gear but reserve the image column and indent.
         menu.addItem(action("Settings…", #selector(showSettingsPage), key: ","))
         menu.addItem(action("Open Shimmer", #selector(openWindow)))
-        menu.addItem(.separator())
+        menu.addItem(separator())
         // No "Check for Updates…" here, by request. Sparkle still checks on
         // its own at launch, and the command stays in the app menu.
         menu.addItem(action("Quit Shimmer", #selector(quit), key: "q"))
@@ -526,16 +530,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     /// The streaming server's second line: the stream's size and rate, the
-    /// network's round trip and the bitrate, each with its glyph.
-    private func statsLine(rttMs: Double?, mbps: Double?) -> NSAttributedString {
-        var items: [(symbol: String, text: String)] = []
-        if let shorthand = model.activeStreamShorthand { items.append(("display", shorthand)) }
-        if let rttMs { items.append(("timer", "\(max(1, Int(rttMs.rounded()))) ms")) }
-        if let mbps { items.append(("speedometer", "\(Int(mbps.rounded())) Mbps")) }
-        if items.isEmpty, let id = model.activeStreamHostID {
-            return MenuServerRow.statsLine([("antenna.radiowaves.left.and.right", model.hostStatusLine(for: id))])
+    /// network's round trip and the bitrate, each after its solid glyph, as
+    /// the AirPods' batteries are.
+    private func streamStats(rttMs: Double?, mbps: Double?) -> [MenuServerRow.Stat] {
+        var stats: [MenuServerRow.Stat] = []
+        if let shorthand = model.activeStreamShorthand { stats.append(.init(symbol: "play.rectangle.fill", text: shorthand)) }
+        if let rttMs { stats.append(.init(symbol: "clock.fill", text: "\(max(1, Int(rttMs.rounded()))) ms")) }
+        if let mbps { stats.append(.init(symbol: "cellularbars", text: "\(Int(mbps.rounded())) Mbps")) }
+        if stats.isEmpty, let id = model.activeStreamHostID {
+            stats.append(.init(symbol: nil, text: model.hostStatusLine(for: id)))
         }
-        return MenuServerRow.statsLine(items)
+        return stats
     }
 
     private func startStatsRefresh() {
@@ -556,7 +561,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             guard let self else { return }
             let numbers = await self.model.liveStreamNumbers()
             self.lastStreamNumbers = numbers
-            self.statsRow?.detail = self.statsLine(rttMs: numbers.rttMs, mbps: numbers.mbps)
+            self.statsRow?.stats = self.streamStats(rttMs: numbers.rttMs, mbps: numbers.mbps)
         }
     }
 
@@ -726,6 +731,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             item.menu?.cancelTracking()
             DispatchQueue.main.async { NSApp.sendAction(selector, to: self, from: item) }
         }
+        return item
+    }
+
+    /// Control Center's separator, not NSMenu's: its line 14 pt in from
+    /// each side (5 pt for the one above the footer), and its height.
+    private func separator(footer: Bool = false) -> NSMenuItem {
+        let item = NSMenuItem()
+        item.view = MenuSeparatorRow(inset: footer ? 5 : MenuRowView.contentInset)
+        return item
+    }
+
+    /// Control Center's section header ("Output"), not NSMenu's.
+    private func header(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem()
+        item.view = MenuSectionHeaderRow(title)
         return item
     }
 

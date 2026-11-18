@@ -600,18 +600,24 @@ struct MenuNowPlayingCardTests {
     }
 }
 
-/// The streaming server's row: two lines, the stream's numbers under its name.
+/// The streaming server's row: the AirPods row's layout - one 32 pt row,
+/// the stream's numbers on a second line under the name.
 @MainActor
 struct MenuServerStatsRowTests {
-    @Test func theStreamingServerGetsASecondLine() {
-        let row = MenuServerRow(title: "bazzite", mark: NSImage(size: NSSize(width: 26, height: 26)), twoLines: true) {}
-        #expect(row.frame.height == 42)
-        row.detail = MenuServerRow.statsLine([("display", "1440p120 HDR"), ("timer", "8 ms"), ("speedometer", "45 Mbps")])
-        // Glyphs are attachments; the words read in order.
-        let words = row.detail?.string.replacingOccurrences(of: "\u{FFFC}", with: "")
-            .split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
-        #expect(words == "1440p120 HDR 8 ms 45 Mbps")
-        let plain = MenuServerRow(title: "PS5", mark: NSImage(size: NSSize(width: 26, height: 26))) {}
-        #expect(plain.frame.height == 32)
+    @Test func theSecondLineKeepsTheRowItsHeight() {
+        let row = MenuServerRow(title: "bazzite", mark: NSImage(size: NSSize(width: 26, height: 26))) {}
+        row.stats = [.init(symbol: "play.rectangle.fill", text: "1440p120 HDR"), .init(symbol: "clock.fill", text: "8 ms"),
+                     .init(symbol: "cellularbars", text: "45 Mbps")]
+        #expect(row.frame.height == 32)
+        #expect(row.accessibilityValue() as? String == "1440p120 HDR, 8 ms, 45 Mbps")
+    }
+
+    @Test func theGlyphsAreCutToTenPointsOfInk() {
+        for symbol in ["play.rectangle.fill", "clock.fill", "cellularbars"] {
+            let glyph = MenuStatGlyph.image(symbol)
+            #expect(glyph?.size.height == 10)
+            #expect((glyph?.size.width ?? 0) > 6 && (glyph?.size.width ?? 99) < 16)
+        }
     }
 }
+
