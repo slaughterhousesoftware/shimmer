@@ -115,6 +115,19 @@ extension InputForwarder {
         captureIfPointerIsOverTheStreamView(reason: "stream window opened under the pointer")
     }
 
+    /// The stream is ending and its connection is still up: let go of
+    /// everything the host holds, then stop forwarding. Called before the
+    /// backend closes - detach() runs after, when a release has nowhere left
+    /// to go (the quit shortcut's own Control and Option stayed down on the
+    /// PC, with whatever stick was being pushed, until the PC timed the
+    /// session out).
+    public func releaseEverythingBeforeDisconnect() {
+        guard isReady else { return }
+        raiseAllHeldInputs(reason: "the stream ending")
+        neutralizeControllers()
+        isReady = false
+    }
+
     public func detach() {
         // Raise every held key/button/modifier so a mid-press teardown can't
         // leave the host with phantom-held input.

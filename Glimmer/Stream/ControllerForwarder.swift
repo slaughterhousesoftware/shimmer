@@ -553,6 +553,22 @@ extension InputForwarder {
         }
     }
 
+    /// Every pad the host knows goes to rest: no buttons, sticks centred,
+    /// triggers up. Sent as a stream ends, while the connection can still
+    /// carry it - a stick held at that moment otherwise stays pushed on the
+    /// host until it notices the client is gone.
+    func neutralizeControllers() {
+        guard isReady else { return }
+        for state in attachedControllers.values where announcedControllerSlots.contains(state.slot) {
+            let rc = backend?.sendMultiController(
+                num: Int16(state.slot), mask: Int16(bitPattern: gamepadMask), buttons: 0,
+                analog: GamepadAnalog(leftTrigger: 0, rightTrigger: 0,
+                                      leftStickX: 0, leftStickY: 0, rightStickX: 0, rightStickY: 0)
+            ) ?? -2
+            record("LiSendMultiControllerEvent(neutral)", rc)
+        }
+    }
+
     // (sendGamepadUpdate / sendCenterButtonUpdate - the handlers installed above - in
     // ControllerForwarder+StatePush.swift, and forwardTouchpad in
     // ControllerForwarder+Touchpad.swift - the topic split.)

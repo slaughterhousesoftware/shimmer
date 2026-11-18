@@ -171,17 +171,21 @@ extension InputForwarder: StreamInputViewDelegate {
         guard isReady, !pipSuspended else { return }
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
+        guard let vk = vkScanCode(forCarbonKeyCode: Int(event.keyCode)) else { return }
+        let wireCode = Int16(bitPattern: 0x8000 | UInt16(bitPattern: vk))
+
         // Mirror the sys-key gate from handleKeyDown: if Cmd is held and
         // capture is off, the matching key-down was never forwarded, so
         // sending the key-up alone would leave the host's keyboard state
         // inconsistent (it would think the key was released without ever
-        // having been pressed).
-        if mods.contains(.command), !captureSysKeys {
+        // having been pressed). But only for a key the host does NOT hold: a
+        // key that went down before Cmd did was forwarded, and dropping its
+        // release here (W held, Cmd brushed, W released) left it down on the
+        // host until it was pressed again.
+        if Self.swallowsKeyUp(commandDown: mods.contains(.command), captureSysKeys: captureSysKeys,
+                              hostHoldsKey: heldKeys.contains(wireCode)) {
             return
         }
-
-        guard let vk = vkScanCode(forCarbonKeyCode: Int(event.keyCode)) else { return }
-        let wireCode = Int16(bitPattern: 0x8000 | UInt16(bitPattern: vk))
         let rc = backend?.sendKeyboard(
             keyCode: wireCode,
             action: Int8(StreamProtocol.KEY_ACTION_UP),
@@ -192,69 +196,44 @@ extension InputForwarder: StreamInputViewDelegate {
         heldKeys.remove(wireCode)
     }
 
+    /// Is a key-up kept from the host? Only when Cmd is down, Cmd shortcuts
+    /// are the Mac's, and the host never saw the key go down.
+    nonisolated static func swallowsKeyUp(commandDown: Bool, captureSysKeys: Bool, hostHoldsKey: Bool) -> Bool {
+        commandDown && !captureSysKeys && !hostHoldsKey
+    }
+
     func streamView(_ view: StreamInputView, handleFlagsChanged event: NSEvent) {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let changed = mods.symmetricDifference(lastModFlags)
         lastModFlags = mods
         guard isReady, !pipSuspended else { return }
 
-        // Use the OS keyCode to figure out which side (L vs R) of the modifier
-        // changed - Win VK has separate codes for LSHIFT (0xA0) and RSHIFT
-        // (0xA1), and games sometimes care.
-        let modByte = Int8(bitPattern: modifierByte(from: mods))
-        let isDown: (NSEvent.ModifierFlags) -> Bool = { mods.contains($0) }
-
-        // Translate the side-specific Carbon keyCode to its Win VK pair.
-        let kc = Int(event.keyCode)
-        let vkPairs: [(Int, NSEvent.ModifierFlags, Int16)] = [
-            (kVK_Control, .control, 0xA2),  // VK_LCONTROL
-            (kVK_RightControl, .control, 0xA3),  // VK_RCONTROL
-            (kVK_Shift, .shift, 0xA0),  // VK_LSHIFT
-            (kVK_RightShift, .shift, 0xA1),  // VK_RSHIFT
-            (kVK_Option, .option, 0xA4),  // VK_LMENU
-            (kVK_RightOption, .option, 0xA5),  // VK_RMENU
-            (kVK_Command, .command, 0x5B),  // VK_LWIN
-            (kVK_RightCommand, .command, 0x5C),  // VK_RWIN
-            (kVK_CapsLock, .capsLock, 0x14) // VK_CAPITAL
-        ]
-
+        // Which physical modifier keys moved, left and right apart - Win VK
+        // has separate codes for LSHIFT (0xA0) and RSHIFT (0xA1), and games
+        // sometimes care. See ModifierKeyTracker for why the modifier flag
+        // alone is not enough.
+        //
         // Cmd is a macOS-specific modifier. When sys-key capture is off, we
         // don't want the host to ever see VK_LWIN / VK_RWIN - not even as a
         // bare modifier press - because that would still pop the host's
-        // Start menu on key-up. Suppress both left and right Cmd here. Other
-        // modifiers (Ctrl → CTRL, Shift → SHIFT, Option → ALT) ARE forwarded
-        // because they're not macOS-owned in the same way: most apps treat
-        // ⌃/⌥/⇧ as game / app input modifiers, not as system shortcut keys.
-        let suppressCmd = !captureSysKeys
-
-        var forwarded = false
-        for (codeKC, flag, vk) in vkPairs where kc == codeKC && changed.contains(flag) {
-            if suppressCmd && flag == .command {
-                forwarded = true   // pretend we did, to skip the fallback loop
-                break
+        // Start menu on key-up. Other modifiers (Ctrl → CTRL, Shift → SHIFT,
+        // Option → ALT) ARE forwarded because they're not macOS-owned in the
+        // same way: most apps treat ⌃/⌥/⇧ as game / app input modifiers, not
+        // as system shortcut keys.
+        let modByte = Int8(bitPattern: modifierByte(from: mods))
+        let changes = modifierKeys.flagsChanged(
+            keyCode: Int(event.keyCode), rawFlags: event.modifierFlags.rawValue, forwardCommand: captureSysKeys)
+        for change in changes {
+            let steps: [(Int16, Int32)]
+            switch change {
+            case .down(let vk): steps = [(vk, StreamProtocol.KEY_ACTION_DOWN)]
+            case .up(let vk): steps = [(vk, StreamProtocol.KEY_ACTION_UP)]
+            case .tap(let vk): steps = [(vk, StreamProtocol.KEY_ACTION_DOWN), (vk, StreamProtocol.KEY_ACTION_UP)]
             }
-            let action: Int8 = isDown(flag) ? Int8(StreamProtocol.KEY_ACTION_DOWN) : Int8(StreamProtocol.KEY_ACTION_UP)
-            let rc = backend?.sendKeyboard(
-                keyCode: Int16(bitPattern: 0x8000 | UInt16(bitPattern: vk)),
-                action: action, modifiers: modByte, flags: 0) ?? -2
-            record("LiSendKeyboardEvent2(modifier)", rc)
-            forwarded = true
-            break
-        }
-        if !forwarded {
-            // Fallback when we can't identify the side from the keyCode (e.g.
-            // synthetic flagsChanged from sticky-keys). Send the left-side VK
-            // for each flag that flipped. Skip `.command` when capture is off.
-            let fallback: [(NSEvent.ModifierFlags, Int16)] = [
-                (.control, 0xA2), (.shift, 0xA0), (.option, 0xA4), (.command, 0x5B), (.capsLock, 0x14)
-            ]
-            for (flag, vk) in fallback where changed.contains(flag) {
-                if suppressCmd && flag == .command { continue }
-                let action: Int8 = isDown(flag) ? Int8(StreamProtocol.KEY_ACTION_DOWN) : Int8(StreamProtocol.KEY_ACTION_UP)
+            for (vk, action) in steps {
                 let rc = backend?.sendKeyboard(
                     keyCode: Int16(bitPattern: 0x8000 | UInt16(bitPattern: vk)),
-                    action: action, modifiers: modByte, flags: 0) ?? -2
-                record("LiSendKeyboardEvent2(modifier fallback)", rc)
+                    action: Int8(action), modifiers: modByte, flags: 0) ?? -2
+                record("LiSendKeyboardEvent2(modifier)", rc)
             }
         }
     }

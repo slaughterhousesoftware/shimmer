@@ -553,6 +553,8 @@ public final class InputForwarder {
     /// Main-thread only (all key/mouse handling is).
     var heldKeys: Set<Int16> = []
     var heldMouseButtons: Set<Int32> = []
+    /// The modifier keys the host holds, per physical key.
+    var modifierKeys = ModifierKeyTracker()
 
     /// Send key-up / button-release for everything we believe the host holds,
     /// then clear the bookkeeping (modifiers included, via
@@ -599,31 +601,21 @@ public final class InputForwarder {
         return UInt8(truncatingIfNeeded: b)
     }
 
-    /// Send key-up for any modifier our state thinks is currently down. Used
-    /// during detach so the host doesn't see a "ctrl is held forever" state.
-    ///
-    /// We deliberately omit the Cmd modifier when `captureSysKeys` is false:
-    /// the corresponding VK_LWIN/VK_RWIN down was never sent (we filter Cmd
-    /// out of `flagsChanged`), so sending a stray up here would be a
-    /// fabricated event the host would react to.
+    /// Send key-up for every modifier KEY the host holds (left and right
+    /// apart - ModifierKeyTracker). Used when focus is lost and at detach so
+    /// the host doesn't see a "ctrl is held forever" state. A Cmd key is only
+    /// ever in that set when Cmd shortcuts go to the host, so there is no
+    /// fabricated VK_LWIN release to guard against.
     private func releaseStuckModifiers() {
+        let held = modifierKeys.releaseAll()
+        lastModFlags = []
         guard isReady else { return }
-        let flags = lastModFlags
-        var pairs: [(NSEvent.ModifierFlags, Int16)] = [
-            (.control, 0xA2), // VK_LCONTROL
-            (.shift, 0xA0), // VK_LSHIFT
-            (.option, 0xA4) // VK_LMENU (Alt)
-        ]
-        if captureSysKeys {
-            pairs.append((.command, 0x5B)) // VK_LWIN
-        }
-        for (flag, vk) in pairs where flags.contains(flag) {
+        for vk in held {
             let rc = backend?.sendKeyboard(
                 keyCode: Int16(bitPattern: 0x8000 | UInt16(bitPattern: vk)),
                 action: Int8(StreamProtocol.KEY_ACTION_UP), modifiers: 0, flags: 0) ?? -2
             record("LiSendKeyboardEvent2(modifier release)", rc)
         }
-        lastModFlags = []
     }
 
     // Gamepad path (GameController framework integration, slot allocation,

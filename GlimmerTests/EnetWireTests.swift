@@ -179,6 +179,18 @@ struct EnetInboundOrderTests {
         return (channel, codes)
     }
 
+    /// What a stream's end puts on the wire so the host stops applying held
+    /// input at once: enet_peer_disconnect_now's command, byte for byte.
+    @Test func theGoodbyeIsAnUnsequencedDisconnectOnThePeerChannel() throws {
+        let (channel, _) = try Self.makeChannel()
+        let datagram = channel.disconnectDatagram()
+        // 2-byte header (peer id, no sent-time), then the 8-byte command.
+        #expect(datagram.count == 10)
+        #expect(Array(datagram.suffix(8)) == [0x44, 0xFF, 0, 0, 0, 0, 0, 0])
+        let header = UInt16(datagram[0]) << 8 | UInt16(datagram[1])
+        #expect(header & Enet.headerFlagSentTime == 0)
+    }
+
     /// One datagram carrying SEND_RELIABLE on `channel`.
     static func reliable(relSeq: UInt16, _ payload: [UInt8], channel: UInt8 = Enet.ctrlChannelGeneric) -> [UInt8] {
         var w = ByteWriter()

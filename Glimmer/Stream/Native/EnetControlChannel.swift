@@ -519,6 +519,8 @@ final class EnetControlChannel: @unchecked Sendable {
     }
 
     func close() {
+        // Before the interrupt latch: built from live peer state.
+        let goodbye = withState { connected && !disconnected } ? disconnectDatagram() : nil
         interrupted.set()
         // Atomic take-and-nil under connLock, then cancel outside it: a racing
         // sendDatagram either retained the connection before we took it (its
@@ -526,9 +528,41 @@ final class EnetControlChannel: @unchecked Sendable {
         // and drops the datagram. The unguarded cancel+nil this replaces gave
         // the 50Hz control loop and 1ms input flush a use-after-free window on
         // every teardown.
-        takeConnection()?.cancel()
+        let conn = takeConnection()
+        if let conn, let goodbye {
+            // Tell the host the session is over (enet_peer_disconnect_now, as
+            // moonlight does on stop). Without it the host only learns from
+            // its own ping timeout, seconds later, and until then keeps
+            // applying whatever input it last held. The send is queued behind
+            // the input still in sendQueue (the releases a stream sends as it
+            // ends); the socket is cancelled once it has gone out, or after a
+            // short bound if the network never takes it.
+            let cancelled = ManagedAtomicFlag()
+            let cancel = { if cancelled.testAndSet() { conn.cancel() } }
+            sendQueue.async {
+                conn.send(content: Data(goodbye), completion: .contentProcessed { _ in cancel() })
+            }
+            sendQueue.asyncAfter(deadline: .now() + Self.goodbyeBoundSeconds) { cancel() }
+        } else {
+            conn?.cancel()
+        }
         logIgnoredControlTotals()
         fireTeardownOnce()
+    }
+
+    static let goodbyeBoundSeconds: TimeInterval = 0.25
+
+    /// ENet DISCONNECT, unsequenced, on the peer channel - what
+    /// enet_peer_disconnect_now puts on the wire: an 8-byte command (command
+    /// byte, channel 0xFF, reliable sequence 0, 32-bit data 0) in a plain
+    /// datagram.
+    func disconnectDatagram() -> [UInt8] {
+        var cmd = ByteWriter()
+        cmd.u8(Enet.cmdDisconnect | Enet.flagUnsequenced) // 0x44
+        cmd.u8(Enet.peerChannelID)                         // 0xFF
+        cmd.u16BE(0)                                       // reliableSequenceNumber
+        cmd.u32BE(0)                                       // data
+        return wrapDatagram(commands: [cmd.bytes], sentTime: false)
     }
 
     // MARK: - Per-frame FEC status (Sunshine SS_FRAME_FEC_PTYPE feedback)

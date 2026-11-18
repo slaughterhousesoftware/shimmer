@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E50DEC4062C40BFCD1FE0131 /* ModifierKeyTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F907552A74D8683EB289BD0E /* ModifierKeyTrackerTests.swift */; };
+		D61D45E62D822F3CAA0707DE /* ModifierKeyTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19153614454965A008DA1EA8 /* ModifierKeyTracker.swift */; };
 		2A767384FF0E8141F168BB92 /* StreamFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938817B191C4FC3E8209E9C1 /* StreamFailureTests.swift */; };
 		139A8937D56940E3168D2A19 /* StreamFailureCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12226169324906D5261A7C11 /* StreamFailureCopy.swift */; };
 		5D5607A40F1452059ED7508E /* HostSwitchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */; };
@@ -391,6 +393,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F907552A74D8683EB289BD0E /* ModifierKeyTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModifierKeyTrackerTests.swift; sourceTree = "<group>"; };
+		19153614454965A008DA1EA8 /* ModifierKeyTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/ModifierKeyTracker.swift; sourceTree = "<group>"; };
 		938817B191C4FC3E8209E9C1 /* StreamFailureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamFailureTests.swift; sourceTree = "<group>"; };
 		12226169324906D5261A7C11 /* StreamFailureCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamFailureCopy.swift; sourceTree = "<group>"; };
 		F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostSwitchTests.swift; sourceTree = "<group>"; };
@@ -832,6 +836,7 @@
 		A10000031 /* Glimmer */ = {
 			isa = PBXGroup;
 			children = (
+				19153614454965A008DA1EA8 /* ModifierKeyTracker.swift */,
 				12226169324906D5261A7C11 /* StreamFailureCopy.swift */,
 				B6AFAA6FEE298E82981E43E7 /* StreamWindow+FullScreen.swift */,
 				9727865743B938F1BD927F96 /* StreamFullScreenMemory.swift */,
@@ -1119,6 +1124,7 @@
 		D2000016 /* GlimmerTests */ = {
 			isa = PBXGroup;
 			children = (
+				F907552A74D8683EB289BD0E /* ModifierKeyTrackerTests.swift */,
 				938817B191C4FC3E8209E9C1 /* StreamFailureTests.swift */,
 				F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */,
 				466158A6033CE682720F82A2 /* StreamFullScreenMemoryTests.swift */,
@@ -1325,6 +1331,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D61D45E62D822F3CAA0707DE /* ModifierKeyTracker.swift in Sources */,
 				139A8937D56940E3168D2A19 /* StreamFailureCopy.swift in Sources */,
 				0E9ABE44A0336ECEE6D426FC /* StreamWindow+FullScreen.swift in Sources */,
 				1A3254E6A5D8C9C0B22E555F /* StreamFullScreenMemory.swift in Sources */,
@@ -1604,6 +1611,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E50DEC4062C40BFCD1FE0131 /* ModifierKeyTrackerTests.swift in Sources */,
 				2A767384FF0E8141F168BB92 /* StreamFailureTests.swift in Sources */,
 				5D5607A40F1452059ED7508E /* HostSwitchTests.swift in Sources */,
 				AAAE3210E97670F02FEC7761 /* StreamFullScreenMemoryTests.swift in Sources */,

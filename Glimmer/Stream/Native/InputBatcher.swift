@@ -151,6 +151,9 @@ final class InputBatcher: @unchecked Sendable {
         queue.sync {
             timer?.cancel()
             timer = nil
+            // What is still pending goes out first: the neutral pad state and
+            // the releases a stream sends as it ends are of no use left here.
+            flushLocked(force: true)
             enet = nil
         }
         Diag.notice("input batcher stopped", Self.logCategory)
@@ -291,7 +294,7 @@ final class InputBatcher: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             // Preserve ordering: drain merged state before the edge event.
-            self.flushLocked()
+            self.flushLocked(force: true)
             _ = self.enet?.sendInputPacket(plaintext, channel: channel)
         }
         return InputBatcherResult.ok
@@ -358,9 +361,14 @@ final class InputBatcher: @unchecked Sendable {
     /// inbound ACK processing. Edge pass-through events (keyboard/buttons/scroll/
     /// arrival/touch) are NOT gated by either signal - they are discrete, not
     /// latest-state, so they must not drop.
-    private func flushLocked() {
+    /// - Parameter force: send the pending merged state whatever the
+    ///   backpressure says. An edge event (a click, a key) is about to go
+    ///   out and must not overtake the motion that led up to it - held back,
+    ///   the click landed where the pointer had been a tick ago - and the
+    ///   last flush before the connection closes has no later tick to wait for.
+    private func flushLocked(force: Bool = false) {
         guard let enet else { return }
-        if enet.sendBacklogged || enet.reliableBacklogged {
+        if !force, enet.sendBacklogged || enet.reliableBacklogged {
             // Telemetry: attribute the backpressure skip to which signal fired
             // (the input p99 tail). Counter only - no behavior change.
             countBackpressureSkip(enet)

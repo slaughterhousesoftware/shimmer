@@ -143,7 +143,12 @@ extension StreamSession {
         // concurrency rejects `self.window` from a non-actor closure even
         // when the closure hops to MainActor.
         let winForOverlay = self.window
+        let inputBeforeDisconnect = self.input
         await MainActor.run {
+            // While the connection can still carry it: release every key,
+            // button and modifier the host holds and rest the pads. After
+            // stopConnection() below these have nowhere to go.
+            inputBeforeDisconnect?.releaseEverythingBeforeDisconnect()
             self.statsOverlayTimer?.invalidate()
             self.statsOverlayTimer = nil
             self.frameWatchdogTimer?.invalidate()
