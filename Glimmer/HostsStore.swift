@@ -410,6 +410,10 @@ extension AppModel {
             let apps = fetched.map {
                 PairedApp(id: $0.id, name: $0.name, hdr: $0.hdrCapable, hidden: $0.hidden)
             }
+            // A PC with no apps is not listed at all (loadHosts): an empty
+            // answer would make the machine vanish from the sidebar. Keep
+            // what is saved and say the refresh didn't work.
+            guard !apps.isEmpty else { throw StreamError.launchFailed("the PC returned no apps") }
             writeApps(apps, prefix: "hosts.\(slot)", defaults: defaults)
             loadHosts()
         } catch {

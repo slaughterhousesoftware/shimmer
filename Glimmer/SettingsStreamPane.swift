@@ -71,7 +71,9 @@ struct StreamPane: View {
 struct BitrateMenu: View {
     @Binding var automatic: Bool
     @Binding var mbps: Int
-    let automaticMbps: Int
+    /// What Automatic asks for, when that is one number; nil when the machine
+    /// picks it (a PS5 at 720p uses the console's own preset).
+    let automaticMbps: Int?
     let maxMbps: Int
 
     private var stops: [Int] { BitrateSlider.stopsMbps.filter { $0 <= maxMbps } }
@@ -88,7 +90,7 @@ struct BitrateMenu: View {
                     mbps = value
                 }
             })) {
-            Text("Automatic (\(automaticMbps) Mbps)").tag(0)
+            Text(automaticMbps.map { "Automatic (\($0) Mbps)" } ?? "Automatic").tag(0)
             Divider()
             ForEach(stops, id: \.self) { Text("\($0) Mbps").tag($0) }
         }

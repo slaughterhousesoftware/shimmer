@@ -41,6 +41,22 @@ private struct HostContextMenu: ViewModifier {
                     showRename = true
                 }
             }
+        if !host.isPlayStation {
+            // A game added in Sunshine after pairing only shows up once the
+            // app list is fetched again; the only button for that sat behind
+            // an empty list, so the way to get it was removing the PC.
+            Button {
+                Task {
+                    do { try await model.refreshApps(for: host) } catch {
+                        Diag.error("Refresh Apps failed for \(host.displayName, privacy: .private): "
+                            + "\(error.localizedDescription, privacy: .private)", "Hosts")
+                    }
+                }
+            } label: {
+                Label("Refresh Apps", systemImage: "arrow.clockwise")
+            }
+            .disabled(model.isStreaming)
+        }
         Divider()
         Button(role: .destructive) {
             showUnpairConfirm = true

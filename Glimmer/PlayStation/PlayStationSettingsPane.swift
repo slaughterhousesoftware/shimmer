@@ -22,7 +22,8 @@ struct PlayStationSettingsPane: View {
                 frameRate: $settings.fps,
                 frameRates: [("60 Hz", 60), ("30 Hz", 30)])
             BitrateMenu(automatic: $settings.bitrateAuto, mbps: $settings.bitrateMbps,
-                        automaticMbps: PlayStationSettings.presetBitrateMbps,
+                        // Automatic sends the preset at 1080p only (AppModel+PlayStation).
+                        automaticMbps: settings.height > 720 ? PlayStationSettings.presetBitrateMbps : nil,
                         maxMbps: PlayStationSettings.bitrateRangeMbps.upperBound)
             SettingsRow("Codec") {
                 SettingsSegmentedControl(selection: $settings.hevc, options: [

@@ -44,8 +44,8 @@ struct AppPane: View {
             Section {
                 Toggle(isOn: $model.showMenuBarItem) {
                     Text("Show status in the menu bar")
-                    Text("The app you’re playing, the controller’s battery, or a warning. Hidden when idle; "
-                        + "Shimmer stays in the Dock.")
+                    Text("The app you’re playing, the controller’s battery, or a warning. "
+                        + "With it off, Shimmer stays in the Dock.")
                 }
                 // The login helper suppresses the window; Dock access remains
                 // available whenever there is no useful menu-bar status.

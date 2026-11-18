@@ -89,7 +89,6 @@
 		A100019A /* AboutPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100019B /* AboutPane.swift */; };
 		04E4D673A3624136A035F8F2 /* CLIIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1C85EA296D44EE95EC3607 /* CLIIntegration.swift */; };
 		A6E7C0A1B2C3D4E5F6A7B8C9 /* AgentControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6E7C0A1B2C3D4E5F6A7B8CA /* AgentControl.swift */; };
-		A100020A /* DiagnosticsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100020B /* DiagnosticsPane.swift */; };
 		A1009001 /* UpdaterController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1009002 /* UpdaterController.swift */; };
 		A1009012 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A1009011 /* Sparkle */; };
 		A1B2C3D4E5F6000200000C01 /* HostCodecPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000100000C01 /* HostCodecPreference.swift */; };
@@ -483,7 +482,6 @@
 		A100019B /* AboutPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutPane.swift; sourceTree = "<group>"; };
 		DD1C85EA296D44EE95EC3607 /* CLIIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIIntegration.swift; sourceTree = "<group>"; };
 		A6E7C0A1B2C3D4E5F6A7B8CA /* AgentControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControl.swift; sourceTree = "<group>"; };
-		A100020B /* DiagnosticsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsPane.swift; sourceTree = "<group>"; };
 		A1009002 /* UpdaterController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdaterController.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000100000C01 /* HostCodecPreference.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HostCodecPreference.swift; sourceTree = "<group>"; };
 		A647C41163064ECDA1D86EA8 /* MacSystemStats.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacSystemStats.swift; sourceTree = "<group>"; };
@@ -880,7 +878,6 @@
 				A100030B /* ContainerMigration.swift */,
 				A1C0DE001120000000000000 /* BundleIDMigration.swift */,
 				A100010B /* TroubleshootingPane.swift */,
-				A100020B /* DiagnosticsPane.swift */,
 				A100012B /* LogStore.swift */,
 				A100013B /* ControllerInputTestView.swift */,
 				A100014B /* LogViewerView.swift */,
@@ -1376,7 +1373,6 @@
 				A100030A /* ContainerMigration.swift in Sources */,
 				A1C0DE001110000000000000 /* BundleIDMigration.swift in Sources */,
 				A100010A /* TroubleshootingPane.swift in Sources */,
-				A100020A /* DiagnosticsPane.swift in Sources */,
 				A100012A /* LogStore.swift in Sources */,
 				A100013A /* ControllerInputTestView.swift in Sources */,
 				A100014A /* LogViewerView.swift in Sources */,

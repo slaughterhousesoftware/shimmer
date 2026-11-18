@@ -155,7 +155,17 @@ struct ComputersTab: View {
             return
         }
         let name = nearby.first { $0.host == address }?.displayName ?? address
-        pairingTarget = PCPairingTarget(name: name, address: address, startImmediately: true)
+        // A PS5 answers PlayStation discovery; anything else pairs as a PC -
+        // the same question "Add by Address…" asks. Without it, a first
+        // machine that is a PS5 was sent through Sunshine pairing and failed
+        // with "make sure Sunshine is running".
+        Task {
+            if let ps5 = await PlayStationDiscovery.probe(address: address) {
+                pairingTarget = PCPairingTarget(name: ps5.hostName ?? "PS5", address: address, isPlayStation: true)
+            } else {
+                pairingTarget = PCPairingTarget(name: name, address: address, startImmediately: true)
+            }
+        }
     }
 
     // MARK: Sidebar
