@@ -144,7 +144,22 @@ public final class VideoDecoder {
     /// flips on, the next-frame fallback may briefly attach BT.2020 instead
     /// of PQ before catching up, and that's visually indistinguishable.
     /// A Bool load/store is naturally atomic on every supported arch.
-    nonisolated(unsafe) internal var hdrEnabled: Bool = false
+    /// The HDR state below is written on the main actor (the host's HDR-mode
+    /// message → setHDR) and on the decode queue, and read for every frame on
+    /// VideoToolbox's callback thread. As plain `nonisolated(unsafe)` vars
+    /// that was a data race on two `Data?` and an object reference - a write
+    /// landing mid-read is a use-after-free (ThreadSanitizer, 2026-11-18:
+    /// setHDR vs attachColorAndHDRMetadata). One lock, each access whole.
+    nonisolated let hdrStateLock = NSLock()
+    nonisolated(unsafe) private var _hdrEnabled = false
+    nonisolated(unsafe) private var _cachedMDCV: Data?
+    nonisolated(unsafe) private var _cachedContentLightLevel: Data?
+    nonisolated(unsafe) private var _cachedHDRFormatDescription: CMVideoFormatDescription?
+
+    nonisolated internal var hdrEnabled: Bool {
+        get { hdrStateLock.lock(); defer { hdrStateLock.unlock() }; return _hdrEnabled }
+        set { hdrStateLock.lock(); _hdrEnabled = newValue; hdrStateLock.unlock() }
+    }
 
     /// Whether HDR is *actually* active end-to-end: host said yes, stream is
     /// 10-bit, and the layer's colorspace is the PQ space. Surfaces upward
@@ -292,7 +307,10 @@ public final class VideoDecoder {
     // immutable, so we have to copy the original's extensions dict and
     // re-create the description). Invalidated whenever formatDescription
     // changes or cachedMDCV / cachedContentLightLevel changes.
-    nonisolated(unsafe) var cachedHDRFormatDescription: CMVideoFormatDescription?
+    nonisolated var cachedHDRFormatDescription: CMVideoFormatDescription? {
+        get { hdrStateLock.lock(); defer { hdrStateLock.unlock() }; return _cachedHDRFormatDescription }
+        set { hdrStateLock.lock(); _cachedHDRFormatDescription = newValue; hdrStateLock.unlock() }
+    }
 
     // Stream parameters from setup().
     nonisolated(unsafe) var streamWidth: Int32 = 0
@@ -403,7 +421,16 @@ public final class VideoDecoder {
 
     // True when start() has been called but stop() hasn't. We refuse to
     // touch the decode/enqueue path outside that window.
-    nonisolated(unsafe) var isStreaming = false
+    //
+    // Atomic: stop() clears it on the teardown thread while the receive
+    // thread, the decode queue and the VideoToolbox callback read it for the
+    // frame still in flight. As a plain `nonisolated(unsafe)` Bool that was a
+    // data race (ThreadSanitizer, 2026-11-18: handleStop vs submitDecodeUnit).
+    nonisolated let streamingFlag = Atomic<Bool>(false)
+    nonisolated var isStreaming: Bool {
+        get { streamingFlag.load(ordering: .relaxed) }
+        set { streamingFlag.store(newValue, ordering: .relaxed) }
+    }
 
     // One-shot guard: AVSampleBufferDisplayLayer.requiresFlushToResumeDecoding
     // can latch true after a transient decode failure (e.g. an SPS change
@@ -534,8 +561,14 @@ public final class VideoDecoder {
     // The Data blobs are in the exact GBR-order big-endian byte layout that
     // moonlight-qt's vt_base.mm builds for the HDR10 MDCV + CLL SEI
     // attachments - see `refreshHDRMetadataFromHost()` for the contract.
-    nonisolated(unsafe) var cachedMDCV: Data?
-    nonisolated(unsafe) var cachedContentLightLevel: Data?
+    nonisolated var cachedMDCV: Data? {
+        get { hdrStateLock.lock(); defer { hdrStateLock.unlock() }; return _cachedMDCV }
+        set { hdrStateLock.lock(); _cachedMDCV = newValue; hdrStateLock.unlock() }
+    }
+    nonisolated var cachedContentLightLevel: Data? {
+        get { hdrStateLock.lock(); defer { hdrStateLock.unlock() }; return _cachedContentLightLevel }
+        set { hdrStateLock.lock(); _cachedContentLightLevel = newValue; hdrStateLock.unlock() }
+    }
 
     /// "Presentation is intentionally suppressed" - true while the stream window
     /// is orderOut'd / occluded / minimized / nativeStreamBackgrounded, i.e. the
