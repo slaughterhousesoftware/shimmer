@@ -58,7 +58,59 @@ extension StreamSession {
         guard !isStreaming else {
             throw StreamError.sessionFailed(-1)
         }
+        // Stopped before it began (a Cancel that beat this task to the actor).
+        guard !stopRequested else { throw StreamError.cancelled }
         isStreaming = true
+        startInProgress = true
+        defer { startInProgress = false }
+        do {
+            return try await runStart(
+                server: server, config: config, appID: appID,
+                quitHotkeyProvider: quitHotkeyProvider, statsHotkeyProvider: statsHotkeyProvider,
+                bookmarkHotkeyProvider: bookmarkHotkeyProvider,
+                releasePointerHotkeyProvider: releasePointerHotkeyProvider,
+                initialStatsOverlay: initialStatsOverlay, initialStatsCorner: initialStatsCorner,
+                statsRowsProvider: statsRowsProvider, statsThresholdsProvider: statsThresholdsProvider,
+                onBackgroundedChanged: onBackgroundedChanged, pipHotkeyProvider: pipHotkeyProvider,
+                startInPictureInPictureProvider: startInPictureInPictureProvider,
+                keepAwakeProvider: keepAwakeProvider, quitAppOnStopProvider: quitAppOnStopProvider,
+                onPictureInPictureChanged: onPictureInPictureChanged, pipPointerProvider: pipPointerProvider,
+                reconnectAddresses: reconnectAddresses)
+        } catch {
+            // Whatever start() threw after a stop was asked for is that stop
+            // arriving (the launch leg's "cancelled", an interrupted connect),
+            // not a failure to report. Sweep anything still standing.
+            guard stopRequested else { throw error }
+            await performStop(cause: .userStopped)
+            throw StreamError.cancelled
+        }
+    }
+
+    /// start()'s body. A stop() that arrives while this runs only latches
+    /// `stopRequested` (see stop(cause:)); the checkpoints after each await
+    /// below tear down what has been built so far and leave.
+    // swiftlint:disable:next function_parameter_count
+    private func runStart(
+        server: ServerInfo,
+        config: StreamConfig,
+        appID: Int,
+        quitHotkeyProvider: @escaping @MainActor () -> HotkeyChord,
+        statsHotkeyProvider: @escaping @MainActor () -> HotkeyChord,
+        bookmarkHotkeyProvider: @escaping @MainActor () -> HotkeyChord,
+        releasePointerHotkeyProvider: @escaping @MainActor () -> HotkeyChord,
+        initialStatsOverlay: Bool,
+        initialStatsCorner: StatsOverlayCorner,
+        statsRowsProvider: @escaping @MainActor () -> Set<StatsRow.Kind>,
+        statsThresholdsProvider: @escaping @MainActor () -> StatsThresholds,
+        onBackgroundedChanged: (@MainActor (Bool) -> Void)?,
+        pipHotkeyProvider: @escaping @MainActor () -> HotkeyChord,
+        startInPictureInPictureProvider: @escaping @MainActor () -> Bool,
+        keepAwakeProvider: @escaping @MainActor () -> KeepAwakePolicy,
+        quitAppOnStopProvider: @escaping @MainActor () -> Bool,
+        onPictureInPictureChanged: (@MainActor (Bool) -> Void)?,
+        pipPointerProvider: @escaping @MainActor () -> Bool,
+        reconnectAddresses: [String]
+    ) async throws -> AsyncStream<StreamEvent> {
 
         // Capture the inputs a SILENT RECONNECT needs to rebuild the connection
         // in place (see StreamSession+Reconnect.swift): the original server (for
@@ -84,6 +136,7 @@ extension StreamSession {
         quitAppRequested = false
         windowBackgrounded = false
         await reconcileKeepAwake()
+        try await throwIfStopRequested()
         // Release the assertion on any UNSUCCESSFUL exit from start() - an early
         // throw (pairing failure, host unreachable) happens before stop() is
         // reachable, so without this the Mac would stay awake forever after a
@@ -116,6 +169,13 @@ extension StreamSession {
         // A pre-bridge throw below must not orphan the NetworkClient (see
         // prepareSunshineSession); stop() owns it once the connect is handed off.
         defer { if !startHandedOff, sunshine != nil { shutdownOrphanedNetwork() } }
+        // A stop during the launch leg: nothing is built yet, so there is only
+        // the launch itself to undo (prepareSunshineSession's own throw covers
+        // the case where the launch never finished).
+        if stopRequested, let sunshine {
+            await undoLaunchAfterFailedConnect(sunshine.launch, network: sunshine.network, duringReconnect: false)
+        }
+        try await throwIfStopRequested()
 
         // Diagnostic so "are we actually streaming at the right refresh rate"
         // is a one-line question. requestedFps is what we tell Sunshine;
@@ -146,6 +206,12 @@ extension StreamSession {
             keepAwakeProvider: keepAwakeProvider,
             onPictureInPictureChanged: onPictureInPictureChanged,
             pipPointerProvider: pipPointerProvider))
+        // The window, decoder and input now exist: a stop from here on has
+        // them to close (throwIfStopRequested runs the teardown).
+        if stopRequested, let sunshine {
+            await undoLaunchAfterFailedConnect(sunshine.launch, network: sunshine.network, duringReconnect: false)
+        }
+        try await throwIfStopRequested()
 
         // --- 4a) Build + publish the session bridge (see publishBridge): weak
         // refs to every subsystem + self so a torn-down subsystem just makes its
@@ -182,6 +248,14 @@ extension StreamSession {
         // wire the quit/stats/bookmark/HDR/first-frame callbacks now that the
         // bridge + its event continuation exist.
         await wireSubsystemBackends(setup: setup, bridge: bridge, backend: self.backend)
+        if stopRequested {
+            // The teardown releases the bridge retain; the defer above must not.
+            lifecycleOK = true
+            if let sunshine {
+                await undoLaunchAfterFailedConnect(sunshine.launch, network: sunshine.network, duringReconnect: false)
+            }
+            try await throwIfStopRequested()
+        }
 
         // --- 5) Start the connection through the backend ----------------
         do {
@@ -199,6 +273,15 @@ extension StreamSession {
             lifecycleOK = true
             throw error
         }
+        // The connect finished in the same instant a stop asked for it not to
+        // (the interrupt lost the race): it is up, and nobody wants it.
+        if stopRequested {
+            lifecycleOK = true
+            if let sunshine {
+                await undoLaunchAfterFailedConnect(sunshine.launch, network: sunshine.network, duringReconnect: false)
+            }
+            try await throwIfStopRequested()
+        }
 
         // --- 6) Arm the stats-overlay timer, the watchdogs, and (if opted in)
         // the telemetry exporter now that the connection is up.
@@ -206,6 +289,10 @@ extension StreamSession {
             statsRowsProvider: statsRowsProvider,
             statsThresholdsProvider: statsThresholdsProvider,
             decoder: setup.2)
+        if stopRequested {
+            lifecycleOK = true
+            try await throwIfStopRequested()
+        }
 
         // Event stream was built and bound to the bridge in step 4b so
         // synchronous stageStarting / stageComplete callbacks fired inside

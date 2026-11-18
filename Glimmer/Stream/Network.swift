@@ -183,6 +183,11 @@ public struct LaunchResponse: Sendable {
     public let sessionURL: String
     public let gcmKey: Data
     public let gcmKeyId: Data
+    /// True when the host handed back a session it was already running
+    /// (/resume) rather than starting one for this request (/launch). A
+    /// connect that then fails must leave a resumed game alone: /cancel would
+    /// quit it.
+    public var resumed = false
 
     public init(sessionURL: String, gcmKey: Data, gcmKeyId: Data) {
         self.sessionURL = sessionURL

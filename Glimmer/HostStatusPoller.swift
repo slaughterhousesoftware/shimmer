@@ -301,8 +301,22 @@ extension AppModel {
               Date().timeIntervalSince(status.capturedAt) <= HostLiveStatus.stale else { return }
         switch status.state {
         case .idle, .streamingApp, .streamingUnknownApp:
-            nativeStreamError = nil
+            // The machine is back: its status says so again. The sentence
+            // about what happened stays a while - cleared here, it was gone
+            // within seconds of the drop, before anyone had read why their
+            // stream had closed.
+            guard !streamErrorRecovered else { return }
+            streamErrorRecovered = true
+            let sentence = nativeStreamError
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(Self.recoveredErrorLingerSeconds * 1_000_000_000))
+                guard let self, self.streamErrorRecovered, self.nativeStreamError == sentence else { return }
+                self.nativeStreamError = nil
+            }
         default: break
         }
     }
+
+    /// How long a dropped-connection sentence stays once the machine answers again.
+    nonisolated static let recoveredErrorLingerSeconds: TimeInterval = 600
 }

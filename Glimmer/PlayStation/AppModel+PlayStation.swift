@@ -102,32 +102,65 @@ extension AppModel {
 
     // MARK: Stream
 
-    /// Wake the console if it is in rest mode, then stream. Wake takes the PS5
-    /// about 15-25 s; the connecting capsule shows it.
+    /// Stream a PS5. Finding it and waking it from rest mode are the stream
+    /// attempt's own first step (`readyPlayStation`), so the row shows
+    /// "Waking…" with a Cancel beside it, a second click is the same attempt,
+    /// and End Stream or a switch to another machine stops it.
     func requestPlayStationStream(on host: Host) {
-        guard let console = playStationConsole(for: host) else {
+        guard playStationConsole(for: host) != nil else {
             nativeStreamError = "This PlayStation isn't registered anymore. Add it again in Settings."
+            streamErrorHostID = host.id
             return
         }
-        Task { [weak self] in
-            var console = console
-            var status = await PlayStationDiscovery.probe(address: console.address)
-            if status == nil, let moved = await self?.relocatePlayStation(console) {
-                console = moved
-                status = await PlayStationDiscovery.probe(address: console.address)
-            }
-            if status?.power != .ready {
-                guard let self else { return }
-                self.streamPhase = .connecting(stage: "Waking \(console.nickname)…")
-                Diag.notice("PS5: \(console.nickname) is \(status == nil ? "not answering" : "in rest mode") - waking it", "PlayStation")
-                PlayStationDiscovery.wake(console: console)
-                let awake = await PlayStationDiscovery.waitUntilReady(address: console.address, timeout: 40)
-                if !awake {
-                    Diag.error("PS5: \(console.nickname) did not wake within 40 s", "PlayStation")
-                }
-            }
-            self?.stream(app: .playStationHome, on: host)
+        stream(app: .playStationHome, on: host)
+    }
+
+    /// The first step of a PS5 stream: find the console (its address may have
+    /// changed) and wake it if it rests. Wake takes the PS5 about 15-25 s.
+    /// Returns whether the console answered discovery at all; throws
+    /// `.didNotWake` when it answered as resting and never came up, and
+    /// `.cancelled` when the attempt was stopped meanwhile.
+    func readyPlayStation(_ host: Host, token: UUID) async throws -> Bool {
+        guard var console = playStationConsole(for: host) else {
+            throw StreamError.playStation(.unreachable("not registered"))
         }
+        var status = await PlayStationDiscovery.probe(address: console.address)
+        if status == nil, !Task.isCancelled, let moved = await relocatePlayStation(console) {
+            console = moved
+            status = await PlayStationDiscovery.probe(address: console.address)
+        }
+        if Task.isCancelled { throw StreamError.cancelled }
+        guard status?.power != .ready else { return true }
+        let answered = status != nil
+        if currentStreamToken == token, case .connecting(let stage) = streamPhase, stage != Self.cancellingStage {
+            streamPhase = .connecting(stage: "Waking \(console.nickname)…")
+        }
+        Diag.notice("PS5: \(console.nickname) is \(answered ? "in rest mode" : "not answering") - waking it", "PlayStation")
+        let awake = await PlayStationDiscovery.wakeAndWait(console: console, timeout: Self.playStationWakeSeconds)
+        if Task.isCancelled { throw StreamError.cancelled }
+        if awake {
+            if currentStreamToken == token, case .connecting(let stage) = streamPhase, stage != Self.cancellingStage {
+                streamPhase = .connecting(stage: "Connecting to \(host.displayName)…")
+            }
+            return true
+        }
+        Diag.error("PS5: \(console.nickname) did not wake within \(Int(Self.playStationWakeSeconds)) s", "PlayStation")
+        // It said it was resting and never came up: a session can't start.
+        // One that never answered discovery may still take a session (a route
+        // that filters discovery), so that one goes on to try.
+        if answered { throw StreamError.playStation(.didNotWake) }
+        return false
+    }
+
+    nonisolated static let playStationWakeSeconds: TimeInterval = 40
+
+    /// What the failure of a PS5 attempt means given whether the console ever
+    /// answered discovery: "on but not answering" is only true of one that did.
+    nonisolated static func playStationFailure(_ error: Error, answeredDiscovery: Bool) -> Error {
+        if case StreamError.playStation(.noAnswer) = error, !answeredDiscovery {
+            return StreamError.playStation(.unreachable("no discovery answer, no session"))
+        }
+        return error
     }
 
     /// The saved address didn't answer: look for the console on the LAN (a new

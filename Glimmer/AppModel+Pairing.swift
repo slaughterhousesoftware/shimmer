@@ -228,6 +228,23 @@ extension AppModel {
         nativeStreamError != nil && interruptedStreamHost == nil
     }
 
+    /// The sentence to show on `hostID`'s page: the current stream problem,
+    /// if it is about that machine.
+    func streamFailure(for hostID: String) -> String? {
+        guard let error = nativeStreamError, streamErrorHostID == hostID else { return nil }
+        return error
+    }
+
+    /// Put the stream problem away (its page's Dismiss, the menu's Dismiss).
+    func dismissStreamError() { nativeStreamError = nil }
+
+    /// Does the stream problem still colour `hostID`'s status? Not once the
+    /// machine has answered again, and never another machine's.
+    func streamErrorAffectsStatus(of hostID: String) -> Bool {
+        guard nativeStreamError != nil, !streamErrorRecovered else { return false }
+        return (streamErrorHostID ?? selectedHost?.id) == hostID
+    }
+
     /// Label the current `nativeStreamError` as a dropped connection. Call it
     /// AFTER setting the error (setting the error clears the label).
     func markStreamInterruption(hostID: String, at failedAt: Date = Date()) {

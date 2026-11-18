@@ -498,6 +498,16 @@ public actor StreamSession {
     // second call can sneak past it while the backend stop / decoder
     // teardown are still in flight.
     var stopInProgress = false
+    // A session is one-shot. The first stop() latches this, before anything
+    // else, and it never clears: start() reads it after each of its awaits, so
+    // a stop that lands while the stream is still coming up (Cancel, End
+    // Stream, a switch, quitting) ends in a torn-down session and a thrown
+    // `.cancelled`, never in a stream that came up after it was stopped.
+    var stopRequested = false
+    // True while start() runs. start() owns everything it builds until it
+    // returns; a stop() that arrives meanwhile only latches `stopRequested`,
+    // interrupts the connect, and waits for start() to do the teardown.
+    var startInProgress = false
 
     /// - Parameter backend: the streaming engine. Defaults to the Swift-native
     ///   engine, the only implementation.

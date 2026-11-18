@@ -185,7 +185,9 @@ extension StreamSession {
             } else {
                 code = -1
             }
-            log.error("startConnection failed with \(code) - cancelling host session")
+            // Read before the teardown below latches it too.
+            let stoppedByRequest = stopRequested
+            log.error("startConnection failed with \(code)\(stoppedByRequest ? " (a stop was requested)" : "")")
             // On a RECONNECT attempt, DON'T run the full stop() - that would
             // close the window, drop the decoder (blanking the frozen frame),
             // and finish the event stream (bouncing to the launcher), defeating
@@ -194,16 +196,37 @@ extension StreamSession {
             // gives up to a real teardown after the cap). The initial-connect
             // path keeps its original behavior: latch connect-failed + stop().
             if duringReconnect {
-                try? await network.cancel()
-                throw StreamError.sessionFailed(code)
+                await undoLaunchAfterFailedConnect(launch, network: network, duringReconnect: true)
+                throw error
             }
             // P2 DISCONNECT REASON: the connection never reached established -
             // latch connect-failed before the teardown so the cause is attributed
             // to the handshake, not the host terminate that may follow.
-            noteTelemetryDisconnect(.connectFailed)
-            try? await network.cancel()
-            await stop()
-            throw StreamError.sessionFailed(code)
+            if !stoppedByRequest { noteTelemetryDisconnect(.connectFailed) }
+            await undoLaunchAfterFailedConnect(launch, network: network, duringReconnect: false)
+            await performStop(cause: stoppedByRequest ? .userStopped : .connectFailed)
+            if stoppedByRequest { throw StreamError.cancelled }
+            throw error
         }
+    }
+
+    /// A connect that failed (or was stopped) after the host answered /launch
+    /// or /resume. /cancel ends the app Sunshine started, so it is only sent
+    /// to undo an app THIS attempt started. A game that was already running
+    /// and merely resumed stays up for the next Stream click, and a reconnect
+    /// attempt never cancels: the session it is trying to get back is the game
+    /// the player was in the middle of.
+    func undoLaunchAfterFailedConnect(_ launch: LaunchResponse, network: NetworkClient,
+                                      duringReconnect: Bool) async {
+        guard Self.shouldCancelHostSession(resumed: launch.resumed, duringReconnect: duringReconnect) else {
+            log.info("Connect didn't finish - leaving the host's app running (\(duringReconnect ? "reconnect attempt" : "it was resumed, not launched"))")
+            return
+        }
+        log.info("Connect didn't finish - /cancel for the app this attempt launched")
+        try? await network.cancel()
+    }
+
+    nonisolated static func shouldCancelHostSession(resumed: Bool, duringReconnect: Bool) -> Bool {
+        !resumed && !duringReconnect
     }
 }

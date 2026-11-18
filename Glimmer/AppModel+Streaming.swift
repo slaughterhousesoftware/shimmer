@@ -220,10 +220,22 @@ extension AppModel {
 
         Task { [weak self] in
             guard let self else { return }
-            // The Swift-native engine is the only path.
-            let backend = self.makeStreamingBackend(for: host)
-            let session = StreamSession(backend: backend)
-            await MainActor.run {
+            var caughtError: Error?
+            // A PS5 that never answered discovery (see readyPlayStation).
+            var answeredDiscovery = true
+            do {
+                if host.isPlayStation {
+                    // Find and wake the console first: part of this attempt,
+                    // so Cancel, End Stream and a switch all stop it.
+                    let preflight = Task { try await self.readyPlayStation(host, token: token) }
+                    self.streamPreflightTask = preflight
+                    defer { self.streamPreflightTask = nil }
+                    answeredDiscovery = try await preflight.value
+                }
+                // The backend is built after that step: it takes the
+                // console's address, which the step may have just corrected.
+                let backend = self.makeStreamingBackend(for: host)
+                let session = StreamSession(backend: backend)
                 self.nativeSession = session
                 // The audio cushion ceiling, before the engine seeds the cushion.
                 session.audioDecoder.setCushionCeiling(
@@ -235,15 +247,15 @@ extension AppModel {
                 // engine doesn't exist yet) and applies it when it builds the
                 // graph - see AudioDecoder.outputVolume.
                 self.applyStreamVolume()
-            }
-            var caughtError: Error?
-            do {
                 // Provider closures (rather than captured values) so the user
                 // can edit either hotkey in Settings while a stream is live
                 // and the change takes effect on the next keyDown - no need
                 // to restart the stream to see a new chord work. `self` is
                 // captured weakly to avoid a cycle with the session.
-                let events = try await session.start(
+                // start() runs as its own task so a stop can cancel it: the
+                // control requests abort on cancellation, where a stop alone
+                // had to wait out a socket timeout against a PC that is off.
+                let starting = Task { try await session.start(
                     server: info, config: cfg, appID: app.id,
                     quitHotkeyProvider: { [weak self] in self?.quitHotkey ?? .defaultQuit },
                     statsHotkeyProvider: { [weak self] in self?.statsHotkey ?? .defaultStats },
@@ -287,7 +299,11 @@ extension AppModel {
                     },
                     pipPointerProvider: { true },
                     reconnectAddresses: Self.candidateAddresses(for: host)
-                )
+                ) }
+                self.streamStartTask = starting
+                defer { self.streamStartTask = nil }
+                let events = try await starting.value
+                self.streamStartTask = nil
                 for await event in events {
                     // Pass the SESSION's host, not selectedHost: ⌘1-⌘9 / the
                     // toolbar pill can re-select mid-flight, and failure copy
@@ -295,7 +311,8 @@ extension AppModel {
                     await MainActor.run { self.route(event, host: host, token: token) }
                 }
             } catch {
-                caughtError = error
+                caughtError = host.isPlayStation
+                    ? Self.playStationFailure(error, answeredDiscovery: answeredDiscovery) : error
             }
             // Single cleanup site: runs whether start() threw or the event
             // loop drained normally.
@@ -310,12 +327,13 @@ extension AppModel {
     func cleanupAfterStream(host: Host, caughtError: Error?) {
         AWDLGuard.shared.streamEnded()
         GameModeBoost.shared.streamLive(false, enabled: gameModeDuringStreams)
-        if caughtError != nil, Self.connectCancelRequested {
-            // The user cancelled this connect from the capsule -
-            // start()'s throw is the teardown ARRIVING, not a failure
-            // to report. A red "couldn't reach" banner here would
-            // contradict a deliberate, successful cancel.
-            self.log.info("Connect cancelled by user - suppressing the failure banner")
+        if let caughtError, Self.connectCancelRequested || Self.isCancellation(caughtError) {
+            // The stream was stopped while it was still connecting - Cancel,
+            // End Stream, the quit shortcut, closing the window, a switch to
+            // another machine. start()'s throw is that stop ARRIVING, not a
+            // failure to report: a "couldn't reach" banner here would
+            // contradict a deliberate, successful stop.
+            self.log.info("Connect stopped on request - no failure to report")
             self.nativeStreamError = nil
         } else if let caughtError {
             let hostName = host.displayName
@@ -344,6 +362,7 @@ extension AppModel {
             // reach-failure copy is correct there.)
             self.nativeStreamError =
                 Self.connectFailureBanner(for: caughtError, hostName: hostName)
+            self.streamErrorHostID = host.id
             if Self.isTransientConnectionFailure(caughtError) {
                 markStreamInterruption(hostID: host.id)
             }
@@ -423,72 +442,22 @@ extension AppModel {
         // window, if it is open).
     }
 
-    /// Network interruptions never raise the menu-bar triangle; failures that
-    /// need the user (pairing, certificates, the decoder) do.
-    nonisolated static func isTransientConnectionFailure(_ error: Error) -> Bool {
-        if let streamError = error as? StreamError {
-            switch streamError {
-            case .hostUnreachable(let detail):
-                let message = detail.lowercased()
-                return !message.contains("cert") && !message.contains("mitm")
-                    && !message.contains("restart sunshine")
-            case .sessionFailed, .truncatedRead: return true
-            default: return false
-            }
-        }
-        // Anything else on the start path (NWError, POSIX) is a reach failure -
-        // connectFailureBanner words it that way too.
-        guard let urlError = error as? URLError else { return true }
-        return [.networkConnectionLost, .notConnectedToInternet, .timedOut,
-                .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(urlError.code)
+    /// start() throws `.cancelled` when a stop reached it before the stream
+    /// was up (StreamSession.stopRequested).
+    nonisolated static func isCancellation(_ error: Error) -> Bool {
+        if case StreamError.cancelled = error { return true }
+        return error is CancellationError
     }
 
-    /// Preserve actionable pairing/security guidance instead of reporting all
-    /// start failures as an unreachable host.
-    static func connectFailureBanner(for error: Error, hostName: String) -> String {
-        guard let streamError = error as? StreamError else {
-            // Any non-StreamError on the start path is unexpected - the control
-            // layer always throws StreamError - so treat it as a reach failure,
-            // by far the most likely cause.
-            return "Couldn't reach \(hostName). Make sure it's awake and on the same network."
-        }
-        switch streamError {
-        case .hostUnreachable(let detail):
-            // The network layer crafts user-facing guidance for the cases it
-            // can prove (cert mismatch / not-paired disambiguation) - dropping
-            // that for generic "is it awake" copy buries the real fix.
-            // "Restart Sunshine" marks the wedged-HTTPS-listener verdict
-            // (NetworkClient.classifyPairedPathFailure): the box is awake, so
-            // the "is it awake" copy would send the user to the wrong fix.
-            if detail.contains("cert") || detail.contains("Restart Sunshine") {
-                return detail
-            }
-            return "Couldn't reach \(hostName). Make sure it's awake and on the same network."
-        case .sessionFailed, .binaryNotFound, .truncatedRead:
-            // Genuinely never reached the host / handshake aborted before
-            // establishment (a truncated control read = the host dropped mid-
-            // response) → asleep guidance is honest.
-            return "Couldn't reach \(hostName). Make sure it's awake and on the same network."
-        case .pairingFailed(let detail) where detail.contains("pair it again"):
-            // The paired-path classification (NetworkClient.
-            // classifyPairedPathFailure) - already the actionable, host-named
-            // sentence (401 or a TLS-level rejection of our client cert).
-            return detail
-        case .pairingFailed, .pairingRejected:
-            // The host answered but pairing failed - point the user at the
-            // real fix, not at the power switch.
-            return "Couldn't pair with \(hostName). Re-pair from Settings → PCs."
-        case .launchFailed:
-            return "\(hostName) answered but couldn't start the app. It may already be in use."
-        case .decoderFailed:
-            return "Couldn't start the video decoder for \(hostName)."
-        case .audioFailed:
-            // Audio is non-fatal to the visual stream, but if start() threw on
-            // it the session never came up - keep the message about the host.
-            return "Couldn't start audio for \(hostName)."
-        case .crypto:
-            return "A security error stopped the connection to \(hostName)."
-        }
+    /// Network interruptions never raise the menu-bar triangle; failures that
+    /// need the user (pairing, certificates, a firewall, the decoder) do.
+    nonisolated static func isTransientConnectionFailure(_ error: Error) -> Bool {
+        StreamFailureCopy.isTransient(error)
+    }
+
+    /// The sentence for a stream that never started (StreamFailureCopy).
+    nonisolated static func connectFailureBanner(for error: Error, hostName: String) -> String {
+        StreamFailureCopy.connect(error, hostName: hostName)
     }
 
     /// Handle one engine event for the session streaming `host`. The host is
@@ -508,6 +477,7 @@ extension AppModel {
         case .stageComplete:              break
         case .stageFailed:
             nativeStreamError = "Couldn't reach \(host.displayName)."
+            streamErrorHostID = host.id
             markStreamInterruption(hostID: host.id)
         case .connectionEstablished:
             nativeStreamError = nil
@@ -530,6 +500,7 @@ extension AppModel {
                 if code == StreamSession.deadPeerTerminationCode {
                     nativeStreamError = "Connection to \(host.displayName) was interrupted. Stream again to resume."
                 }
+                streamErrorHostID = host.id
                 markStreamInterruption(hostID: host.id)
             }
         case .reconnecting:
@@ -717,8 +688,15 @@ extension AppModel {
             switchWakeTask = nil
             pendingHostSwitch = nil
         }
-        guard isStreaming, let session = nativeSession else { return }
+        guard isStreaming else { return }
         Diag.notice("User ended the stream from the menu bar", "Stream")
+        // Ended on purpose: if the stream was still connecting, its start()
+        // throwing is this stop arriving, not a failure to show.
+        Self.connectCancelRequested = true
+        // Still finding or waking a PS5: there is no session yet, only that step.
+        streamPreflightTask?.cancel()
+        streamStartTask?.cancel()
+        guard let session = nativeSession else { return }
         // In Picture in Picture: close the PiP first, as its × does, while
         // the stream still feeds it - closed after, its closing animation
         // draws an empty (black) picture.
@@ -735,13 +713,18 @@ extension AppModel {
     /// never isStreaming/streamPhase-to-idle directly - because faking the
     /// end state from a second site is how zombie sessions are made.
     func cancelConnect() {
-        guard case .connecting = streamPhase, let session = nativeSession else { return }
+        guard isStreaming, case .connecting = streamPhase else { return }
         guard !Self.connectCancelRequested else { return }  // one stop() is plenty (it's idempotent anyway)
         Self.connectCancelRequested = true
         Diag.notice("User cancelled connect - stopping the in-flight session", "Stream")
-        streamPhase = .connecting(stage: "Cancelling…")
-        Task { await session.stop() }
+        streamPhase = .connecting(stage: Self.cancellingStage)
+        // Still finding or waking a PS5: there is no session yet, only that step.
+        streamPreflightTask?.cancel()
+        streamStartTask?.cancel()
+        if let session = nativeSession { Task { await session.stop() } }
     }
+
+    nonisolated static let cancellingStage = "Cancelling…"
 
     /// One INFO adjudicating the 400 ms connect hold at the live edge: the
     /// click→established span plus whether the capsule mounted. In testing

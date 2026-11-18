@@ -128,6 +128,21 @@ enum PlayStationDiscovery {
         return false
     }
 
+    /// Wake the console and wait until it reports "ready". The wake packet is
+    /// one UDP datagram: it is sent again every few seconds, so a single lost
+    /// one doesn't cost the whole wait. False when `timeout` passes or the
+    /// task is cancelled.
+    static func wakeAndWait(console: PlayStationConsole, timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline, !Task.isCancelled {
+            wake(console: console)
+            let slice = min(wakeResendSeconds, deadline.timeIntervalSinceNow)
+            if slice > 0, await waitUntilReady(address: console.address, timeout: slice) { return true }
+        }
+        return false
+    }
+    static let wakeResendSeconds: TimeInterval = 6
+
     /// Send the wake packet. Fire-and-forget; poll with waitUntilReady.
     static func wake(console: PlayStationConsole) {
         PlayStationBackend.ensureLibInit()

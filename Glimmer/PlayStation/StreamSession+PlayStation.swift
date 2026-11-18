@@ -30,9 +30,10 @@ extension StreamSession {
         do {
             try await backend.startConnectionAsync(server: server, config: backendConfig)
         } catch {
-            noteTelemetryDisconnect(.connectFailed)
-            await stop()
-            throw error
+            let stoppedByRequest = stopRequested
+            if !stoppedByRequest { noteTelemetryDisconnect(.connectFailed) }
+            await performStop(cause: stoppedByRequest ? .userStopped : .connectFailed)
+            throw stoppedByRequest ? StreamError.cancelled : error
         }
     }
 }

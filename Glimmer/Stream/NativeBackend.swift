@@ -184,7 +184,7 @@ public final class NativeBackend: StreamingBackend, @unchecked Sendable {
                 // async pipeline unwinds on its own (its weak self-captures no-op
                 // after teardown). We do not block waiting for that unwind.
                 self?.interruptConnection()
-                completion(StreamError.sessionFailed(-1))
+                completion(StreamError.connectFailed(.timedOut))
                 return
             }
             completion(resultBox.get().map { Self.mapToStreamError($0) })
@@ -202,14 +202,38 @@ public final class NativeBackend: StreamingBackend, @unchecked Sendable {
         func get() -> Error? { lock.lock(); defer { lock.unlock() }; return value }
     }
 
+    /// The pipeline's own errors as the typed failure the launcher words. The
+    /// PC has already answered its control port by the time any of these can
+    /// happen, so none of them is "couldn't reach the PC" - except a silent
+    /// RTSP peer, which is what a PC that went to sleep mid-connect looks like.
     static func mapToStreamError(_ error: Error) -> StreamError {
         if let streamError = error as? StreamError { return streamError }
-        switch error as? RtspError {
-        case .nonOK(_, let code): return .sessionFailed(Int32(code))
-        // The PC took the connection and went quiet: the shared couldn't-reach copy, not a stream code.
-        case .responseTimeout(let seconds): return .hostUnreachable("no RTSP response in \(Int(seconds)) s")
-        default: return .sessionFailed(-1)
+        if let rtsp = error as? RtspError {
+            switch rtsp {
+            case .interrupted: return .cancelled
+            case .nonOK(let step, let code): return .connectFailed(.hostRefused(step: step, code: code))
+            // The PC took the connection and went quiet: the shared couldn't-reach copy, not a stream code.
+            case .responseTimeout(let seconds): return .hostUnreachable("no RTSP response in \(Int(seconds)) s")
+            case .connectTimeout(let port): return .connectFailed(.streamPortUnreachable(port: Int(port)))
+            case .transportFailure: return .connectFailed(.streamPortUnreachable(port: 0))
+            case .badResponse(let reason): return .connectFailed(.unsupported(reason))
+            case .encryptedRtspUnsupported: return .connectFailed(.unsupported("encrypted RTSP"))
+            case .noSdp: return .connectFailed(.unsupported("no SDP"))
+            }
         }
+        if let enet = error as? EnetError {
+            switch enet {
+            case .interrupted: return .cancelled
+            case .connectTimeout: return .connectFailed(.controlUnreachable)
+            case .socketFailure(let reason):
+                // run()'s one name resolution reports through this case.
+                return reason.contains("could not resolve")
+                    ? .hostUnreachable(reason) : .connectFailed(.localSockets(reason))
+            case .verifyConnectRejected, .disconnected, .startFailed: return .connectFailed(.hostWentQuiet)
+            case .mtuExceeded: return .connectFailed(.unsupported("control message larger than the path MTU"))
+            }
+        }
+        return .sessionFailed(-1)
     }
 
     func checkInterrupted() -> Bool {

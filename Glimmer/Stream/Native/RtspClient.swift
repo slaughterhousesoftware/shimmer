@@ -148,6 +148,10 @@ final class RtspClient: @unchecked Sendable {
     /// Sunshine answers each message in milliseconds; moonlight waits 10 s. Without this a PC that
     /// accepts the connection and never replies holds the connect until the backend's 30 s cap.
     static let responseTimeoutSeconds: TimeInterval = 10
+    /// How long a TCP connect to the RTSP port may take. The PC has just
+    /// answered HTTPS on the same address, so a port that hasn't taken the
+    /// connection by now is filtered, not slow.
+    static let connectTimeoutSeconds: TimeInterval = 5
 
     init(
         host: NWEndpoint.Host,
@@ -311,7 +315,15 @@ final class RtspClient: @unchecked Sendable {
         defer { setActiveConnection(nil) }
         let queue = DispatchQueue(label: "io.ugfugl.Glimmer.rtsp")
 
-        // 1) Wait for the connection to become ready (or fail).
+        // 1) Wait for the connection to become ready (or fail). A port that
+        // drops the SYN (a firewall) never fails on its own, and cancelling the
+        // connection lands in `.cancelled`: both must resume the wait, or the
+        // connect sat out the backend's 30 s cap and Cancel waited with it.
+        let connectTimedOut = ManagedAtomicFlag()
+        let connectDeadline = DispatchWorkItem { connectTimedOut.set(); connection.cancel() }
+        queue.asyncAfter(deadline: .now() + Self.connectTimeoutSeconds, execute: connectDeadline)
+        defer { connectDeadline.cancel() }
+        let port = rtspPort
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             let resumed = ManagedAtomicFlag()
             connection.stateUpdateHandler = { state in
@@ -329,12 +341,18 @@ final class RtspClient: @unchecked Sendable {
                         connection.cancel()
                         cont.resume(throwing: RtspError.transportFailure("waiting: \(err)"))
                     }
+                case .cancelled:
+                    if resumed.testAndSet() {
+                        cont.resume(throwing: connectTimedOut.isSet
+                            ? RtspError.connectTimeout(port) : RtspError.interrupted)
+                    }
                 default:
                     break
                 }
             }
             connection.start(queue: queue)
         }
+        connectDeadline.cancel()
 
         // 2-3) Send, then read to EOF. The deadline cancels the connection, which ends the pending
         // receive (an error or a bare EOF); the flag tells that apart from a transport failure, which

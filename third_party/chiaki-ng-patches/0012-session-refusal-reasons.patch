@@ -1,0 +1,42 @@
+diff -ruN a/lib/include/chiaki/session.h b/lib/include/chiaki/session.h
+--- a/lib/include/chiaki/session.h
++++ b/lib/include/chiaki/session.h
+@@ -107,6 +107,10 @@
+ 	CHIAKI_QUIT_REASON_STREAM_CONNECTION_REMOTE_DISCONNECTED,
+ 	CHIAKI_QUIT_REASON_STREAM_CONNECTION_REMOTE_SHUTDOWN, // like REMOTE_DISCONNECTED, but because the server shut down
+ 	CHIAKI_QUIT_REASON_PSN_REGIST_FAILED,
++	// Shimmer: the console's own reasons for refusing the session request, which
++	// were folded into SESSION_REQUEST_UNKNOWN (and retried as if transient).
++	CHIAKI_QUIT_REASON_SESSION_REQUEST_REGIST_FAILED, // this client's registration is not accepted (any more)
++	CHIAKI_QUIT_REASON_SESSION_REQUEST_INVALID_PSN_ID, // the registered account is not the console's
+ } ChiakiQuitReason;
+ 
+ CHIAKI_EXPORT const char *chiaki_quit_reason_string(ChiakiQuitReason reason);
+diff -ruN a/lib/src/session.c b/lib/src/session.c
+--- a/lib/src/session.c
++++ b/lib/src/session.c
+@@ -165,6 +165,10 @@
+ 			return "Remote has disconnected from Stream Connection the because Server shut down";
+ 		case CHIAKI_QUIT_REASON_PSN_REGIST_FAILED:
+ 			return "The Console Registration using PSN has failed";
++		case CHIAKI_QUIT_REASON_SESSION_REQUEST_REGIST_FAILED:
++			return "The Console does not accept this registration";
++		case CHIAKI_QUIT_REASON_SESSION_REQUEST_INVALID_PSN_ID:
++			return "The Console does not recognise the PSN account";
+ 		case CHIAKI_QUIT_REASON_NONE:
+ 		default:
+ 			return "Unknown";
+@@ -1143,7 +1147,13 @@
+ 			case CHIAKI_RP_APPLICATION_REASON_RP_VERSION:
+ 				session->quit_reason = CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_VERSION_MISMATCH;
+ 				r = CHIAKI_ERR_VERSION_MISMATCH;
++				break;
++			case CHIAKI_RP_APPLICATION_REASON_REGIST_FAILED:
++				session->quit_reason = CHIAKI_QUIT_REASON_SESSION_REQUEST_REGIST_FAILED;
+ 				break;
++			case CHIAKI_RP_APPLICATION_REASON_INVALID_PSN_ID:
++				session->quit_reason = CHIAKI_QUIT_REASON_SESSION_REQUEST_INVALID_PSN_ID;
++				break;
+ 			default:
+ 				session->quit_reason = CHIAKI_QUIT_REASON_SESSION_REQUEST_UNKNOWN;
+ 				break;

@@ -387,9 +387,11 @@ extension AppModel {
         // previous host's "Streaming X" tag during the first poll for the
         // newly-selected machine. Then kick a fresh poll.
         hostLiveStatus = nil
-        // Clear any stale stream error so a prior host's red banner doesn't linger
-        // and name the wrong machine after switching hosts.
-        nativeStreamError = nil
+        // A stream problem belongs to its machine (streamErrorHostID): it shows
+        // on that machine's page and names it, so selecting a machine - that
+        // one or another - no longer wipes it. One with no machine recorded
+        // would be read as the newly selected machine's, so that one goes.
+        if streamErrorHostID == nil { nativeStreamError = nil }
         restartHostStatusPolling()
     }
 

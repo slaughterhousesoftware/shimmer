@@ -232,9 +232,23 @@ final class AppModel {
     }
     var nativeStreamError: String? {
         // A newer failure must never inherit an older one's "just a dropped
-        // connection" label - each failure re-earns it via markStreamInterruption.
-        didSet { interruptedStreamHost = nil }
+        // connection" label - each failure re-earns it via markStreamInterruption -
+        // nor its machine: whoever sets the sentence names the machine after.
+        didSet {
+            interruptedStreamHost = nil
+            streamErrorHostID = nil
+            streamErrorRecovered = false
+        }
     }
+    /// The machine in `nativeStreamError` has answered again since. Its status
+    /// goes back to what it is now; the sentence about what happened stays
+    /// until it is dismissed, a stream starts, or it ages out.
+    var streamErrorRecovered = false
+    /// Which machine `nativeStreamError` is about. Its page shows the
+    /// sentence under the Stream row, and its status reads "needs attention";
+    /// another machine's page and status are left alone. Set AFTER the error
+    /// (setting the error clears it).
+    var streamErrorHostID: String?
     /// Set when `nativeStreamError` describes a dropped connection (sleep, a
     /// Wi-Fi change, the host going away) rather than something the user must
     /// fix. Observed: it decides whether the menu bar shows the warning triangle.
@@ -355,6 +369,13 @@ final class AppModel {
     @ObservationIgnored var currentStreamToken: UUID?
     /// Waking a PS5 before a switch to it (AppModel+Streaming.switchHost).
     @ObservationIgnored var switchWakeTask: Task<Void, Never>?
+    /// A PS5 stream's first step - finding and waking the console - while it
+    /// runs. There is no session yet then, so stopping the attempt is
+    /// cancelling this.
+    @ObservationIgnored var streamPreflightTask: Task<Bool, Error>?
+    /// The session's start() while it runs (the connect). Cancelled along
+    /// with a stop, so its control requests abort instead of timing out.
+    @ObservationIgnored var streamStartTask: Task<AsyncStream<StreamEvent>, Error>?
     struct PendingHostSwitch {
         let hostID: String
         var inPictureInPicture: Bool

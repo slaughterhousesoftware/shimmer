@@ -88,6 +88,10 @@ extension EnetControlChannel {
                     if resumed.testAndSet() {
                         cont.resume(throwing: EnetError.socketFailure("\(err)"))
                     }
+                case .cancelled:
+                    // interrupt()/close() before the socket came up: without
+                    // this the wait never resumed.
+                    if resumed.testAndSet() { cont.resume(throwing: EnetError.interrupted) }
                 default:
                     break
                 }

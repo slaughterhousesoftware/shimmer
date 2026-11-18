@@ -303,11 +303,13 @@ struct RtspResponseDeadlineTests {
 
     /// An RTSP status error still reaches the launcher as that status, not as a reach failure.
     @Test func nonOkStatusKeepsItsCode() {
-        guard case .sessionFailed(let code) = NativeBackend.mapToStreamError(RtspError.nonOK(step: "PLAY", code: 503))
+        guard case .connectFailed(.hostRefused(let step, let code)) =
+                NativeBackend.mapToStreamError(RtspError.nonOK(step: "PLAY", code: 503))
         else {
-            Issue.record("a non-OK RTSP status must map to sessionFailed")
+            Issue.record("a non-OK RTSP status must reach the launcher as the host refusing that step")
             return
         }
+        #expect(step == "PLAY")
         #expect(code == 503)
     }
 }

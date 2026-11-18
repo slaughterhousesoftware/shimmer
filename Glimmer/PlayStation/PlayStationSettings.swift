@@ -33,6 +33,13 @@ final class PlayStationSettings {
         return data.enumerated().reduce(UInt64(0)) { $0 | UInt64($1.element) << (8 * UInt64($1.offset)) }
     }
 
+    /// "Rest the PS5 when the stream ends" as stored right now, readable off
+    /// the main actor: the backend asks at the END of a stream, so a switch
+    /// flipped during it counts.
+    nonisolated static func restsWhenStreamEnds(hostID: String, defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: "PS5.\(hostID).restWhenStreamEnds")
+    }
+
     static func forConsole(_ hostID: String) -> PlayStationSettings {
         if let known = byConsole[hostID] { return known }
         let made = PlayStationSettings(hostID: hostID)

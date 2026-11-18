@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2A767384FF0E8141F168BB92 /* StreamFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938817B191C4FC3E8209E9C1 /* StreamFailureTests.swift */; };
+		139A8937D56940E3168D2A19 /* StreamFailureCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12226169324906D5261A7C11 /* StreamFailureCopy.swift */; };
 		5D5607A40F1452059ED7508E /* HostSwitchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */; };
 		0E9ABE44A0336ECEE6D426FC /* StreamWindow+FullScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6AFAA6FEE298E82981E43E7 /* StreamWindow+FullScreen.swift */; };
 		1A3254E6A5D8C9C0B22E555F /* StreamFullScreenMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9727865743B938F1BD927F96 /* StreamFullScreenMemory.swift */; };
@@ -389,6 +391,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		938817B191C4FC3E8209E9C1 /* StreamFailureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamFailureTests.swift; sourceTree = "<group>"; };
+		12226169324906D5261A7C11 /* StreamFailureCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamFailureCopy.swift; sourceTree = "<group>"; };
 		F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostSwitchTests.swift; sourceTree = "<group>"; };
 		B6AFAA6FEE298E82981E43E7 /* StreamWindow+FullScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/StreamWindow+FullScreen.swift"; sourceTree = "<group>"; };
 		9727865743B938F1BD927F96 /* StreamFullScreenMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/StreamFullScreenMemory.swift; sourceTree = "<group>"; };
@@ -828,6 +832,7 @@
 		A10000031 /* Glimmer */ = {
 			isa = PBXGroup;
 			children = (
+				12226169324906D5261A7C11 /* StreamFailureCopy.swift */,
 				B6AFAA6FEE298E82981E43E7 /* StreamWindow+FullScreen.swift */,
 				9727865743B938F1BD927F96 /* StreamFullScreenMemory.swift */,
 				79E3DB8EC3703202A18B56EE /* StreamCard.swift */,
@@ -1114,6 +1119,7 @@
 		D2000016 /* GlimmerTests */ = {
 			isa = PBXGroup;
 			children = (
+				938817B191C4FC3E8209E9C1 /* StreamFailureTests.swift */,
 				F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */,
 				466158A6033CE682720F82A2 /* StreamFullScreenMemoryTests.swift */,
 				801F05F69A957BD0FBE80966 /* PlayStationExtraPlayersTests.swift */,
@@ -1319,6 +1325,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				139A8937D56940E3168D2A19 /* StreamFailureCopy.swift in Sources */,
 				0E9ABE44A0336ECEE6D426FC /* StreamWindow+FullScreen.swift in Sources */,
 				1A3254E6A5D8C9C0B22E555F /* StreamFullScreenMemory.swift in Sources */,
 				190FFC794092E4334C51C525 /* StreamCard.swift in Sources */,
@@ -1597,6 +1604,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2A767384FF0E8141F168BB92 /* StreamFailureTests.swift in Sources */,
 				5D5607A40F1452059ED7508E /* HostSwitchTests.swift in Sources */,
 				AAAE3210E97670F02FEC7761 /* StreamFullScreenMemoryTests.swift in Sources */,
 				DDC1CDE70E491714681E04B3 /* PlayStationExtraPlayersTests.swift in Sources */,

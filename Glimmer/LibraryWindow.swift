@@ -354,6 +354,12 @@ struct ComputersTab: View {
                 } else {
                     StreamRow(host: host, apps: apps, app: chosen, choose: { chosenAppName = $0 })
                 }
+                // Why this machine's last stream didn't start or ended, in
+                // words, on the page where Stream was clicked. (It used to
+                // be in the menu bar's menu only.)
+                if let failure = model.streamFailure(for: host.id) {
+                    StreamFailureRow(message: failure) { model.dismissStreamError() }
+                }
             }
             if host.isPlayStation {
                 PlayStationSettingsPane(settings: .forConsole(host.id))

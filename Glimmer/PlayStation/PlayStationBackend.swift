@@ -79,6 +79,13 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private var connected = false
     private var stopped = false
     private var quitMessage: String?
+    /// Why the last attempt ended, when the console (or libchiaki) said so in
+    /// a way that names a fix. Our own stop is not a reason.
+    private var quitFailure: PlayStationFailure?
+    /// Calls into libchiaki that are in flight outside `lock` (withSession).
+    /// Teardown waits for them before it frees the session.
+    private let sessionUse = NSCondition()
+    private var sessionUsers = 0
     /// The last QUIT was "Remote Play is already in use".
     private var quitInUse = false
     /// The last QUIT was a network failure before the session came up
@@ -323,6 +330,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // a quick reconnect.
         var attempt = 1
         while true {
+            // A stop between attempts: nothing more to start.
+            if lock.withLock({ stopped }) { throw StreamError.cancelled }
             let outcome = try runChiakiSession(info: &info, events: events)
             if outcome == .connected { break }
             // The console agreed to Takion 20 and the session still failed:
@@ -335,7 +344,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 attempt += 1
                 lock.withLock { quitMessage = nil }
                 if connectSignal.wait(timeout: .now() + .seconds(2)) == .success, lock.withLock({ stopped }) {
-                    throw StreamError.sessionFailed(-1)
+                    throw StreamError.cancelled
                 }
                 continue
             }
@@ -347,15 +356,18 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
                 attempt += 1
                 lock.withLock { quitMessage = nil }
                 if connectSignal.wait(timeout: .now() + .seconds(delay)) == .success, lock.withLock({ stopped }) {
-                    throw StreamError.sessionFailed(-1)
+                    throw StreamError.cancelled
                 }
                 continue
             }
-            let reason = lock.withLock { quitMessage } ?? "the PS5 did not answer within 20 s"
-            Diag.error("PS5: connect failed - \(reason)", Self.logCategory)
+            let (reason, failure, wasStopped) = lock.withLock { (quitMessage, quitFailure, stopped) }
+            if wasStopped { throw StreamError.cancelled }
+            Diag.error("PS5: connect failed - \(reason ?? "the PS5 did not answer within 20 s")", Self.logCategory)
             events.stageFailed("PS5 session", code: -1)
             stopConnection()
-            throw StreamError.hostUnreachable(reason)
+            // The console had answered discovery as ready before this began
+            // (AppModel's wake step), so silence here is "on, not answering".
+            throw StreamError.playStation(failure ?? .noAnswer)
         }
         events.stageComplete("PS5 session")
         armControllerFeedback()
@@ -383,6 +395,7 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         lock.withLock {
             connected = false
             quitMessage = nil
+            quitFailure = nil
             quitInUse = false
             quitTransient = false
             lastAttemptTakionVersion = 0
@@ -476,6 +489,46 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         return inUse ? .inUse : transient ? .transient : .failed
     }
 
+    /// What a QUIT reason means for the person at the Mac. nil for our own
+    /// stop and for a session the console simply ended.
+    static func failure(for reason: ChiakiQuitReason) -> PlayStationFailure? {
+        switch reason {
+        case CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE: return .inUse
+        case CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_CRASH: return .remotePlayCrashed
+        case CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_VERSION_MISMATCH: return .versionMismatch
+        case CHIAKI_QUIT_REASON_SESSION_REQUEST_REGIST_FAILED: return .registrationRejected
+        case CHIAKI_QUIT_REASON_SESSION_REQUEST_INVALID_PSN_ID: return .accountNotRecognised
+        case CHIAKI_QUIT_REASON_SESSION_REQUEST_UNKNOWN, CHIAKI_QUIT_REASON_SESSION_REQUEST_CONNECTION_REFUSED,
+             CHIAKI_QUIT_REASON_CTRL_UNKNOWN, CHIAKI_QUIT_REASON_CTRL_CONNECT_FAILED,
+             CHIAKI_QUIT_REASON_CTRL_CONNECTION_REFUSED, CHIAKI_QUIT_REASON_STREAM_CONNECTION_UNKNOWN,
+             CHIAKI_QUIT_REASON_NONE:
+            return .noAnswer
+        default:
+            return nil
+        }
+    }
+
+    /// Run `body` on the live session OUTSIDE `lock`. libchiaki's ctrl thread
+    /// delivers its events (handlePadJoin and the rest take `lock`) while it
+    /// holds its own mutex, and calls like join/leave/goto-bed want that same
+    /// mutex: made with `lock` held, the two threads waited on each other for
+    /// good. The use count keeps teardown from freeing the session mid-call.
+    @discardableResult
+    private func withSession<T>(connectedOnly: Bool = false,
+                                _ body: (UnsafeMutablePointer<ChiakiSession>) -> T) -> T? {
+        lock.lock()
+        guard let session, !connectedOnly || connected else { lock.unlock(); return nil }
+        sessionUse.lock(); sessionUsers += 1; sessionUse.unlock()
+        lock.unlock()
+        defer {
+            sessionUse.lock()
+            sessionUsers -= 1
+            if sessionUsers == 0 { sessionUse.broadcast() }
+            sessionUse.unlock()
+        }
+        return body(session)
+    }
+
     /// Failures worth another try (PXPlay retries its session request 5 times,
     /// 2 s apart, on an I/O error).
     static let transientQuitReasons: Set<ChiakiQuitReason> = [
@@ -496,6 +549,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         // Capture stops, and the encoder's sender goes, before the session.
         if mic != nil, ControllerFocus.allows(focusID) { DualSenseHID.shared.setMicLED(lit: nil) }
         mic?.close()
+        // No new caller can get the pointer now; let the ones inside finish.
+        sessionUse.lock()
+        while sessionUsers > 0 { sessionUse.wait() }
+        sessionUse.unlock()
         if let session {
             chiaki_session_stop(session)
             chiaki_session_join(session)
@@ -513,9 +570,10 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         }
         connectSignal.signal()
         Diag.info("PS5: stopping session", Self.logCategory)
-        if options.settings.restWhenStreamEnds, let session = lock.withLock({ connected ? self.session : nil }) {
-            // The PlayStation tab's "Put the PS5 to rest": ask before leaving.
-            _ = chiaki_session_goto_bed(session)
+        // "Rest the PS5 when the stream ends", as it is set NOW: switched on
+        // mid-stream it still applies (the PC's "Quit the game" does too).
+        if PlayStationSettings.restsWhenStreamEnds(hostID: console.hostID),
+           withSession(connectedOnly: true, { chiaki_session_goto_bed($0) }) != nil {
             Diag.notice("PS5: asked the console to go to rest", Self.logCategory)
             Thread.sleep(forTimeInterval: 0.3)
         }
@@ -544,11 +602,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     }
 
     func interruptConnection() {
-        let session = lock.withLock { () -> UnsafeMutablePointer<ChiakiSession>? in
-            stopped = true
-            return self.session
-        }
-        if let session { chiaki_session_stop(session) }
+        lock.withLock { stopped = true }
+        withSession { _ = chiaki_session_stop($0) }
         connectSignal.signal()
     }
 
@@ -600,17 +655,33 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             // A console with a login passcode asks for it here. Not supported yet:
             // end the attempt with a message rather than hang.
             Diag.error("PS5: the console asks for its login passcode - not supported yet", Self.logCategory)
-            lock.withLock { quitMessage = "the PS5 asks for its login passcode, which Shimmer can't enter yet" }
-            interruptConnection()
+            lock.withLock {
+                quitMessage = "the PS5 asks for its login passcode, which Shimmer can't enter yet"
+                quitFailure = .passcodeRequired
+            }
+            // Not from here: libchiaki sends this event with the session's
+            // state mutex held, and chiaki_session_stop takes that same
+            // (non-recursive) mutex - the session thread would wait on itself
+            // for good, and every later Stream click with it. Stop it from
+            // another thread; the attempt then ends with the reason above.
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                withSession { _ = chiaki_session_stop($0) }
+            }
         case CHIAKI_EVENT_QUIT:
             var message = String(cString: chiaki_quit_reason_string(event.quit.reason))
             if let detail = event.quit.reason_str { message += ": " + String(cString: detail) }
             let isError = chiaki_quit_reason_is_error(event.quit.reason)
             let (wasConnected, wasStopped, events) = lock.withLock { () -> (Bool, Bool, NativeConnectionEvents?) in
                 if quitMessage == nil { quitMessage = message }
+                // The first reason stands (the passcode request, then our stop).
+                if quitFailure == nil { quitFailure = Self.failure(for: event.quit.reason) }
                 quitInUse = event.quit.reason == CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE
                 quitTransient = Self.transientQuitReasons.contains(event.quit.reason)
-                return (connected, stopped, self.events)
+                let was = connected
+                // The session is over: nothing more goes to it (IDR requests,
+                // microphone frames, a go-to-rest on the way out).
+                connected = false
+                return (was, stopped, self.events)
             }
             Diag.notice("PS5: session ended - \(message)", Self.logCategory)
             connectSignal.signal()
@@ -1218,9 +1289,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
         defer { lock.unlock() }
         guard connected, let session else { return -2 }
         var merged = Self.idlePad
-        for num in pads.keys.sorted() where seats[num] == nil {
-            var a = pads[num]!
-            var b = merged
+        for num in Self.mergeOrder(pads: Array(pads.keys), primary: primaryPad) where seats[num] == nil {
+            // chiaki takes motion and touches from its FIRST argument when it
+            // has any: what is merged so far goes first, so player 1's pad
+            // keeps its own gyro however many idle pads follow it.
+            var a = merged
+            var b = pads[num]!
             chiaki_controller_state_or(&merged, &a, &b)
         }
         // Players 2-4, each on the seat the console gave them.
@@ -1229,6 +1303,14 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             chiaki_session_set_controller_state_pad(session, seat, &state)
         }
         return chiaki_session_set_controller_state(session, &merged) == CHIAKI_ERR_SUCCESS ? 0 : -1
+    }
+
+    /// Player 1's pad first, then the rest by number: the order the merge
+    /// gives motion and touches in.
+    static func mergeOrder(pads: [UInt8], primary: UInt8?) -> [UInt8] {
+        let rest = pads.filter { $0 != primary }.sorted()
+        guard let primary, pads.contains(primary) else { return rest }
+        return [primary] + rest
     }
 
     /// GameStream button flags → DualSense buttons. GameStream's A/B/X/Y are the
@@ -1272,7 +1354,22 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
             return pressed && !wasHeld && connected ? microphone : nil
         }
         mic?.toggle()
-        leaveSeats(activeMask: UInt16(bitPattern: mask))
+        let active = UInt16(bitPattern: mask)
+        leaveSeats(activeMask: active)
+        guard Self.isAttached(padNum, activeMask: active) else {
+            // This pad's own goodbye (its bit is gone from the mask): forget
+            // it. Asking for a seat here put the pad that had just left back
+            // in as a ghost player 2, and its last touch and tilt stayed in
+            // player 1's merged state for the rest of the session.
+            lock.withLock {
+                pads[padNum] = nil
+                motion[padNum] = nil
+                touchIDs[padNum] = nil
+                muteHeld.remove(padNum)
+                if primaryPad == padNum { primaryPad = nil }
+            }
+            return pushPad()
+        }
         askForSeat(padNum)
         updatePad(padNum, kind: "button/stick") { pad in
             let analogTriggers = (analog.leftTrigger > 0 ? CHIAKI_CONTROLLER_ANALOG_BUTTON_L2.rawValue : 0)
@@ -1295,38 +1392,56 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// Pad 0 (else the first pad to send input) is player 1. Any other pad asks the console
     /// to seat the next configured account as player 2-4; until it answers (or
     /// if it refuses) that pad stays merged into player 1, as before.
+    /// Is controller `num` in the active mask? (The keyboard pad never is; it
+    /// is not a GameStream controller.)
+    static func isAttached(_ num: UInt8, activeMask: UInt16) -> Bool {
+        num == keyboardPadNumber || (num < 16 && activeMask & (1 << UInt16(num)) != 0)
+    }
+
     private func askForSeat(_ num: UInt8) {
         guard num != Self.keyboardPadNumber else { return }
-        lock.withLock {
-            guard connected, let session else { return }
+        let request = lock.withLock { () -> (seat: UInt8, account: UInt64)? in
+            guard connected, session != nil else { return nil }
             // Pad 0 (the player-1 light) is player 1, even when another pad's
             // stick jitter reached us first - as long as that one isn't seated.
             if num == 0, let p = primaryPad, p != 0, seats[p] == nil, !pendingSeats.values.contains(p) { primaryPad = 0 }
-            guard let primary = primaryPad else { primaryPad = num; return }
-            guard num != primary, seats[num] == nil, !pendingSeats.values.contains(num) else { return }
+            guard let primary = primaryPad else { primaryPad = num; return nil }
+            guard num != primary, seats[num] == nil, !pendingSeats.values.contains(num) else { return nil }
             let taken = Set(seats.values).union(pendingSeats.keys).union(refusedSeats)
             for (i, account) in options.extraPlayerAccounts.prefix(3).enumerated() {
                 let seat = UInt8(i + 1)
                 guard !taken.contains(seat) else { continue }
                 pendingSeats[seat] = num
-                let rc = chiaki_session_join_user(session, seat, account)
-                Diag.notice("PS5: controller \(num) asks to play as player \(seat + 1) (rc \(rc.rawValue))", Self.logCategory)
-                return
+                return (seat, account)
             }
+            return nil
         }
+        guard let request else { return }
+        // The ctrl message is sent outside `lock` (see withSession).
+        let rc = withSession { chiaki_session_join_user($0, request.seat, request.account) }
+        Diag.notice("PS5: controller \(num) asks to play as player \(request.seat + 1) (rc \(rc?.rawValue ?? 0))",
+                    Self.logCategory)
     }
 
     /// A seated pad that left the stream (unplugged, asleep): its seat is
     /// given back and the console told.
     private func leaveSeats(activeMask: UInt16) {
-        lock.withLock {
-            guard let session else { return }
+        let left = lock.withLock { () -> [UInt8] in
+            guard session != nil else { return [] }
+            var freed: [UInt8] = []
             for (num, seat) in seats where num < 16 && activeMask & (1 << UInt16(num)) == 0 {
-                chiaki_session_leave_pad(session, seat)
+                freed.append(seat)
                 seats[num] = nil
                 pads[num] = nil
-                Diag.notice("PS5: player \(seat + 1)'s controller left", Self.logCategory)
+                motion[num] = nil
+                touchIDs[num] = nil
             }
+            return freed
+        }
+        // The console is told outside `lock` (see withSession).
+        for seat in left {
+            withSession { _ = chiaki_session_leave_pad($0, seat) }
+            Diag.notice("PS5: player \(seat + 1)'s controller left", Self.logCategory)
         }
     }
 

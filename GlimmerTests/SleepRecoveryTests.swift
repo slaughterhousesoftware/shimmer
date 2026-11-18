@@ -127,7 +127,12 @@ struct SleepRecoveryTests {
         let status = HostLiveStatus(hostID: host.id, state: .streamingApp(name: "Steam Big Picture"),
                                     sunshineVersion: "Sunshine", capturedAt: .now)
         await model.publishLiveStatus(status, expectedHostID: host.id)
-        #expect(model.nativeStreamError == nil)
+        // The machine's status is its own again; the sentence saying why the
+        // stream closed is still there to be read (it used to vanish here,
+        // seconds after the drop).
+        #expect(model.streamErrorRecovered)
+        #expect(model.hostStatusLine(for: host.id) == "Online")
+        #expect(model.streamFailure(for: host.id) != nil)
         #expect(model.menuBarSystemImageName == nil)
 
         // An authenticated host response doesn't repair a different stream fault.
@@ -135,6 +140,7 @@ struct SleepRecoveryTests {
         model.nativeStreamError = "Couldn't start the video decoder."
         await model.publishLiveStatus(status, expectedHostID: host.id)
         #expect(model.nativeStreamError == "Couldn't start the video decoder.")
+        #expect(!model.streamErrorRecovered)
     }
 
     @Test @MainActor func unverifiedOrUnrelatedStatusCannotDismissAnInterruption() async {
@@ -158,6 +164,7 @@ struct SleepRecoveryTests {
         status.hostID = "other-host"
         model.clearRecoveredInterruption(status)
         #expect(model.nativeStreamError == warning)
+        #expect(!model.streamErrorRecovered)
         model.handleNativeEvent(.connectionEstablished, host: host)
         #expect(model.nativeStreamError == nil)
     }

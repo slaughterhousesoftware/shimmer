@@ -149,6 +149,35 @@ struct StreamRow: View {
     }
 }
 
+/// Under a machine's Stream row: what went wrong with its last stream, as a
+/// sentence, with a way to put it away. System Settings words a row's problem
+/// the same way: a yellow warning mark, the text in the secondary colour.
+struct StreamFailureRow: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: RowIcon.gap) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+                .frame(width: RowIcon.column)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            Spacer(minLength: 8)
+            Button("Dismiss", action: dismiss)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Stream problem: \(message)")
+    }
+}
+
 /// An invisible NSView behind a SwiftUI label, so an NSMenu can pop up
 /// against it.
 private struct MenuAnchor: NSViewRepresentable {

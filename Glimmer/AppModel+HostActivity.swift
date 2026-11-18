@@ -80,7 +80,7 @@ extension AppModel {
             case .error: return "Stream interrupted"
             }
         }
-        if nativeStreamError != nil, selectedHost?.id == hostID {
+        if streamErrorAffectsStatus(of: hostID) {
             return interruptedStreamHost?.id == hostID ? "Connection interrupted" : "Connection needs attention"
         }
         guard let live = liveStatus(for: hostID, at: now) else { return "Checking…" }
@@ -104,7 +104,7 @@ extension AppModel {
             case .idle, .disconnecting: return .neutral
             }
         }
-        if nativeStreamError != nil, selectedHost?.id == hostID {
+        if streamErrorAffectsStatus(of: hostID) {
             return interruptedStreamHost?.id == hostID ? .offline : .error
         }
         guard let live = liveStatus(for: hostID, at: now) else { return .neutral }

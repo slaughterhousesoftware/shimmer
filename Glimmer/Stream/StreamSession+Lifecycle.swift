@@ -37,6 +37,25 @@ extension StreamSession {
     ///   from a genuine user quit in the scorecard fixes the prior single
     ///   default silently attributing a dropped consumer to the user.
     func stop(cause: DisconnectReason) async {
+        stopRequested = true
+        if startInProgress {
+            // The stream is still coming up. start() holds the window, the
+            // decoder and the connection it is building; tearing them down
+            // from here, between its awaits, left it free to finish the
+            // connect afterwards - a live stream that every later stop()
+            // refused at its guard. Unblock the connect and let start() see
+            // the latch: it tears down what it built and throws `.cancelled`.
+            log.info("Stop requested while the stream is starting - start() will tear down")
+            backend.interruptConnection()
+            while startInProgress { try? await Task.sleep(nanoseconds: 20_000_000) }
+            return
+        }
+        await performStop(cause: cause)
+    }
+
+    /// The teardown itself. `stop(cause:)` is the entry point for everything
+    /// outside start(); start()'s own failure paths call this directly.
+    func performStop(cause: DisconnectReason) async {
         // Reentrancy guard. stop() can be triggered from multiple paths:
         //   - the user's quit hotkey (InputForwarder.onQuitHotkey)
         //   - the connectionTerminated callback after the backend stops
@@ -243,6 +262,16 @@ extension StreamSession {
         await stop()
     }
 
+    /// A start() checkpoint: if a stop was asked for while the stream was
+    /// coming up, tear down whatever start() has built so far and throw
+    /// `.cancelled`. Called after each of start()'s awaits.
+    func throwIfStopRequested() async throws {
+        guard stopRequested else { return }
+        log.info("start(): a stop was requested - tearing down and leaving")
+        await performStop(cause: .userStopped)
+        throw StreamError.cancelled
+    }
+
     // MARK: - Launch with busy recovery
     //
     // Which endpoint a Stream click uses depends on what the host says is
@@ -279,7 +308,9 @@ extension StreamSession {
                 ConnectTimingTelemetry.shared.recordLaunchLeg(
                     launchMs: (Date().timeIntervalSinceReferenceDate - t0) * 1000.0)
             }
-            return try await network.resume(config: config)
+            var response = try await network.resume(config: config)
+            response.resumed = true
+            return response
         }
 
         func tryLaunch() async throws -> LaunchResponse {
@@ -369,7 +400,7 @@ extension StreamSession {
     /// session is no longer streaming. The launch-deadline watcher polls this so a
     /// stop()/cancelConnect() landing mid-launch bounces back without waiting out
     /// the non-cancellable HTTP leg. Actor-isolated so the read is race-free.
-    var isTearingDown: Bool { !isStreaming || stopInProgress }
+    var isTearingDown: Bool { !isStreaming || stopInProgress || stopRequested }
 
     /// M6: run `launchWithBusyRecovery` under an overall wall-clock deadline.
     ///
@@ -397,7 +428,12 @@ extension StreamSession {
                 let r = try await launchWithBusyRecovery(
                     network: network, appID: appID, config: config,
                     hintCurrentGame: hintCurrentGame, allowResume: allowResume)
-                await box.offer(.success(r))
+                if await !box.offer(.success(r)) {
+                    // The deadline or a stop won, and the launch landed anyway:
+                    // the host now runs an app nobody is coming for. Undo it,
+                    // unless it was already running (a resume).
+                    await undoLaunchAfterFailedConnect(r, network: network, duringReconnect: false)
+                }
             } catch {
                 await box.offer(.failure(error))
             }
@@ -437,10 +473,13 @@ actor FirstResultBox<T: Sendable> {
     private var result: Result<T, Error>?
     private var waiter: CheckedContinuation<Result<T, Error>, Never>?
 
-    func offer(_ value: Result<T, Error>) {
-        guard result == nil else { return }
+    /// False when another writer got there first (this value was dropped).
+    @discardableResult
+    func offer(_ value: Result<T, Error>) -> Bool {
+        guard result == nil else { return false }
         result = value
         if let waiter { self.waiter = nil; waiter.resume(returning: value) }
+        return true
     }
 
     var value: Result<T, Error> {

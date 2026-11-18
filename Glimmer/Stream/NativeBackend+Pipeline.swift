@@ -119,11 +119,12 @@ extension NativeBackend {
         guard let sink = withState({ videoSink }) else {
             Diag.error("native backend: no video sink injected; cannot start video", Self.logCategory)
             events.stageFailed("video stream initialization", code: -1)
-            throw StreamError.sessionFailed(-1)
+            throw StreamError.decoderFailed("no video sink")
         }
+        // Gone only if a stop ran since the control stage brought it up.
         guard let enet = withState({ enetChannel }) else {
             events.stageFailed("video stream initialization", code: -1)
-            throw StreamError.sessionFailed(-1)
+            throw StreamError.cancelled
         }
 
         // Wire the host TERMINATION → connectionTerminated + teardown.
@@ -156,7 +157,7 @@ extension NativeBackend {
         guard setupResult == 0 else {
             Diag.error("native backend: video sink setup failed (\(setupResult))", Self.logCategory)
             events.stageFailed("video stream initialization", code: setupResult)
-            throw StreamError.sessionFailed(setupResult)
+            throw StreamError.decoderFailed("setup returned \(setupResult)")
         }
         sink.start()
 
@@ -189,7 +190,7 @@ extension NativeBackend {
         } catch {
             Diag.error("native backend: video receiver start failed: \(error, privacy: .private)", Self.logCategory)
             events.stageFailed("video stream initialization", code: -1)
-            throw StreamError.sessionFailed(-1)
+            throw StreamError.connectFailed(.localSockets("\(error)"))
         }
         events.stageComplete("video stream initialization")
 
@@ -454,7 +455,7 @@ extension NativeBackend {
                 + "(encEnabled=\(handshake.encryptionFeaturesEnabled)); "
                 + "native control stream requires it", Self.logCategory)
             events.stageFailed("control stream initialization", code: -1)
-            throw StreamError.sessionFailed(-1)
+            throw StreamError.connectFailed(.unsupported("control encryption not negotiated"))
         }
 
         let crypto: ControlCrypto

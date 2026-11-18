@@ -459,7 +459,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
     @objc private func enterPictureInPicture() { model.enterPictureInPicture() }
     @objc private func endStream() { model.endStream() }
-    @objc private func dismissWarning() { model.nativeStreamError = nil }
+    @objc private func dismissWarning() { model.dismissStreamError() }
 
     @objc private func switchHost(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String,

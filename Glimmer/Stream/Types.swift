@@ -498,6 +498,48 @@ public enum ConnectionQuality: Sendable {
 
 // MARK: - Errors
 
+/// Which leg of a Sunshine connect failed, after the PC had already answered
+/// its HTTPS control port. Kept apart from "couldn't reach the PC": the PC is
+/// up, and the fix is somewhere else (a firewall, Sunshine itself).
+public enum ConnectFailure: Sendable, Equatable {
+    /// The RTSP port never took the connection.
+    case streamPortUnreachable(port: Int)
+    /// The UDP control channel got no answer.
+    case controlUnreachable
+    /// Sunshine answered an RTSP step with an error status.
+    case hostRefused(step: String, code: Int)
+    /// The PC accepted the stream, then stopped answering (START never
+    /// acknowledged, or it disconnected mid-handshake).
+    case hostWentQuiet
+    /// Sunshine's reply isn't one this engine can use (no control encryption
+    /// negotiated, no SDP, an unreadable response).
+    case unsupported(String)
+    /// The Mac couldn't open its own receive sockets.
+    case localSockets(String)
+    /// The whole connect ran past its cap.
+    case timedOut
+}
+
+/// Why a PS5 session didn't start.
+public enum PlayStationFailure: Sendable, Equatable {
+    /// Remote Play is already running to another device.
+    case inUse
+    /// The console no longer accepts this Mac's registration.
+    case registrationRejected
+    /// The console is signed in to an account other than the registered one.
+    case accountNotRecognised
+    /// The console wants its login passcode, which Shimmer can't enter.
+    case passcodeRequired
+    case remotePlayCrashed
+    case versionMismatch
+    /// In rest mode, asked to wake, and still not up when the wait ended.
+    case didNotWake
+    /// On, but the session never got an answer.
+    case noAnswer
+    /// No answer at all - off, unplugged, or not on this network.
+    case unreachable(String)
+}
+
 public enum StreamError: Error, Sendable, CustomStringConvertible, LocalizedError {
     case binaryNotFound
     case hostUnreachable(String)
@@ -512,9 +554,21 @@ public enum StreamError: Error, Sendable, CustomStringConvertible, LocalizedErro
     /// timeout or transport error mid-body), distinct from a clean EOF. Surfaced
     /// instead of letting a half-read body reach the XML parser as "Malformed XML".
     case truncatedRead(String)
+    /// The stream was stopped while it was still coming up (Cancel, End
+    /// Stream, a switch to another machine, quitting). Deliberate, so it is
+    /// never shown as a failure.
+    case cancelled
+    /// The PC answered /launch, then a later leg of the connection failed.
+    /// Which leg decides what the user is told (StreamFailureCopy).
+    case connectFailed(ConnectFailure)
+    /// A PS5 refused the session, or never got as far as answering it.
+    case playStation(PlayStationFailure)
 
     public var description: String {
         switch self {
+        case .cancelled: return "Stopped before the stream started."
+        case .connectFailed(let failure): return "Connecting failed: \(failure)"
+        case .playStation(let failure): return "PS5 session failed: \(failure)"
         case .binaryNotFound: return "Streaming library not available."
         case .hostUnreachable(let detail): return "Couldn't reach the PC: \(detail)."
         case .pairingFailed(let reason): return "Pairing failed: \(reason)"
