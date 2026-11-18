@@ -193,6 +193,7 @@
 		A1C0DEMBBATGLY1000000000 /* MenuBarBatteryGlyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEMBBATGLY2000000000 /* MenuBarBatteryGlyph.swift */; };
 		A1C0DEMBCTRL100000000000 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEMBCTRL200000000000 /* MenuBarController.swift */; };
 		A1C0DEMBSPIN100000000000 /* MenuBarSpinner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEMBSPIN200000000000 /* MenuBarSpinner.swift */; };
+		A1C0DEMBROWS100000000000 /* MenuBarRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEMBROWS200000000000 /* MenuBarRows.swift */; };
 		D1000062 /* AppModel+Pairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1000061 /* AppModel+Pairing.swift */; };
 		E20000A4 /* AppModel+Power.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000A3 /* AppModel+Power.swift */; };
 		E20000A2 /* LunaPower.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000A1 /* LunaPower.swift */; };
@@ -585,6 +586,7 @@
 		A1C0DEMBBATGLY2000000000 /* MenuBarBatteryGlyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarBatteryGlyph.swift"; sourceTree = "<group>"; };
 		A1C0DEMBCTRL200000000000 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarController.swift"; sourceTree = "<group>"; };
 		A1C0DEMBSPIN200000000000 /* MenuBarSpinner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarSpinner.swift"; sourceTree = "<group>"; };
+		A1C0DEMBROWS200000000000 /* MenuBarRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarRows.swift"; sourceTree = "<group>"; };
 		D1000061 /* AppModel+Pairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Pairing.swift"; sourceTree = "<group>"; };
 		E20000A3 /* AppModel+Power.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Power.swift"; sourceTree = "<group>"; };
 		E20000A1 /* LunaPower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LunaPower.swift"; sourceTree = "<group>"; };
@@ -971,6 +973,7 @@
 				A1C0DEMBBATGLY2000000000 /* MenuBarBatteryGlyph.swift */,
 				A1C0DEMBCTRL200000000000 /* MenuBarController.swift */,
 				A1C0DEMBSPIN200000000000 /* MenuBarSpinner.swift */,
+				A1C0DEMBROWS200000000000 /* MenuBarRows.swift */,
 				D1A00001 /* AppModel+HostRoute.swift */,
 				D1A00003 /* AppModel+SessionReceipt.swift */,
 				D100005D /* AppModel+Lifecycle.swift */,
@@ -1470,6 +1473,7 @@
 				A1C0DEMBBATGLY1000000000 /* MenuBarBatteryGlyph.swift in Sources */,
 				A1C0DEMBCTRL100000000000 /* MenuBarController.swift in Sources */,
 				A1C0DEMBSPIN100000000000 /* MenuBarSpinner.swift in Sources */,
+				A1C0DEMBROWS100000000000 /* MenuBarRows.swift in Sources */,
 				D1A00002 /* AppModel+HostRoute.swift in Sources */,
 				D1A00004 /* AppModel+SessionReceipt.swift in Sources */,
 				D100005E /* AppModel+Lifecycle.swift in Sources */,

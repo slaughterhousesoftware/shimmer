@@ -357,45 +357,39 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                                     image: Self.symbol("pip.enter")))
                 if !model.activeStreamIsPlayStation { menu.addItem(mouseInputRow()) }
             }
-            if model.hosts.count > 1 {
-                let switcher = NSMenu()
-                for host in model.hosts {
-                    let row = action(host.displayName, #selector(switchHost))
-                    row.representedObject = host.id
-                    row.state = host.id == model.selectedHost?.id ? .on : .off
-                    switcher.addItem(row)
-                }
-                let parent = NSMenuItem(title: "Switch PC", action: nil, keyEquivalent: "")
-                parent.image = Self.symbol("desktopcomputer")
-                parent.submenu = switcher
-                menu.addItem(parent)
+        }
+
+        // The servers, listed the way the Sound menu lists its outputs: a
+        // round mark per machine (PlayStation, Tux, Windows, Apple), the one in
+        // use filled with the accent colour. Picking another switches to it - a
+        // stream in progress closes and reopens there (AppModel.switchHost).
+        // This replaced a "Switch PC" submenu.
+        if model.hosts.count > 1 {
+            menu.addItem(.separator())
+            menu.addItem(.sectionHeader(title: "Servers"))
+            let current = model.isStreaming ? model.activeStreamHostID : model.selectedHost?.id
+            for host in model.hosts {
+                let row = action(host.displayName, #selector(switchHost),
+                                 image: MenuHostMark.image(for: host, current: host.id == current))
+                row.representedObject = host.id
+                // macOS 27 hides menu images unless asked; these are the point.
+                if #available(macOS 27, *) { row.preferredImageVisibility = .visible }
+                menu.addItem(row)
             }
         }
 
-        // Stream audio - the stream's own level, not the Mac's. No slider: an
-        // NSMenu has no slider item (the Sound extra's is a private view-backed
-        // one), so a ladder of 10% steps plus Louder / Quieter is the shape
-        // that reads native. Shown whether or not a stream is live, because
-        // mute persists: a control that disappears with the session is one the
-        // user can't undo before starting the next one.
+        // Stream audio - the stream's own level, not the Mac's: the Sound
+        // menu's slider, copied (quiet speaker, slider, loud speaker; no
+        // number, no mute - silent is the slider at the left). Shown whether
+        // or not a stream is live: the level persists, so it can be set
+        // before the next stream too.
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: "Stream Audio"))
-        // No glyphs in this group: macOS 26 lays the image column out per
-        // section, so one icon here would indent both rows.
-        menu.addItem(action(model.streamMuted ? "Unmute" : "Mute", #selector(toggleMute)))
-        // The submenu is the ladder alone: 100% down to 10%, the current rung
-        // checked. (Louder / Quieter rows sat above it for a while; two verbs
-        // over a list of the same values read as clutter.)
-        let volume = NSMenu()
-        for level in AppModel.streamVolumeLevels {
-            let rung = action("\(Int((level * 100).rounded()))%", #selector(setVolume))
-            rung.representedObject = level
-            rung.state = model.isSelectedStreamVolume(level) ? .on : .off
-            volume.addItem(rung)
+        let volume = NSMenuItem()
+        volume.view = MenuVolumeSlider(level: model.streamVolume) { [weak model] level in
+            model?.setStreamVolume(level)
         }
-        let volumeRow = NSMenuItem(title: "Volume: \(model.streamVolumePercent)%", action: nil, keyEquivalent: "")
-        volumeRow.submenu = volume
-        menu.addItem(volumeRow)
+        menu.addItem(volume)
 
         // Controller battery is shown by the menu-bar icon itself (the battery
         // glyph on the status item), not repeated as a "N% battery" row here.
@@ -471,9 +465,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         model.switchHost(to: host)
     }
 
-    @objc private func toggleMute() { model.toggleStreamMute() }
-
-    /// Same verb-flip as the Mute row. Listed idle too: the choice persists,
+    /// A verb that flips with the state. Listed idle too: the choice persists,
     /// so it can be set before the next stream as well as during one.
     private func mouseInputRow() -> NSMenuItem {
         action(model.mouseInputDisabled ? "Enable Mouse" : "Disable Mouse",
@@ -481,11 +473,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleMouseInput() { model.mouseInputDisabled.toggle() }
-
-    @objc private func setVolume(_ sender: NSMenuItem) {
-        guard let level = sender.representedObject as? Double else { return }
-        model.setStreamVolume(level)
-    }
 
     @objc private func showSettingsPage() {
         model.settingsTab = .computers

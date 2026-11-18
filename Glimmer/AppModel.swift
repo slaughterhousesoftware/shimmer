@@ -307,20 +307,13 @@ final class AppModel {
         didSet { UserDefaults.standard.set(showStreamStats, forKey: "showStreamStats") }
     }
 
-    /// The STREAM's own output volume (0...1) and mute - not the Mac's: they
-    /// scale decoded game audio at our player node and nothing else. Both
-    /// persist. AppModel+StreamAudio.swift owns the rest of this feature.
+    /// The STREAM's own output volume (0...1, 0 = silent) - not the Mac's: it
+    /// scales decoded game audio at our player node and nothing else.
+    /// Persists. AppModel+StreamAudio.swift owns the rest of this feature.
     var streamVolume: Double = AppModel.loadStreamVolume() {
         didSet {
             guard !isRestoringDefaults else { return }
             UserDefaults.standard.set(streamVolume, forKey: "streamVolume")
-            applyStreamVolume()
-        }
-    }
-    var streamMuted: Bool = UserDefaults.standard.bool(forKey: "streamMuted") {
-        didSet {
-            guard !isRestoringDefaults else { return }
-            UserDefaults.standard.set(streamMuted, forKey: "streamMuted")
             applyStreamVolume()
         }
     }
