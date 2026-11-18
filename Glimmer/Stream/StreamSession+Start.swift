@@ -145,9 +145,7 @@ extension StreamSession {
             startInPictureInPictureProvider: startInPictureInPictureProvider,
             keepAwakeProvider: keepAwakeProvider,
             onPictureInPictureChanged: onPictureInPictureChanged,
-            pipPointerProvider: pipPointerProvider,
-            standby: standby))
-        configuredFps = Int32(config.fps)
+            pipPointerProvider: pipPointerProvider))
 
         // --- 4a) Build + publish the session bridge (see publishBridge): weak
         // refs to every subsystem + self so a torn-down subsystem just makes its
@@ -509,13 +507,9 @@ extension StreamSession {
         // These two cover that gap: the watchdog self-heals the present path so
         // it can never hard-freeze, and the metric timer logs the present/decode
         // liveness so a recurrence is pinpointed from the log alone.
-        // Standby: the present watchdog and metric arm at promotion - the
-        // stream presents nowhere visible until then.
-        if !standby {
-            await startPresentWatchdog()
-            guard isStreaming, !stopInProgress else { return }
-            await startPresentMetricTimer()
-        }
+        await startPresentWatchdog()
+        guard isStreaming, !stopInProgress else { return }
+        await startPresentMetricTimer()
 
         // Opt-in telemetry exporter (default OFF; no-op + zero alloc off).
         // Synchronous - no suspension between this guard and the build - so

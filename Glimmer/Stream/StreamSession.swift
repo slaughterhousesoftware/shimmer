@@ -487,16 +487,6 @@ public actor StreamSession {
     // teardown are still in flight.
     var stopInProgress = false
 
-    /// Connecting behind a live stream for a Switch PC in Picture in Picture:
-    /// hidden, silent, no pad, no frame pacer and no present watchdog, and
-    /// nothing fed to the PiP, until AppModel promotes it at the cut-over
-    /// (`promoteFromStandby`). Set before `start`.
-    var standby = false
-    /// The stream's fps, for the pacer a standby session starts at promotion.
-    var configuredFps: Int32 = 60
-
-    func setStandby(_ on: Bool) { standby = on }
-
     /// - Parameter backend: the streaming engine. Defaults to the Swift-native
     ///   engine, the only implementation.
     public init(backend: StreamingBackend = NativeBackend()) {

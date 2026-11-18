@@ -222,13 +222,10 @@ extension NativeBackend {
         // lifts the actuator's quiesce gate (armed at init and on every stream
         // teardown) - without it a late event from a PREVIOUS session could
         // re-spin motors with no host left to send the (0,0) clear.
-        // ControllerFocus: a stream connecting in standby behind a live one
-        // (Switch PC in PiP) arms the pad only at the cut-over, and drops the
-        // host's feedback until then - the pad belongs to the game in play.
+        // ControllerFocus: this stream takes the pad now. A Switch PC's old
+        // stream, still closing, then drops its late feedback and won't park
+        // the pad under this one.
         let focus = ControllerFocus.id(self)
-        // What the host asked of the pad while in standby, replayed at the cut
-        // (it asks once, when the game wants it, and not again).
-        let deferred = DeferredPadRequests()
         // The Controller tab's switches: a switched-off feedback's callback is
         // never installed, so nothing it would carry reaches the pad.
         let gate = ControllerFeedbackGate(allowed: controllerFeedback)
@@ -276,13 +273,9 @@ extension NativeBackend {
         ControllerFocus.activate(focus) { [weak self] in
             guard let self else { return }
             ControllerMotion.shared.streamActivated(backend: self)
-            deferred.replay(events)
         }
         enet.onSetMotionEvent = { controllerNumber, motionType, reportRateHz in
-            guard ControllerFocus.allows(focus) else {
-                deferred.motion(controllerNumber, motionType, reportRateHz)
-                return
-            }
+            guard ControllerFocus.allows(focus) else { return }
             events.setMotionEventState(controller: controllerNumber,
                                        motionType: motionType, reportRateHz: reportRateHz)
         }
@@ -293,10 +286,7 @@ extension NativeBackend {
         // above - DualSenseHID resets the trigger blocks to "off" on the final
         // release(), so a stream ending mid-effect can't strand a stiff trigger.
         enet.onSetAdaptiveTriggers = gate.adaptiveTriggers { controllerNumber, eventFlags, typeLeft, typeRight, left, right in
-            guard ControllerFocus.allows(focus) else {
-                deferred.triggers(controllerNumber, eventFlags, typeLeft, typeRight, left, right)
-                return
-            }
+            guard ControllerFocus.allows(focus) else { return }
             events.setAdaptiveTriggers(controller: controllerNumber, eventFlags: eventFlags,
                                        typeLeft: typeLeft, typeRight: typeRight,
                                        left: left, right: right)
@@ -547,42 +537,6 @@ extension NativeConnectionEvents {
         DualSenseHID.shared.setAdaptiveTriggers(slot: UInt8(truncatingIfNeeded: controller), eventFlags: eventFlags,
                                                 typeLeft: typeLeft, typeRight: typeRight,
                                                 left: left, right: right)
-    }
-}
-
-/// The host's motion-rate and adaptive-trigger requests that arrived while a
-/// stream sat in standby (ControllerFocus), latest per pad, replayed when it
-/// takes the pad.
-final class DeferredPadRequests: @unchecked Sendable {
-    private struct Triggers { let flags: UInt8; let typeLeft: UInt8; let typeRight: UInt8; let left: [UInt8]; let right: [UInt8] }
-    private let lock = NSLock()
-    private var motionRequests: [UInt32: (controller: UInt16, type: UInt8, rate: UInt16)] = [:]
-    private var triggerRequests: [UInt16: Triggers] = [:]
-
-    func motion(_ controller: UInt16, _ type: UInt8, _ rate: UInt16) {
-        lock.withLock { motionRequests[UInt32(controller) << 8 | UInt32(type)] = (controller, type, rate) }
-    }
-
-    func triggers(_ controller: UInt16, _ flags: UInt8, _ typeLeft: UInt8, _ typeRight: UInt8,
-                  _ left: [UInt8], _ right: [UInt8]) {
-        lock.withLock {
-            triggerRequests[controller] = Triggers(flags: flags, typeLeft: typeLeft, typeRight: typeRight,
-                                                   left: left, right: right)
-        }
-    }
-
-    func replay(_ events: NativeConnectionEvents) {
-        let (motion, triggers) = lock.withLock { () -> ([(controller: UInt16, type: UInt8, rate: UInt16)], [(UInt16, Triggers)]) in
-            defer { motionRequests.removeAll(); triggerRequests.removeAll() }
-            return (Array(motionRequests.values), triggerRequests.map { ($0.key, $0.value) })
-        }
-        for m in motion {
-            events.setMotionEventState(controller: m.controller, motionType: m.type, reportRateHz: m.rate)
-        }
-        for (controller, t) in triggers {
-            events.setAdaptiveTriggers(controller: controller, eventFlags: t.flags, typeLeft: t.typeLeft,
-                                       typeRight: t.typeRight, left: t.left, right: t.right)
-        }
     }
 }
 

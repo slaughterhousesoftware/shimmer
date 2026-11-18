@@ -192,11 +192,6 @@ public final class StreamWindow {
     /// stream window's own key/resign transitions are meaningless then, and
     /// returns come through the explicit PiP / menu paths.
     var pipSourceMode = false
-    /// Connecting in standby behind a live stream (Switch PC in PiP): hidden
-    /// like a stream opening in PiP, but it never starts PiP itself - its
-    /// first frames call `onStandbyReady` and AppModel hands PiP over.
-    var standbyForHandover = false
-    var onStandbyReady: (@MainActor () -> Void)?
     /// The PiP return found another app full screen in front.
     var returnedOverFullScreenApp = false
     /// AppModel's "Switch PC" is ending this stream for another: the closing

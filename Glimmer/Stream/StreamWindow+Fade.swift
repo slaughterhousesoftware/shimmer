@@ -52,7 +52,7 @@ extension StreamWindow {
         didClose = true
         // Switching PCs: the next stream follows, so don't hand off to the
         // launcher (activate + front the main window) when this one is gone.
-        if Self.switchingHosts || standbyForHandover { handsOffToLauncher = false }
+        if Self.switchingHosts { handsOffToLauncher = false }
 
         // Picture in Picture first: the system PiP window is fed by our layer
         // and would otherwise outlive the session showing a frozen frame.

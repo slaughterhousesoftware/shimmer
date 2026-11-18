@@ -43,8 +43,6 @@ extension StreamSession {
         let keepAwakeProvider: @MainActor () -> KeepAwakePolicy
         let onPictureInPictureChanged: (@MainActor (Bool) -> Void)?
         let pipPointerProvider: @MainActor () -> Bool
-        /// Connecting behind a live stream (StreamSession.standby).
-        var standby = false
     }
 
     /// The one-time leave hint: the keyboard hotkey.
@@ -72,13 +70,10 @@ extension StreamSession {
         dec.attach(to: win.displayLayer)
         // Apple's Picture in Picture shows a layer of its own; it gets the
         // same frames, so going in and out of PiP costs nothing.
-        if !options.standby {
-            // Switching PCs in PiP: the previous stream's last frame holds in
-            // the PiP; ready the layer for this stream's frames (they replace
-            // it in place). A standby stream gets the PiP layer at promotion.
-            PictureInPictureStage.shared.prepareForNextStream()
-            dec.setMirrorLayer(win.pipLayer)
-        }
+        // The PiP layer outlives streams: start its timeline over for this
+        // stream's frames (PictureInPictureStage.prepareForNextStream).
+        PictureInPictureStage.shared.prepareForNextStream()
+        dec.setMirrorLayer(win.pipLayer)
         // The window's backgrounded/foregrounded signal drives the launcher's
         // "Back to stream" CTA. The decoder's present-suppression state is a
         // SEPARATE signal now that Picture in Picture exists: a hidden window
@@ -98,13 +93,8 @@ extension StreamSession {
         win.onPresentSuppressionChanged = { [weak dec] suppressed in
             dec?.setPresentSuppressed(suppressed)
         }
-        // Picture in Picture up/down: the fullscreen window is ordered out
-        // while PiP shows the layer, and a view-bound CADisplayLink stops
-        // firing off screen - rebind the pacer to a screen link for the
-        // duration. The caller gets the edge for its UI.
         let onPictureInPictureChanged = options.onPictureInPictureChanged
-        // Standby: the pad stays with the live stream until the cut-over.
-        let inp = options.standby ? InputForwarder(observeGamepads: false) : InputForwarder()
+        let inp = InputForwarder()
         // Picture in Picture up/down: rebind the pacer to a screen link, and
         // SUSPEND keyboard/mouse forwarding (the window is an alpha-0 mirror
         // source, not a focused game surface - otherwise the global relative-
@@ -225,12 +215,8 @@ extension StreamSession {
         win.onDidBecomeReadyForInput = { [weak inp] in
             inp?.installFirstResponder()
         }
-        win.standbyForHandover = options.standby
-        win.launchesInPictureInPicture = options.standby || options.startInPictureInPictureProvider()
+        win.launchesInPictureInPicture = options.startInPictureInPictureProvider()
         win.show()
-        // Standby: no pacer until promotion. Its tick statics are shared, and
-        // a second pacer would feed the live stream's stall detector.
-        guard !options.standby else { return (win, inp, dec) }
         // Stand up the display-clock frame pacer now that the window
         // is on screen with a real NSScreen - bind its CADisplayLink to
         // the stream content view's display so frames present on the

@@ -110,7 +110,8 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     private var lastTriggerTypes: (UInt8, UInt8)?
     private var loggedTriggerTargets: Set<UInt8> = []
     /// ControllerFocus identity; and the console's last trigger effect while
-    /// in standby, applied at the cut-over.
+    /// another stream (a Switch PC's old one, still closing) had the pad,
+    /// applied when this one arms it.
     private var focusID: ObjectIdentifier { ControllerFocus.id(self) }
     private var deferredTriggerEffect: ChiakiTriggerEffectsEvent?
     /// Chat to the console; the Mute button toggles it (`lock`).
@@ -1161,12 +1162,12 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
     /// Same gates NativeBackend arms on connect: haptics actuator live, motion
     /// sampler uplinked to us, and motion reporting requested for pad 0 (the PS5
     /// reads motion whenever a game wants it; it never asks).
-    /// Through ControllerFocus: a PS5 stream connecting in standby behind a
-    /// live one (Switch PC in PiP) takes the pad only at the cut-over.
+    /// Through ControllerFocus: this stream takes the pad, and a Switch PC's
+    /// old stream, still closing, can't park it under this one.
     private func armControllerFeedback() {
         ControllerFocus.activate(focusID) { [self] in
             armControllerFeedbackNow()
-            // What the console asked for while in standby.
+            // What the console asked for before this stream had the pad.
             let (h, t, effect) = lock.withLock { (hapticsNibble, triggerNibble, deferredTriggerEffect) }
             DualSenseHID.shared.setIntensity(haptics: h, triggers: t)
             if let effect { applyTriggerEffect(effect) }

@@ -25,10 +25,7 @@ struct HostSwitchTests {
         model.nativeStreamPictureInPicture = true
         defer { StreamWindow.switchingHosts = false }
         model.switchHost(to: host("den"))
-        // No second stream connecting behind the first, no PiP held open.
-        #expect(model.standbyStream == nil)
-        #expect(!PictureInPictureStage.shared.isHolding)
-        // The old stream ends; the new one opens in Picture in Picture.
+        // The old stream ends (its PiP closes); the new one opens its own.
         #expect(model.pendingHostSwitch?.hostID == "den")
         #expect(model.pendingHostSwitch?.inPictureInPicture == true)
     }

@@ -350,25 +350,9 @@ final class AppModel {
     var pictureInPictureLaunchRequestedAt: Date?
     /// "Switch PC" while streaming: started by the old stream's cleanup.
     var pendingHostSwitch: PendingHostSwitch?
-    /// The live stream's identity (AppModel+StreamHandover): only its events
+    /// The live stream's identity (AppModel+StreamRouting): only its events
     /// and callbacks move AppModel's live state.
     @ObservationIgnored var currentStreamToken: UUID?
-    /// Switch PC in Picture in Picture: the next stream, connecting in standby
-    /// behind the live one until it takes over.
-    @ObservationIgnored var standbyStream: StandbyStream?
-    /// Standby streams stopped on purpose (no "couldn't switch" banner).
-    @ObservationIgnored var cancelledStandbyTokens: Set<UUID> = []
-    struct StandbyStream {
-        let token: UUID
-        let session: StreamSession
-        let host: Host
-        let app: LibraryApp
-        let backendID: ObjectIdentifier
-        let startedAt: Date
-        var width = 0, height = 0, fps = 0
-        var hdr = false
-        var promoting = false
-    }
     /// Waking a PS5 before a switch to it (AppModel+Streaming.switchHost).
     @ObservationIgnored var switchWakeTask: Task<Void, Never>?
     struct PendingHostSwitch {
