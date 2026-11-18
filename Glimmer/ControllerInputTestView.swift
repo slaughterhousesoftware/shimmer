@@ -91,9 +91,6 @@ final class ControllerMonitor {
 struct ControllerInputTest: View {
     @Environment(AppModel.self) private var model
     @State private var monitor: ControllerMonitor?
-    /// The event counters line - for Diagnostics, not the Controller tab's
-    /// button test.
-    var showsDiagnostics = true
 
     var body: some View {
         // Reading monitor.revision establishes the @Observable dependency, so a
@@ -105,7 +102,7 @@ struct ControllerInputTest: View {
         TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
             let pads = GCController.controllers()
             VStack(alignment: .leading, spacing: 12) {
-                if showsDiagnostics { diagnosticLine }
+                diagnosticLine
                 if pads.isEmpty {
                     emptyState
                 } else {

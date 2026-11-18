@@ -254,36 +254,45 @@ struct RowIcon: View {
 
     private let image: NSImage?
     private let key: String
+    /// The ink's optical size and the column it's centred in (a row's icon:
+    /// 24 in 28; a controller tile's logo is drawn smaller).
+    private let side: CGFloat
+    private let width: CGFloat
 
-    init(symbol: String) {
+    init(symbol: String, side: CGFloat = 24, column: CGFloat = RowIcon.column) {
         image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 64, weight: .regular))
         key = "row-symbol:" + symbol
+        self.side = side
+        width = column
     }
 
-    init(asset: String) {
+    init(asset: String, side: CGFloat = 24, column: CGFloat = RowIcon.column) {
         image = NSImage(named: asset)
         key = "row-asset:" + asset
+        self.side = side
+        width = column
     }
 
     var body: some View {
         if let image, image.size.width > 0, image.size.height > 0 {
             let box = InkMeasure.measure(image, key: key).inkBox
-            let ink = Self.inkSize(aspect: image.size.width / image.size.height * box.width / box.height)
+            let ink = Self.inkSize(aspect: image.size.width / image.size.height * box.width / box.height,
+                                   side: side, column: width)
             let frame = CGSize(width: ink.width / box.width, height: ink.height / box.height)
             Image(nsImage: image)
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: frame.width, height: frame.height)
                 .offset(x: (0.5 - box.midX) * frame.width, y: (0.5 - box.midY) * frame.height)
-                .frame(width: Self.column, height: Self.column)
+                .frame(width: width, height: width)
         } else {
-            Color.clear.frame(width: Self.column, height: Self.column)
+            Color.clear.frame(width: width, height: width)
         }
     }
 
-    static func inkSize(aspect: CGFloat) -> CGSize {
-        var width = 24 * aspect.squareRoot(), height = 24 / aspect.squareRoot()
+    static func inkSize(aspect: CGFloat, side: CGFloat = 24, column: CGFloat = RowIcon.column) -> CGSize {
+        var width = side * aspect.squareRoot(), height = side / aspect.squareRoot()
         let longest = max(width, height)
         if longest > column { width *= column / longest; height *= column / longest }
         return CGSize(width: width, height: height)

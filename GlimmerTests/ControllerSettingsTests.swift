@@ -220,3 +220,39 @@ struct PCControllerFeedbackTests {
         #expect(NativeBackend().controllerFeedback == ControllerSettings.Snapshot())
     }
 }
+
+/// The Controller tab lists every connected pad the way System Settings'
+/// Game Controllers does: a brand tile, the name, its state; a click opens
+/// that pane.
+struct ControllerListTests {
+    @Test func brandTiles() {
+        #expect(ControllerTile.style(kind: "ps5").symbol == "playstation.logo")
+        #expect(ControllerTile.style(kind: "ps4").symbol == "playstation.logo")
+        #expect(ControllerTile.style(kind: "xbox").symbol == "xbox.logo")
+        #expect(ControllerTile.style(kind: "switchpro").rgb == 0xE60012)
+        #expect(ControllerTile.style(kind: "8bitdo_pro").symbol == "gamecontroller.fill")
+        #expect(ControllerTile.style(kind: "anything").symbol == "gamecontroller.fill")
+    }
+
+    @Test func statusLine() {
+        #expect(ControllerEntry(id: 0, name: "Pad", kind: "ps5", battery: (85, false)).status
+                == "Connected · 85% battery")
+        #expect(ControllerEntry(id: 0, name: "Pad", kind: "ps5", battery: (40, true)).status
+                == "Charging · 40%")
+        #expect(ControllerEntry(id: 0, name: "Pad", kind: "xbox", battery: (70, nil)).status
+                == "Connected · 70% battery")
+        #expect(ControllerEntry(id: 0, name: "Pad", kind: "generic", battery: nil).status == "Connected")
+    }
+
+    @Test func opensSystemSettingsGameControllers() {
+        #expect(ControllerTabPage.systemSettingsURL.absoluteString
+                == "x-apple.systempreferences:com.apple.Game-Controller-Settings.extension")
+    }
+
+    /// A raw-HID battery belongs to the DualSense only when it's the only one.
+    @Test func dualSenseBatteryOnlyWhenUnambiguous() {
+        #expect(ControllerEntry.hidBatteryApplies(kind: "ps5", dualSenseCount: 1))
+        #expect(!ControllerEntry.hidBatteryApplies(kind: "ps5", dualSenseCount: 2))
+        #expect(!ControllerEntry.hidBatteryApplies(kind: "xbox", dualSenseCount: 1))
+    }
+}
