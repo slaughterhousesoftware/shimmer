@@ -310,8 +310,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) {
         menuIsOpen = false
         hoveredRow = nil
+        expandedHostID = nil
         applyLabel()
     }
+
+    /// The server whose stream settings are open under it (its chevron),
+    /// until the menu closes.
+    private var expandedHostID: String?
 
     /// The Servers rows draw their own highlight, and the menu doesn't
     /// redraw a custom row when the highlight leaves it - so the controller
@@ -433,10 +438,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 let appearance = menu.effectiveAppearance
                 let mark = MenuHostMark.image(for: host, look: host.id == current ? .current : .off,
                                               appearance: appearance)
-                row.view = MenuServerRow(title: host.displayName, mark: mark) {
+                // The one in use (once the selection has caught up with a
+                // switch) carries the chevron to its stream settings, like
+                // the AirPods in use in the Sound menu.
+                let inUse = host.id == current && host.id == model.selectedHost?.id
+                let expanded = inUse && expandedHostID == host.id
+                row.view = MenuServerRow(title: host.displayName, mark: mark,
+                                         disclosure: inUse ? (expanded ? .expanded : .collapsed) : nil) {
                     [weak self] in self?.pickServer(host.id)
                 }
                 menu.addItem(row)
+                if expanded {
+                    addStreamSettings(for: host, to: menu)
+                    // Closed off from the next server, if there is one (the
+                    // Stream Audio section brings its own separator).
+                    if host.id != model.hosts.last?.id { menu.addItem(.separator()) }
+                }
             }
         }
 
@@ -537,8 +554,78 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         guard let host = model.hosts.first(where: { $0.id == id }) else { return }
         let current = model.pendingHostSwitch?.hostID
             ?? (model.isStreaming ? model.activeStreamHostID : model.selectedHost?.id)
-        if host.id != current { model.switchHost(to: host) }
+        if host.id != current {
+            expandedHostID = nil
+            model.switchHost(to: host)
+        } else if host.id == model.selectedHost?.id {
+            // The one in use: open or close its settings.
+            expandedHostID = expandedHostID == host.id ? nil : host.id
+        }
         rebuildOpenMenu()
+    }
+
+    // MARK: - The server in use's stream settings
+
+    /// Opened in place under the server in use (its chevron): Resolution,
+    /// Frame Rate and HDR as segmented switchers, Bitrate as a slider - the
+    /// same per-PC settings as the Settings window, applied to the next
+    /// stream; the menu stays open. A PS5 offers its own: 720p or 1080p,
+    /// 30 or 60, up to 100 Mbps. Kevin chose this layout from real
+    /// mock-ups (design/menu-bar, 2026-11-18).
+    private func addStreamSettings(for host: Host, to menu: NSMenu) {
+        func section(_ title: String, _ view: NSView) {
+            menu.addItem(.sectionHeader(title: title))
+            let item = NSMenuItem()
+            item.view = view
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        if host.isPlayStation {
+            let settings = PlayStationSettings.forConsole(host.id)
+            let heights = [720, 1080], rates = [30, 60]
+            section("Resolution", MenuSegmentRow(labels: heights.map { "\($0)p" },
+                                                 selected: heights.firstIndex(of: settings.height),
+                                                 accessibilityTitle: "Resolution") { settings.height = heights[$0] })
+            section("Frame Rate", MenuSegmentRow(labels: rates.map(String.init), selected: rates.firstIndex(of: settings.fps),
+                                                 accessibilityTitle: "Frame rate") { settings.fps = rates[$0] })
+            let stops = BitrateSlider.stopsMbps.filter { PlayStationSettings.bitrateRangeMbps.contains($0) }
+            section("Bitrate", MenuBitrateRow(stops: stops, mbps: settings.bitrateAuto ? nil : settings.bitrateMbps,
+                                              autoMbps: settings.height > 720 ? PlayStationSettings.presetBitrateMbps : nil) {
+                if let mbps = $0 { settings.bitrateMbps = mbps; settings.bitrateAuto = false } else { settings.bitrateAuto = true }
+            })
+            section("HDR", MenuSegmentRow(labels: ["Off", "On"], selected: settings.hdr ? 1 : 0,
+                                          accessibilityTitle: "HDR") { settings.hdr = $0 == 1 })
+        } else {
+            let model = model
+            let sizes = CommonResolution.allCases
+            let selectedSize = sizes.firstIndex { model.resolutionChoice == .standard($0) }
+            section("Resolution", MenuSegmentRow(labels: sizes.map { $0 == .uhd4K ? "4K" : $0.shortLabel },
+                                                 selected: selectedSize, accessibilityTitle: "Resolution") { [weak self] in
+                model.apply(.standard(sizes[$0]))
+                // Automatic's number follows the size.
+                self?.rebuildOpenMenu()
+            })
+            // The rates a screen here can show (and the one set, if higher).
+            let fastest = max(60, NSScreen.screens.map(\.maximumFramesPerSecond).max() ?? 60)
+            let rates = FrameRateChoice.standardRates.filter { $0 <= fastest || $0 == model.customFPS }
+            section("Frame Rate", MenuSegmentRow(labels: rates.map(String.init), selected: rates.firstIndex(of: model.customFPS),
+                                                 accessibilityTitle: "Frame rate") { [weak self] in
+                model.apply(.fixed(rates[$0]))
+                self?.rebuildOpenMenu()
+            })
+            section("Bitrate", MenuBitrateRow(stops: BitrateSlider.stopsMbps,
+                                              mbps: model.bitrateAuto ? nil : model.manualBitrateMbps,
+                                              autoMbps: model.recommendedBitrateMbpsNow) {
+                if let mbps = $0 { model.manualBitrateMbps = mbps; model.bitrateAuto = false } else { model.bitrateAuto = true }
+            })
+            section("HDR", MenuSegmentRow(labels: ["Off", "On"], selected: model.customHDR ? 1 : 0,
+                                          accessibilityTitle: "HDR") { model.customHDR = $0 == 1 })
+        }
+        if model.isStreaming, model.activeStreamHostID == host.id {
+            let note = NSMenuItem()
+            note.view = MenuNoteRow("Changes apply to the next stream.")
+            menu.addItem(note)
+        }
     }
 
     /// A verb that flips with the state. Listed idle too: the choice persists,

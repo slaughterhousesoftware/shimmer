@@ -443,3 +443,26 @@ struct MenuServerRowTests {
         #expect(band?.isHidden == true)
     }
 }
+
+/// The opened server's Bitrate row: "Auto" at the slider's left end, what
+/// it asks for at the right.
+@MainActor
+struct MenuBitrateRowTests {
+    private func shown(_ row: MenuBitrateRow) -> [String] {
+        row.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
+    }
+
+    @Test func automaticShowsWhatItWorksOutTo() {
+        let row = MenuBitrateRow(stops: [5, 10, 20], mbps: nil, autoMbps: 35) { _ in }
+        #expect(shown(row) == ["Auto", "35 Mbps"])
+        let slider = row.subviews.compactMap { $0 as? NSSlider }.first
+        #expect(slider?.doubleValue == 0)
+    }
+
+    @Test func aSetBitrateSitsOnItsStop() {
+        let row = MenuBitrateRow(stops: [5, 10, 20], mbps: 11, autoMbps: nil) { _ in }
+        #expect(shown(row) == ["Auto", "10 Mbps"])
+        let slider = row.subviews.compactMap { $0 as? NSSlider }.first
+        #expect(slider?.doubleValue == 2)
+    }
+}

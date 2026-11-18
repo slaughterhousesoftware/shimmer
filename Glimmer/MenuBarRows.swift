@@ -358,16 +358,23 @@ final class MenuActionRow: MenuRowView {
 
 /// A server in the Servers list: its round mark and its name, and a click
 /// that switches without closing the menu, as the Sound menu's outputs do.
+/// The one in use carries a chevron, as the AirPods in use do: a click
+/// opens its stream settings under it.
 final class MenuServerRow: MenuRowView {
+    enum Disclosure { case collapsed, expanded }
+
     private let title: String
     private let mark: NSImage
+    private let disclosure: Disclosure?
 
     static let height: CGFloat = 32
 
-    init(title: String, mark: NSImage, onPick: @escaping () -> Void) {
+    init(title: String, mark: NSImage, disclosure: Disclosure? = nil, onPick: @escaping () -> Void) {
         self.title = title
         self.mark = mark
+        self.disclosure = disclosure
         super.init(height: Self.height, accessibilityTitle: title, onPick: onPick)
+        if let disclosure { setAccessibilityExpanded(disclosure == .expanded) }
         sizeToContent()
     }
 
@@ -376,7 +383,7 @@ final class MenuServerRow: MenuRowView {
     /// Wide enough for the name, so the menu sizes itself around it.
     override var intrinsicContentSize: NSSize {
         let text = (title as NSString).size(withAttributes: Self.titleAttributes).width
-        return NSSize(width: 16 + MenuHostMark.diameter + 8 + text + 24, height: Self.height)
+        return NSSize(width: 16 + MenuHostMark.diameter + 8 + text + (disclosure == nil ? 24 : 44), height: Self.height)
     }
 
     override func drawContent(in bounds: NSRect) {
@@ -385,5 +392,149 @@ final class MenuServerRow: MenuRowView {
         let size = (title as NSString).size(withAttributes: Self.titleAttributes)
         (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
                                  withAttributes: Self.titleAttributes)
+        if let disclosure {
+            // The Sound menu's chevron: right when closed, down when open.
+            let name = disclosure == .expanded ? "chevron.down" : "chevron.right"
+            let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+                .applying(.init(paletteColors: [.secondaryLabelColor]))
+            if let chevron = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(config) {
+                let s = chevron.size
+                chevron.draw(in: NSRect(x: bounds.maxX - 18 - s.width, y: ((bounds.height - s.height) / 2).rounded(),
+                                        width: s.width, height: s.height))
+            }
+        }
+    }
+}
+
+// MARK: - The server in use's stream settings (its chevron)
+
+/// A setting as a row of text segments - the stock segmented control, full
+/// width, lined up with the section titles. Text, not icons: a choice of
+/// resolutions has no honest pictures, so the Sound menu's iconned
+/// Listening Mode list doesn't carry over (Kevin picked this, 2026-11-18,
+/// from real mock-ups in design/menu-bar).
+final class MenuSegmentRow: NSView {
+    private let control: NSSegmentedControl
+    private let onChange: (Int) -> Void
+
+    init(labels: [String], selected: Int?, accessibilityTitle: String, onChange: @escaping (Int) -> Void) {
+        control = NSSegmentedControl(labels: labels, trackingMode: .selectOne, target: nil, action: nil)
+        self.onChange = onChange
+        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 32))
+        autoresizingMask = [.width]
+        control.selectedSegment = selected ?? -1
+        control.segmentDistribution = .fillEqually
+        control.target = self
+        control.action = #selector(changed)
+        control.setAccessibilityLabel(accessibilityTitle)
+        control.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(control)
+        NSLayoutConstraint.activate([
+            control.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            control.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            control.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func changed() {
+        guard control.selectedSegment >= 0 else { return }
+        onChange(control.selectedSegment)
+    }
+}
+
+/// Bitrate as a slider: "Auto" at its left end (the stop before the
+/// lowest), what it asks for at the right - the number Automatic works out
+/// to, or the one set.
+final class MenuBitrateRow: NSView {
+    private let slider = NSSlider()
+    private let value = NSTextField(labelWithString: "")
+    private let stops: [Int]
+    private let autoMbps: Int?
+    private let onChange: (Int?) -> Void
+    private var index: Int
+
+    /// `mbps` nil: automatic. `onChange` gets nil for automatic.
+    init(stops: [Int], mbps: Int?, autoMbps: Int?, onChange: @escaping (Int?) -> Void) {
+        self.stops = stops
+        self.autoMbps = autoMbps
+        self.onChange = onChange
+        index = mbps.map { m in 1 + (stops.indices.min { abs(stops[$0] - m) < abs(stops[$1] - m) } ?? 0) } ?? 0
+        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 30))
+        autoresizingMask = [.width]
+        let auto = NSTextField(labelWithString: "Auto")
+        for label in [auto, value] {
+            label.font = .menuFont(ofSize: 0)
+            label.textColor = .secondaryLabelColor
+        }
+        value.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        value.alignment = .right
+        slider.minValue = 0
+        slider.maxValue = Double(stops.count)
+        // Stepped, but without tick marks - they cluttered a menu row; the
+        // knob snaps to the stop instead (`moved`).
+        slider.doubleValue = Double(index)
+        slider.isContinuous = true
+        slider.target = self
+        slider.action = #selector(moved)
+        slider.setAccessibilityLabel("Bitrate")
+        for view in [auto, slider, value] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        // The value's width fixed to its widest, so the slider holds still.
+        let widest = ("300 Mbps" as NSString).size(withAttributes: [.font: value.font!]).width + 2
+        NSLayoutConstraint.activate([
+            auto.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            auto.centerYAnchor.constraint(equalTo: centerYAnchor),
+            slider.leadingAnchor.constraint(equalTo: auto.trailingAnchor, constant: 8),
+            slider.centerYAnchor.constraint(equalTo: centerYAnchor),
+            value.leadingAnchor.constraint(equalTo: slider.trailingAnchor, constant: 8),
+            value.widthAnchor.constraint(equalToConstant: widest),
+            value.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            value.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        showValue()
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    private func showValue() {
+        if index == 0 {
+            value.stringValue = autoMbps.map { "\($0) Mbps" } ?? "Auto"
+        } else {
+            value.stringValue = "\(stops[index - 1]) Mbps"
+        }
+    }
+
+    @objc private func moved() {
+        let new = Int(slider.doubleValue.rounded())
+        slider.doubleValue = Double(new)
+        guard new != index else { return }
+        index = new
+        showValue()
+        onChange(index == 0 ? nil : stops[index - 1])
+    }
+}
+
+/// A line of small grey text under a setting.
+final class MenuNoteRow: NSView {
+    private let text: String
+
+    init(_ text: String) {
+        self.text = text
+        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 22))
+        autoresizingMask = [.width]
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        (text as NSString).draw(at: NSPoint(x: 16, y: 5), withAttributes: [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ])
     }
 }
