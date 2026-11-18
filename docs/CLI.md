@@ -51,10 +51,12 @@ scripts/shimmerctl set recording on    # record streams: one JSON object per sec
 scripts/shimmerctl set stats on        # the stats overlay over the picture
 scripts/shimmerctl set auto-pip on     # Picture in Picture when you switch away
 scripts/shimmerctl set keep-awake on   # hold off sleep while streaming
+scripts/shimmerctl set cmd-keys on     # send ⌘ shortcuts to the PC
+scripts/shimmerctl set mouse-input off # ignore the Mac's mouse (also in the menu bar)
 ```
 
 Each takes `on` or `off`, applies from the next stream (auto-pip from the next
-switch-away), and shows in `state` under `settings`. Recording is off unless
+switch-away, mouse-input at once), and shows in `state` under `settings`. Recording is off unless
 turned on; turn it off again when you're done.
 
 How it works: the app keeps `~/Library/Application Support/Shimmer/agent-state.json`

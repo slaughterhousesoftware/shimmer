@@ -1,34 +1,14 @@
 //
 //  SettingsPCsShortcutsPanes.swift
 //
-//  General's Keyboard & mouse section, and the Controller tab: the pad that
-//  is connected (with a button test), and the settings for what a game may
-//  do to it - one set for every machine, PS5 and PC alike.
+//  The Controller tab: the pad that is connected (with a button test), and
+//  the settings for what a game may do to it - one set for every machine,
+//  PS5 and PC alike.
 //
 
 import AppKit
 import GameController
 import SwiftUI
-
-// MARK: - Keyboard & mouse
-
-struct ShortcutsPane: View {
-    @Environment(AppModel.self) private var model
-
-    /// General's Keyboard & mouse section.
-    var body: some View {
-        @Bindable var model = model
-        Section {
-            Toggle(isOn: $model.captureSysKeys) {
-                Text("Use ⌘ shortcuts inside the game")
-                Text("Sends Command-key shortcuts to the PC during a stream.")
-            }
-            Toggle("Disable mouse input", isOn: $model.mouseInputDisabled)
-        } header: {
-            FormSectionHeader("Keyboard & mouse")
-        }
-    }
-}
 
 // MARK: - Controller tab
 

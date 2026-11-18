@@ -42,7 +42,7 @@ struct SettingsLayoutTests {
 @MainActor
 struct AgentSettingsTests {
     private static let keys = ["telemetryEnabled", "showStreamStats", "autoPictureInPicture",
-                               KeepAwakePolicy.defaultsKey]
+                               KeepAwakePolicy.defaultsKey, "captureSysKeys", "mouseInputDisabled"]
 
     private static func preservingDefaults(_ body: () -> Void) {
         let d = UserDefaults.standard
@@ -85,6 +85,22 @@ struct AgentSettingsTests {
             #expect(AgentControl.applySetting("volume", "on", to: model).contains("known:"))
             #expect(AgentControl.applySetting("recording", "maybe", to: model).contains("on or off"))
             #expect(model.telemetryEnabled == before)
+        }
+    }
+
+    /// The keyboard and mouse rows left General too; ⌘ shortcuts default off.
+    @Test func keyboardAndMouseAreReachable() {
+        Self.preservingDefaults {
+            let model = AppModel()
+            _ = AgentControl.applySetting("cmd-keys", "on", to: model)
+            _ = AgentControl.applySetting("mouse-input", "off", to: model)
+            #expect(model.captureSysKeys)
+            #expect(model.mouseInputDisabled)
+            let settings = AgentControl.settingsState(model)
+            #expect(settings["cmd-keys"] as? Bool == true)
+            #expect(settings["mouse-input"] as? Bool == false)
+            _ = AgentControl.applySetting("mouse-input", "on", to: model)
+            #expect(!model.mouseInputDisabled)
         }
     }
 }

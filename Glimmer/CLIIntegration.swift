@@ -28,7 +28,7 @@ enum ShimmerCLIAgentInstructions {
         `state` prints the app's live state; `logs --last 10m` has the detail. To
         find out why a stream misbehaves, `set recording on` records the next
         stream (one JSON object per second, in ~/Library/Logs/Shimmer); `set` also
-        takes stats, auto-pip and keep-awake. If the app doesn't answer, `fix relaunch`. To check a specific PC: \(doctor).
+        takes stats, auto-pip, keep-awake, cmd-keys and mouse-input. If the app doesn't answer, `fix relaunch`. To check a specific PC: \(doctor).
         If no apps appear, check the paired /applist request, hidden apps and
         Sunshine's configuration; the doctor command
         does not by itself verify pairing or the app list.

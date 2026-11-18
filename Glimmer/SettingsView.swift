@@ -105,7 +105,6 @@ private struct GeneralTabPage: View {
     var body: some View {
         Form {
             StreamWindowPane()
-            ShortcutsPane()
             AppPane()
         }
         .formStyle(.grouped)

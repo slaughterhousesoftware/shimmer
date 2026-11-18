@@ -317,8 +317,9 @@ def main():
     check.add_argument("--last", default="10m")
     setting = commands.add_parser("set", help="Turn on or off a setting with no switch in the app: "
                                   "recording (record streams to diagnose them), stats (overlay), "
-                                  "auto-pip, keep-awake")
-    setting.add_argument("setting", choices=["recording", "stats", "auto-pip", "keep-awake"])
+                                  "auto-pip, keep-awake, cmd-keys (⌘ shortcuts to the PC), mouse-input")
+    setting.add_argument("setting", choices=["recording", "stats", "auto-pip", "keep-awake",
+                                             "cmd-keys", "mouse-input"])
     setting.add_argument("value", choices=["on", "off"])
     stream = commands.add_parser("test-stream", help="Launch the real client, stream its saved default app, then quit")
     stream.add_argument("--host", required=True, help="Saved host name or address match")

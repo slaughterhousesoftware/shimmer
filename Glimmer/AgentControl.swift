@@ -70,6 +70,8 @@ final class AgentControl: NSObject {
         ("stats", "from the next stream (the stats shortcut toggles them mid-stream)"),
         ("auto-pip", "the next time the stream window is switched away from"),
         ("keep-awake", "from the next stream"),
+        ("cmd-keys", "from the next stream (⌘ shortcuts go to the PC)"),
+        ("mouse-input", "now (also the menu bar's Disable / Enable Mouse Input)"),
     ]
 
     /// `set`: turns one of `hiddenSettings` on or off and says what happened.
@@ -87,6 +89,8 @@ final class AgentControl: NSObject {
         case "recording": model.telemetryEnabled = on
         case "stats": model.showStreamStats = on
         case "auto-pip": model.autoPictureInPicture = on
+        case "cmd-keys": model.captureSysKeys = on
+        case "mouse-input": model.mouseInputDisabled = !on
         default: model.keepAwakePolicy = on ? .always : .never
         }
         return "\(name) \(on ? "on" : "off"); applies \(entry.applies)"
@@ -98,6 +102,8 @@ final class AgentControl: NSObject {
          "stats": model.showStreamStats,
          "auto-pip": model.autoPictureInPicture,
          "keep-awake": model.keepAwakePolicy == .always,
+         "cmd-keys": model.captureSysKeys,
+         "mouse-input": !model.mouseInputDisabled,
          "recordings_folder": FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/Shimmer").path]
     }
