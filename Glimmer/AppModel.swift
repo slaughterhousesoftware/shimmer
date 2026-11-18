@@ -340,8 +340,10 @@ final class AppModel {
     let pipHotkey = HotkeyChord.defaultPiP
     /// Pop the stream out to Picture in Picture automatically when the user
     /// switches away from the stream window (Cmd-Tab, Dock click, ...)
-    /// instead of just hiding it. Read live at the switch-away edge.
-    var autoPictureInPicture: Bool = true {
+    /// instead of just hiding it. Read live at the switch-away edge. Off for a
+    /// fresh install; no longer in Settings.
+    static let defaultAutoPictureInPicture = false
+    var autoPictureInPicture: Bool = AppModel.defaultAutoPictureInPicture {
         didSet { UserDefaults.standard.set(autoPictureInPicture, forKey: "autoPictureInPicture") }
     }
     /// The menu bar's "... in Picture in Picture": the next stream opens

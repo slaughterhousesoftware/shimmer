@@ -110,19 +110,6 @@ struct StreamWindowPane: View {
                     .init(value: $0, title: $0.displayName, symbol: $0.settingsSymbol)
                 })
             }
-            Toggle(isOn: $model.autoPictureInPicture) {
-                Text("Picture in Picture when you switch away")
-                Text("Moves the stream into a floating window when you switch apps.")
-            }
-            // A pad doesn't reset the Mac's idle timer, so a stream being
-            // played would dim and sleep without this. Off means the Mac's
-            // own rules apply even mid-stream.
-            Toggle(isOn: Binding(
-                get: { model.keepAwakePolicy.isOn },
-                set: { model.keepAwakePolicy = KeepAwakePolicy(isOn: $0) })) {
-                Text("Keep the Mac awake while streaming")
-                Text("A controller doesn’t count as activity, so the Mac would otherwise sleep.")
-            }
         } header: {
             FormSectionHeader("Stream")
         }

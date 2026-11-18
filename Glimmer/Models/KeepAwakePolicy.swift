@@ -5,10 +5,10 @@
 //  stream is video the user is watching, but to the OS there is no local
 //  input - a controller doesn't reset the idle timer - so without an
 //  assertion the screen dims and sleeps minutes into a pad-only session.
-//  That was always on; this makes it a choice. One toggle: on holds the
-//  assertion for the whole session (as every build before it did), off never
-//  holds it. A three-way "only while the window is showing" middle state
-//  existed briefly and was dropped - it read as three modes for one switch.
+//  That was always on, then a toggle in General; the toggle is gone and a
+//  fresh install is off (the Mac's own sleep rules apply). On holds the
+//  assertion for the whole session, off never holds it. A three-way "only
+//  while the window is showing" middle state existed briefly and was dropped.
 //
 
 import Foundation
@@ -21,9 +21,8 @@ public enum KeepAwakePolicy: String, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
 
-    /// A fresh install keeps the Mac awake - the safe stance for a stream
-    /// someone is actually playing.
-    public static let defaultPolicy: KeepAwakePolicy = .always
+    /// A fresh install lets the Mac sleep as it normally would.
+    public static let defaultPolicy: KeepAwakePolicy = .never
 
     /// UserDefaults key. Registered (never written) with `defaultPolicy` in
     /// GlimmerApp so the raw read agrees with the declared default.
@@ -37,11 +36,11 @@ public enum KeepAwakePolicy: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Resolve a persisted raw value. Absent or unrecognised lands on the
-    /// default rather than guessing - which is also where the retired
-    /// "whileShowing" value goes (it kept the Mac awake while playing, so
-    /// "on" is the faithful migration).
+    /// default rather than guessing. The retired "whileShowing" kept the Mac
+    /// awake while playing, so it reads as on.
     public static func persisted(rawValue: String?) -> KeepAwakePolicy {
-        rawValue.flatMap(KeepAwakePolicy.init(rawValue:)) ?? defaultPolicy
+        if rawValue == "whileShowing" { return .always }
+        return rawValue.flatMap(KeepAwakePolicy.init(rawValue:)) ?? defaultPolicy
     }
 
     /// Whether the sleep assertion is held right now. `windowShowing` is kept
@@ -54,7 +53,4 @@ public enum KeepAwakePolicy: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// The Settings toggle's view of the policy: on = always, off = never.
-    public var isOn: Bool { self == .always }
-    public init(isOn: Bool) { self = isOn ? .always : .never }
 }

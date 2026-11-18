@@ -29,4 +29,10 @@ struct SettingsLayoutTests {
         #expect(BitrateSlider.nearestStopIndex(mbps: 25, maxMbps: 300) == 3)
         #expect(BitrateSlider.nearestStopIndex(mbps: 400, maxMbps: 100) == 8)
     }
+
+    /// Picture in Picture on switching away is off for a fresh install (its
+    /// row left General).
+    @MainActor @Test func switchingAwayDoesNotStartPictureInPicture() {
+        #expect(AppModel.defaultAutoPictureInPicture == false)
+    }
 }

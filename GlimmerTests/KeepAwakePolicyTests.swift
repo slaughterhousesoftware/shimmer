@@ -1,7 +1,7 @@
 //
 //  KeepAwakePolicyTests.swift
 //
-//  The "keep the Mac awake while streaming" choice: its default, how a
+//  Whether a stream keeps the Mac awake: its default, how a
 //  persisted value resolves, and which combinations of policy and window
 //  state hold the sleep assertion. Pure - no session or ProcessInfo involved.
 //
@@ -11,17 +11,17 @@ import Testing
 
 struct KeepAwakePolicyTests {
 
-    @Test func freshInstallAlwaysKeepsAwake() {
-        // The behaviour every build before this one had.
-        #expect(KeepAwakePolicy.defaultPolicy == .always)
-        #expect(KeepAwakePolicy.persisted(rawValue: nil) == .always)
+    /// Off: the setting left Settings, and the Mac's own sleep rules apply.
+    @Test func freshInstallLetsTheMacSleep() {
+        #expect(KeepAwakePolicy.defaultPolicy == .never)
+        #expect(KeepAwakePolicy.persisted(rawValue: nil) == .never)
     }
 
     @Test func rawValuesResolveAndUnknownLandsOnTheDefault() {
-        #expect(KeepAwakePolicy.persisted(rawValue: "never") == .never)
+        #expect(KeepAwakePolicy.persisted(rawValue: "always") == .always)
         // The retired three-way middle value migrates to "on".
         #expect(KeepAwakePolicy.persisted(rawValue: "whileShowing") == .always)
-        #expect(KeepAwakePolicy.persisted(rawValue: "sometimes") == .always)
+        #expect(KeepAwakePolicy.persisted(rawValue: "sometimes") == .never)
     }
 
     @Test func alwaysHoldsRegardlessOfTheWindow() {
@@ -32,13 +32,6 @@ struct KeepAwakePolicyTests {
     @Test func neverHoldsNothing() {
         #expect(!KeepAwakePolicy.never.holdsSleepAssertion(windowShowing: true))
         #expect(!KeepAwakePolicy.never.holdsSleepAssertion(windowShowing: false))
-    }
-
-    @Test func toggleMapsOnToAlwaysAndOffToNever() {
-        #expect(KeepAwakePolicy(isOn: true) == .always)
-        #expect(KeepAwakePolicy(isOn: false) == .never)
-        #expect(KeepAwakePolicy.always.isOn)
-        #expect(!KeepAwakePolicy.never.isOn)
     }
 
     @Test func everyPolicyHasAName() {
