@@ -172,16 +172,38 @@ struct StopWhileStartingTests {
         #expect(await !session.startInProgress)
     }
 
+    /// No pinned certificate, no stream: start() refuses before it sends a
+    /// byte, with the "pair again" failure rather than a reach failure.
+    @Test func aPcWithNoPinnedCertificateIsNeverStreamedTo() async {
+        let session = StreamSession()
+        do {
+            _ = try await session.start(
+                server: ServerInfo(address: "192.0.2.1", uniqueId: "pc", serverName: "Den PC"),
+                config: StreamConfig(width: 1280, height: 720, fps: 60, bitrateKbps: 10_000), appID: 1)
+            Issue.record("start() went ahead without a pinned certificate")
+        } catch {
+            guard case StreamError.pairingFailed = error else {
+                Issue.record("expected pairingFailed, got \(error)")
+                return
+            }
+            #expect(StreamFailureCopy.connect(error, hostName: "Den PC").contains("add it again"))
+            #expect(!StreamFailureCopy.isTransient(error))
+        }
+    }
+
     /// A stop that lands while start() is at its first network leg: start()
     /// throws `.cancelled` (not a reach failure for the launcher to show), and
     /// stop() returns only once start() has let go.
     @Test func aStopDuringTheFirstLegEndsInCancelled() async {
         let session = StreamSession()
         // TEST-NET-1: nothing answers, so start() sits in its /serverinfo leg.
+        var server = ServerInfo(address: "192.0.2.1", uniqueId: "pc", serverName: "Den PC")
+        server.serverCertPEM = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+        let pinned = server
         let starting = Task { () -> Error? in
             do {
                 _ = try await session.start(
-                    server: ServerInfo(address: "192.0.2.1", uniqueId: "pc", serverName: "Den PC"),
+                    server: pinned,
                     config: StreamConfig(width: 1280, height: 720, fps: 60, bitrateKbps: 10_000), appID: 1)
                 return nil
             } catch { return error }

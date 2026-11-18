@@ -317,6 +317,16 @@ extension StreamSession {
     ) async throws -> (host: (serverInfo: ServerInfo, launch: LaunchResponse, network: NetworkClient),
                        backendConfig: BackendStreamConfig) {
         // --- 1) Pair or verify pairing ---------------------------------
+        // A stream only ever goes to a PC whose certificate this Mac has
+        // pinned. With no pin (its file missing, or disagreeing with the
+        // saved hint) the control client falls back to plain HTTP, which is
+        // right for the pairing sheet and wrong here: whatever answered at
+        // that address could claim to be paired, hand over a certificate of
+        // its own, and be sent the session key and every keystroke.
+        guard Self.hasPinnedCertificate(server) else {
+            log.error("No pinned certificate for this PC - refusing to stream; it has to be paired again")
+            throw StreamError.pairingFailed("no pinned certificate")
+        }
         let network = NetworkClient(server: server)
         self.network = network
         // Drop the orphaned NetworkClient on any exit where stop() can't own it
@@ -363,6 +373,10 @@ extension StreamSession {
             config: config, launch: launch, server: serverInfo, rtt: rttSampler.harvest())
         handedBack = true
         return ((serverInfo, launch, network), backendConfig)
+    }
+
+    nonisolated static func hasPinnedCertificate(_ server: ServerInfo) -> Bool {
+        server.serverCertPEM?.isEmpty == false
     }
 
     /// The BackendStreamConfig a PS5 session reports to the shared plumbing
