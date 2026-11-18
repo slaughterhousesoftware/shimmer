@@ -185,8 +185,10 @@ extension StreamSession {
             } else {
                 code = -1
             }
-            // Read before the teardown below latches it too.
-            let stoppedByRequest = stopRequested
+            // Read before the teardown below latches it too. The task being
+            // cancelled is the same request arriving by its other road (the
+            // launcher cancels start()'s task as it asks for the stop).
+            let stoppedByRequest = stopRequested || Task.isCancelled
             log.error("startConnection failed with \(code)\(stoppedByRequest ? " (a stop was requested)" : "")")
             // On a RECONNECT attempt, DON'T run the full stop() - that would
             // close the window, drop the decoder (blanking the frozen frame),

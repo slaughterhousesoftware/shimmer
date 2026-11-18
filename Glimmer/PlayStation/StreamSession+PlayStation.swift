@@ -30,7 +30,9 @@ extension StreamSession {
         do {
             try await backend.startConnectionAsync(server: server, config: backendConfig)
         } catch {
-            let stoppedByRequest = stopRequested
+            // The task being cancelled is the stop request arriving by its
+            // other road (the launcher cancels start()'s task as it asks).
+            let stoppedByRequest = stopRequested || Task.isCancelled
             if !stoppedByRequest { noteTelemetryDisconnect(.connectFailed) }
             await performStop(cause: stoppedByRequest ? (stopCauseDuringStart ?? .userStopped) : .connectFailed)
             throw stoppedByRequest ? errorForStopDuringStart : error
