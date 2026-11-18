@@ -54,10 +54,16 @@ extension StreamWindow {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self, !self.didClose, !self.isBackgrounded, !self.window.isKeyWindow else { return }
             self.log.error("Window not key 1.5s after show(); retrying activate + makeKeyAndOrderFront + first-responder install")
-            NSApp.activate()
+            // A stream that comes up long after the click that asked for it (a
+            // PS5 waking, a wake-then-connect) has no click left to activate
+            // with: a plain activate() is refused, and the window sat on
+            // screen without the keyboard until it was clicked. Activate the
+            // way the PiP return does, and keep asking until it holds.
+            Self.forceActivate()
             self.window.orderFrontRegardless()   // on top even when activation is refused
             self.window.makeKeyAndOrderFront(nil)
             self.onDidBecomeReadyForInput?()
+            self.reassertActivation(attempt: 0)
         }
     }
 

@@ -342,7 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainActor.assumeIsolated { AWDLGuard.shared.recoverAtLaunch() }
         GameModeBoost.shared.recoverAtLaunch()
         guard !launchedAtLogin else { return }
-        UpdaterController.shared.updater.checkForUpdatesInBackground()
+        UpdaterController.shared.checkInBackgroundWhenReady()
     }
     #else
     func applicationDidFinishLaunching(_ notification: Notification) {

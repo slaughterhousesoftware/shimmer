@@ -52,6 +52,22 @@ final class UpdaterController {
     }
 
     var updater: SPUUpdater { controller.updater }
+
+    /// The check made on every open. Sparkle is still starting up right after
+    /// launch (it holds a session while it looks for a finished install), and
+    /// a check asked for then is refused with an error in the log - which is
+    /// what happened on all 67 launches in one 36-hour stretch, so the launch
+    /// check never ran. Wait until Sparkle says it can check.
+    func checkInBackgroundWhenReady(attempt: Int = 0) {
+        if updater.canCheckForUpdates, !updater.sessionInProgress {
+            updater.checkForUpdatesInBackground()
+            return
+        }
+        guard attempt < 15 else { return }   // ~30 s; the daily check covers the rest
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.checkInBackgroundWhenReady(attempt: attempt + 1)
+        }
+    }
 }
 
 /// Tracks Sparkle's KVO-observable `canCheckForUpdates` as Observation-tracked

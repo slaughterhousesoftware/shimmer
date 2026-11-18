@@ -86,10 +86,20 @@ final class AWDLGuard {
     func streamStarted(hostAddress: String) {
         guard enabled, permissionInstalled else { return }
         let parker = self.parker
+        streamGeneration &+= 1
+        let generation = streamGeneration
         Task.detached(priority: .userInitiated) {
             guard let interface = AWDLParker.routeInterface(to: hostAddress) else { return }
             guard AWDLParker.isWiFi(interface) else {
                 Diag.info("Stream route is \(interface), not Wi-Fi - leaving AWDL alone", "AWDL")
+                return
+            }
+            // The route lookup runs a subprocess. A stream that ended while it
+            // ran has already "disengaged" (a no-op then): parking after that
+            // left AirDrop and AirPlay down, re-lowered every second, with no
+            // stream to end and bring them back.
+            guard await MainActor.run(body: { AWDLGuard.shared.streamGeneration == generation }) else {
+                Diag.info("Stream ended before AWDL was parked - leaving it up", "AWDL")
                 return
             }
             parker.engage()
@@ -97,8 +107,13 @@ final class AWDLGuard {
     }
 
     func streamEnded() {
+        streamGeneration &+= 1
         parker.disengage(reason: "stream ended")
     }
+
+    /// Bumped at each stream start and end; a start's parking only goes ahead
+    /// while its own generation is still current.
+    @ObservationIgnored private(set) var streamGeneration: UInt64 = 0
 
     /// App quit: restore synchronously.
     func appWillTerminate() {
