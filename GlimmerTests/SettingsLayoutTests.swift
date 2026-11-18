@@ -1,7 +1,7 @@
 //
 //  SettingsLayoutTests.swift
 //
-//  Servers / General / About only; the old Sunshine and PlayStation tabs open
+//  Servers / General / Controller / About; the old Sunshine and PlayStation tabs open
 //  Servers; the bitrate slider's snap points.
 //
 
@@ -10,8 +10,8 @@ import Testing
 @testable import Glimmer
 
 struct SettingsLayoutTests {
-    @Test func onlyThreeTabs() {
-        #expect(SettingsTab.allCases.map(\.rawValue) == ["computers", "general", "about"])
+    @Test func fourTabs() {
+        #expect(SettingsTab.allCases.map(\.rawValue) == ["computers", "general", "controller", "about"])
     }
     @Test func removedTabsOpenServers() {
         #expect(SettingsTab(persisted: "stream") == .computers)

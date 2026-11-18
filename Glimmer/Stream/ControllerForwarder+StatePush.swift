@@ -4,10 +4,9 @@
 //  The PER-FRAME state push: the two entry points that carry a gamepad frame to
 //  the host (the GameController `valueChangedHandler` full-state forward and the
 //  raw-HID centre-button side-channel), the shared builder they both run, and
-//  the table-driven button bitmask. Split from ControllerForwarder.swift - same
-//  idiom as the ControllerForwarder+QuitChord split, to keep that file under the
-//  length limit; the attach/detach/arrival lifecycle stays there. Stored state
-//  (`gamepadMask`, the quit-chord dwell fields) lives on `InputForwarder`
+//  the table-driven button bitmask. Split from ControllerForwarder.swift to keep
+//  that file under the length limit; the attach/detach/arrival lifecycle stays
+//  there. Stored state (`gamepadMask`) lives on `InputForwarder`
 //  proper, so the methods here rely on default `internal` access to it.
 //
 
@@ -31,33 +30,21 @@ extension InputForwarder {
     }
 
     /// Raw-HID side-channel update: fired ONLY when a decoded DualSense bit
-    /// changed - a center button (Options/Create/PS/Mute) or, for the quit chord,
-    /// a shoulder (DualSenseHID gates onChange on a real bit change). GameController
+    /// changed - a center button (Options/Create/PS/Mute) or a shoulder
+    /// (DualSenseHID gates onChange on a real bit change). GameController
     /// never delivers the center buttons and does NOT fire its valueChangedHandler
     /// for them, so this push is necessary to carry a center-button edge to the
     /// host - but it does NOT re-forward the touchpad (that stays on the
     /// GameController path) and the InputBatcher coalesces it with the latest
     /// GC-sourced axes for the slot, so it is not a double-feed of stick/axis
     /// state. A shoulder edge here re-pushes the same GC-sourced state (the host
-    /// L1/R1 still come from GameController); its purpose is to re-run the chord
-    /// check so a chord completed by a shoulder arms even if GameController's
-    /// frame for it is late or withheld.
+    /// L1/R1 still come from GameController).
     func sendCenterButtonUpdate(pad: GCExtendedGamepad, slot: UInt8) {
-        let pushed = pushControllerState(pad: pad, slot: slot)
-        // Partial-hold breadcrumb: a centre button is down, the chord needs
-        // centre buttons, and the chord did NOT match on this edge (a match
-        // returns false from the push, having armed the dwell). This is the
-        // line that makes "I held all four and nothing happened" diagnosable:
-        // it names which of the four never registered. Edge-only + rate-limited.
-        guard pushed, quitChordUsesCentreButtons() else { return }
-        let hid = DualSenseHID.shared.buttons(forSlot: slot)
-        if hid.options || hid.create {
-            quitChordBreadcrumb(.partial, "partial hold on slot \(slot)", pad: pad)
-        }
+        pushControllerState(pad: pad, slot: slot)
     }
 
     /// Build + push the current multiController state for `slot`. Returns false if
-    /// the push was short-circuited (not ready, or the quit chord fired). The
+    /// the push was short-circuited (not ready, or the host refused the pad). The
     /// touchpad surface is NOT forwarded here - callers that own the GameController
     /// frame do that separately.
     @discardableResult
@@ -66,27 +53,6 @@ extension InputForwarder {
         // The debug latency probe drives slot 0 itself; a real pad's frames
         // would release its presses early.
         guard !LatencyProbe.armed else { return false }
-
-        // Controller-side quit chord - fires the same `onQuitHotkey` the
-        // keyboard chord uses, but only after the chord stays held through
-        // the dwell window (the Settings label promises "HOLD to leave the
-        // stream"; firing on the first coincident frame meant any in-game
-        // moment where the chord buttons momentarily overlapped - e.g. both
-        // shoulders with the .l1r1 option - killed the session instantly).
-        // Checked BEFORE building the bitmask we forward to the host so the
-        // chord-holding frames don't get sent through (the host would
-        // otherwise see L1+R1+L2+R2 in a game and act on it for the whole
-        // hold). Dwell machinery: ControllerForwarder+QuitChord.swift.
-        if matchesControllerQuitChord(pad: pad) {
-            armQuitChordDwell(pad: pad, slot: slot)
-            return false
-        }
-        // Released before the dwell elapsed (or never held): an in-game
-        // button coincidence, not a quit. Only the arming pad's frames may
-        // cancel - another pad's traffic says nothing about the holder.
-        if quitChordDwellSlot == slot {
-            cancelQuitChordDwell(reason: "released before the dwell elapsed", pad: pad)
-        }
 
         // Identity before state: if the host has not accepted this slot's
         // arrival yet, send it now, and hold the state if it is still refused.

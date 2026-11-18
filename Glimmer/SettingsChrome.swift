@@ -33,7 +33,7 @@ struct SettingsHeaderBackground: View {
 /// The pages the settings view can show. Raw values are persisted as the
 /// remembered tab, so leave them alone when renaming a title.
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case computers, general, about
+    case computers, general, controller, about
 
     var id: String { rawValue }
 
@@ -52,6 +52,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         // and existing references); only the shown name changed to "Servers".
         case .computers: return "Servers"
         case .general: return "General"
+        case .controller: return "Controller"
         case .about: return "About"
         }
     }
@@ -63,6 +64,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         // already use for a machine.
         case .computers: return "server.rack"
         case .general: return "slider.horizontal.3"
+        case .controller: return "gamecontroller"
         case .about: return "info.circle"
         }
     }
@@ -75,6 +77,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         // settings run longer; the sidebar's bottom bar stays put.
         case .computers: return 528 - 32
         case .general: return 744 - 32
+        // The pad, its feedback and its buttons, without scrolling.
+        case .controller: return 528 - 32
         case .about: return 540 - 32
         }
     }

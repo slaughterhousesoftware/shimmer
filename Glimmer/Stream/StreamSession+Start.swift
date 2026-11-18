@@ -46,8 +46,6 @@ extension StreamSession {
             StatsOverlayDefaults.extendedRows
         },
         statsThresholdsProvider: @escaping @MainActor () -> StatsThresholds = { .default },
-        controllerQuitChordProvider: @escaping @MainActor () -> ControllerQuitChord = { .none },
-        customControllerChordProvider: @escaping @MainActor () -> Set<ControllerButton> = { [] },
         onBackgroundedChanged: (@MainActor (Bool) -> Void)? = nil,
         pipHotkeyProvider: @escaping @MainActor () -> HotkeyChord = { .defaultPiP },
         autoPictureInPictureProvider: @escaping @MainActor () -> Bool = { false },
@@ -143,8 +141,6 @@ extension StreamSession {
             statsHotkeyProvider: statsHotkeyProvider,
             bookmarkHotkeyProvider: bookmarkHotkeyProvider,
             releasePointerHotkeyProvider: releasePointerHotkeyProvider,
-            controllerQuitChordProvider: controllerQuitChordProvider,
-            customControllerChordProvider: customControllerChordProvider,
             onBackgroundedChanged: onBackgroundedChanged,
             pipHotkeyProvider: pipHotkeyProvider,
             autoPictureInPictureProvider: autoPictureInPictureProvider,

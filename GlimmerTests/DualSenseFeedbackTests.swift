@@ -322,12 +322,11 @@ struct PlayStationSettingsTests {
         #expect(a.snapshot.bitrateKbps == nil)          // automatic by default
         a.bitrateAuto = false
         a.bitrateMbps = 250                               // over the console's range
-        a.haptics = .rumble
         a.presentation = .smooth
         #expect(a.bitrateMbps == 100)
         let b = PlayStationSettings(defaults: defaults)
         #expect(b.snapshot.bitrateKbps == 100_000)
-        #expect(b.haptics == .rumble && !b.snapshot.presentsDirect)
+        #expect(!b.snapshot.presentsDirect)
         #expect(defaults.object(forKey: "PS5.bitrateMbps") as? Int == 100)
     }
 }

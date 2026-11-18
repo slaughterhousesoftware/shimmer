@@ -38,8 +38,6 @@ extension StreamSession {
         let statsHotkeyProvider: @MainActor () -> HotkeyChord
         let bookmarkHotkeyProvider: @MainActor () -> HotkeyChord
         let releasePointerHotkeyProvider: @MainActor () -> HotkeyChord
-        let controllerQuitChordProvider: @MainActor () -> ControllerQuitChord
-        let customControllerChordProvider: @MainActor () -> Set<ControllerButton>
         let onBackgroundedChanged: (@MainActor (Bool) -> Void)?
         let pipHotkeyProvider: @MainActor () -> HotkeyChord
         let autoPictureInPictureProvider: @MainActor () -> Bool
@@ -51,33 +49,9 @@ extension StreamSession {
         var standby = false
     }
 
-    /// Build the one-time leave-hint string: the keyboard hotkey, plus the
-    /// controller chord when one is set AND a controller is connected. Omits the
-    /// controller clause when its chord depends on a DualSense center button
-    /// macOS drops with raw-HID off - advertising a chord that can't fire is worse
-    /// than silence.
-    static func leaveHintText(
-        hotkey: HotkeyChord, chord: ControllerQuitChord,
-        customChord: Set<ControllerButton>
-    ) -> String {
-        let base = "Press \(hotkey.displayString)"
-        guard chord != .none, !GCController.controllers().isEmpty else {
-            return "\(base) to leave the stream"
-        }
-        // Honesty: a Create/Mute-based chord can't fire on a DualSense without
-        // the raw-HID reader; drop the clause rather than promise it.
-        let needsRawHID: Bool
-        switch chord {
-        case .startSelectL1R1: needsRawHID = true
-        case .custom: needsRawHID = !customChord.isDisjoint(with: [.create, .mute])
-        case .none, .l1r1, .l1r1l2r2, .l3r3: needsRawHID = false
-        }
-        if needsRawHID && !DualSenseHID.isEnabled {
-            return "\(base) to leave the stream"
-        }
-        let chordText = chord == .custom
-            ? ControllerButton.describe(customChord) : chord.displayName
-        return "\(base) (or hold \(chordText) on the controller) to leave"
+    /// The one-time leave hint: the keyboard hotkey.
+    static func leaveHintText(hotkey: HotkeyChord) -> String {
+        "Press \(hotkey.displayString) to leave the stream"
     }
 
     /// Stand up the window + decoder + input on the main actor and return them.
@@ -164,8 +138,6 @@ extension StreamSession {
         inp.pipHotkeyProvider = options.pipHotkeyProvider
         inp.bookmarkHotkeyProvider = options.bookmarkHotkeyProvider
         inp.releasePointerHotkeyProvider = options.releasePointerHotkeyProvider
-        inp.controllerQuitChordProvider = options.controllerQuitChordProvider
-        inp.customControllerChordProvider = options.customControllerChordProvider
         dec.statsOverlayEnabled = initialStatsOverlay
         dec.setNegotiatedBitrateKbps(options.negotiatedBitrateKbps)
         dec.setActiveAudioConfigLabel(config.audio.displayLabel)
@@ -187,8 +159,6 @@ extension StreamSession {
         // lost. See the `onFirstDecodedFrame` re-wire in the post-bridge
         // MainActor block.)
         let hotkeyProvider = options.quitHotkeyProvider
-        let chordProvider = options.controllerQuitChordProvider
-        let customChordProvider = options.customControllerChordProvider
         dec.onFirstDecodedFrame = { [weak win] in
             win?.fadeInOnFirstFrame()
             // One-time discoverability toast: Esc is a game input and the menu
@@ -198,10 +168,7 @@ extension StreamSession {
             // one-time bool) re-surfaces it after the user rebinds the hotkey/chord,
             // since Esc is game input and the menu bar is hidden (no rediscovery).
             guard let win else { return }
-            let text = Self.leaveHintText(
-                hotkey: hotkeyProvider(),
-                chord: chordProvider(),
-                customChord: customChordProvider())
+            let text = Self.leaveHintText(hotkey: hotkeyProvider())
             guard UserDefaults.standard.string(forKey: Self.leaveHintShownKey) != text else { return }
             UserDefaults.standard.set(text, forKey: Self.leaveHintShownKey)
             win.leaveHintBanner.setText(text)

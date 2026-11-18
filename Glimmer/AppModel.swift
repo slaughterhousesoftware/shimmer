@@ -479,35 +479,6 @@ final class AppModel {
     /// you re-grab without moving the mouse off and back, and how you release
     /// without reaching for Esc. Read live via a provider, like the quit/stats
     let releasePointerHotkey = HotkeyChord.defaultReleasePointer
-    /// Controller-side quit chord - fires the same path as `quitHotkey`
-    /// from the keyboard, but driven by a multi-button hold on the
-    /// gamepad. Defaults to L3 + R3 (click both sticks): native on every pad (no
-    /// Create/Share/Mute, which macOS drops on a DualSense), and - unlike a
-    /// shoulder+trigger chord - its partials don't leak a host combo as you press
-    /// in (L1+R1+L2+R2 assembles through LB+RB+LT, which Steam Big Picture reads
-    /// as Show-Keyboard). The 400ms dwell guards a mid-game trip; "None" disables.
-    var controllerQuitChord: ControllerQuitChord = .l3r3 {
-        didSet {
-            UserDefaults.standard.set(controllerQuitChord.rawValue, forKey: "controllerQuitChord")
-        }
-    }
-
-    /// User-recorded buttons backing the `.custom` quit chord (press the buttons,
-    /// we store them - issue #9). Persisted as JSON.
-    var customControllerChord: Set<ControllerButton> = AppModel.loadCustomChord() {
-        didSet {
-            if let data = try? JSONEncoder().encode(customControllerChord) {
-                UserDefaults.standard.set(data, forKey: "customControllerChord")
-            }
-        }
-    }
-
-    private static func loadCustomChord() -> Set<ControllerButton> {
-        guard let data = UserDefaults.standard.data(forKey: "customControllerChord"),
-              let set = try? JSONDecoder().decode(Set<ControllerButton>.self, from: data) else { return [] }
-        return set
-    }
-
     /// Live "is any game controller connected" flag, driven by the
     /// `GCControllerDidConnect` / `GCControllerDidDisconnect` observers in
     /// `startLiveRefresh()` and seeded at launch. Because it's an `@Observable`
@@ -777,7 +748,6 @@ final class AppModel {
             rawValue: UserDefaults.standard.string(forKey: KeepAwakePolicy.defaultsKey))
         showStreamStats = Self.persistedBool("showStreamStats") ?? showStreamStats
         autoPictureInPicture = Self.persistedBool("autoPictureInPicture") ?? autoPictureInPicture
-        controllerQuitChord = Self.persistedRawValue("controllerQuitChord", ControllerQuitChord.self) ?? controllerQuitChord
     }
 
     // MARK: Mute/restore Mac audio

@@ -156,11 +156,6 @@ extension InputForwarder {
         window = nil
         isReady = false
 
-        // A quit-chord hold can be mid-dwell at teardown (the dwell firing is
-        // itself one way the session ends) - cancel it so the timer can't
-        // invoke onQuitHotkey against a session that's already stopping.
-        cancelQuitChordDwell()
-
         // Balance per-controller acquisitions (DualSenseHID retain, the
         // Battery/Motion/Haptics singleton slots) and drop the controller
         // bookkeeping - the measured session-teardown leak; see

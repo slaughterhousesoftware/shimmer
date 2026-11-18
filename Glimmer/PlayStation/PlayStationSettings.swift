@@ -3,8 +3,9 @@
 //
 //  The PS5's own stream settings, apart from the Sunshine ones: a PS5 stream
 //  is a different kind of stream (fixed 720p/1080p presets, 30/60 fps, its
-//  own bitrate range, the DualSense's haptics and triggers), so it gets its
-//  own settings instead of borrowing numbers meant for a PC. Each console
+//  own bitrate range), so it gets its own settings instead of borrowing
+//  numbers meant for a PC. The pad's haptics, triggers and light bar are
+//  shared with PC streams (ControllerSettings). Each console
 //  has its own (`forConsole`), persisted under "PS5.<host id>." keys; the
 //  bare "PS5." keys are the pre-per-console values, copied once to every
 //  console registered then (`migrateGlobalToConsoles`).
@@ -60,22 +61,8 @@ final class PlayStationSettings {
         }
     }
 
-    enum HapticsMode: String, CaseIterable, Identifiable, Sendable {
-        /// The console's haptics on the DualSense's actuators (USB or Bluetooth).
-        case actuators
-        /// Haptics turned into plain rumble.
-        case rumble
-        case off
-
-        var id: String { rawValue }
-        var displayName: String {
-            switch self {
-            case .actuators: return "Haptic feedback"
-            case .rumble: return "Rumble"
-            case .off: return "Off"
-            }
-        }
-    }
+    /// The pad's settings are shared with PC streams now (ControllerSettings).
+    typealias HapticsMode = ControllerSettings.Vibration
 
     enum Presentation: String, CaseIterable, Identifiable, Sendable {
         /// Each frame shown as soon as it is decoded.
@@ -114,19 +101,20 @@ final class PlayStationSettings {
     var hdr: Bool = false { didSet { save(hdr, "hdr") } }
     var hevc: Bool = true { didSet { save(hevc, "hevc") } }
     var presentation: Presentation = .lowestLatency { didSet { save(presentation.rawValue, "presentation") } }
-    var haptics: HapticsMode = .actuators { didSet { save(haptics.rawValue, "haptics") } }
-    var adaptiveTriggers: Bool = true { didSet { save(adaptiveTriggers, "adaptiveTriggers") } }
-    var lightBar: Bool = true { didSet { save(lightBar, "lightBar") } }
     var restWhenStreamEnds: Bool = false { didSet { save(restWhenStreamEnds, "restWhenStreamEnds") } }
 
     @ObservationIgnored private var loading = false
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let hostID: String?
+    /// Vibration, adaptive triggers and the light bar: one set for every
+    /// machine, on the Controller tab.
+    @ObservationIgnored private let controller: ControllerSettings
 
     /// `hostID` nil: the bare pre-per-console keys.
-    init(hostID: String? = nil, defaults: UserDefaults = .standard) {
+    init(hostID: String? = nil, defaults: UserDefaults = .standard, controller: ControllerSettings? = nil) {
         self.defaults = defaults
         self.hostID = hostID
+        self.controller = controller ?? .shared
         loading = true
         defer { loading = false }
         if let v = defaults.object(forKey: Self.key(hostID: hostID, "height")) as? Int { height = v == 720 ? 720 : 1080 }
@@ -136,9 +124,6 @@ final class PlayStationSettings {
         if let v = defaults.object(forKey: Self.key(hostID: hostID, "hdr")) as? Bool { hdr = v }
         if let v = defaults.object(forKey: Self.key(hostID: hostID, "hevc")) as? Bool { hevc = v }
         if let v = defaults.string(forKey: Self.key(hostID: hostID, "presentation")).flatMap(Presentation.init) { presentation = v }
-        if let v = defaults.string(forKey: Self.key(hostID: hostID, "haptics")).flatMap(HapticsMode.init) { haptics = v }
-        if let v = defaults.object(forKey: Self.key(hostID: hostID, "adaptiveTriggers")) as? Bool { adaptiveTriggers = v }
-        if let v = defaults.object(forKey: Self.key(hostID: hostID, "lightBar")) as? Bool { lightBar = v }
         if let v = defaults.object(forKey: Self.key(hostID: hostID, "restWhenStreamEnds")) as? Bool { restWhenStreamEnds = v }
     }
 
@@ -156,8 +141,8 @@ final class PlayStationSettings {
     /// main actor).
     var snapshot: Snapshot {
         Snapshot(height: height, fps: fps, bitrateKbps: bitrateAuto ? nil : bitrateMbps * 1000, hdr: hdr,
-                 hevc: hevc, presentsDirect: presentation == .lowestLatency, haptics: haptics,
-                 adaptiveTriggers: adaptiveTriggers, lightBar: lightBar,
+                 hevc: hevc, presentsDirect: presentation == .lowestLatency, haptics: controller.vibration,
+                 adaptiveTriggers: controller.adaptiveTriggers, lightBar: controller.lightBar,
                  restWhenStreamEnds: restWhenStreamEnds)
     }
 

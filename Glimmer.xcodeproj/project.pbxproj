@@ -127,7 +127,7 @@
 		ABCD20260609000000001802 /* ControllerBattery.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD20260609000000001801 /* ControllerBattery.swift */; };
 		ABCD20260610000000000802 /* AudioDecoder+CushionMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD20260610000000000801 /* AudioDecoder+CushionMemory.swift */; };
 		ABCD20260610000000004D02 /* ControllerHaptics+Actuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD20260610000000004D01 /* ControllerHaptics+Actuation.swift */; };
-		ABCD20260610000000004D04 /* ControllerForwarder+QuitChord.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD20260610000000004D03 /* ControllerForwarder+QuitChord.swift */; };
+		ABCD20260610000000004D04 /* ControllerSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD20260610000000004D03 /* ControllerSettings.swift */; };
 		ABCD20260610000000005F02 /* EnvSignalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD20260610000000005F01 /* EnvSignalController.swift */; };
 		BBF95775D96E9853A40ADED0 /* Host.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9158C8506080330EC17875A9 /* Host.swift */; };
 		BC8B3FD0322A256049C1CAF8 /* QualityCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAE5FA4BA5A94E9668B7089 /* QualityCalculator.swift */; };
@@ -327,7 +327,7 @@
 		DEC0DE84000000000000001B /* WindowPointerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC0DE84000000000000001C /* WindowPointerTests.swift */; };
 		DEC0DE2026083000000000A2 /* IOReportSamplerLifetimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC0DE2026083000000000A1 /* IOReportSamplerLifetimeTests.swift */; };
 		D2000037 /* KeyboardScanMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000036 /* KeyboardScanMapTests.swift */; };
-		D20000A1 /* ControllerQuitChordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000A0 /* ControllerQuitChordTests.swift */; };
+		D20000A1 /* ControllerSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000A0 /* ControllerSettingsTests.swift */; };
 		D20000F1 /* ControllerArrivalOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000F0 /* ControllerArrivalOrderTests.swift */; };
 		D20000F3 /* DatagramSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000F2 /* DatagramSourceTests.swift */; };
 		A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000320000000000000 /* PictureInPictureTests.swift */; };
@@ -511,7 +511,7 @@
 		ABCD20260609000000001801 /* ControllerBattery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ControllerBattery.swift; path = Stream/ControllerBattery.swift; sourceTree = "<group>"; };
 		ABCD20260610000000000801 /* AudioDecoder+CushionMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/AudioDecoder+CushionMemory.swift"; sourceTree = "<group>"; };
 		ABCD20260610000000004D01 /* ControllerHaptics+Actuation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = "ControllerHaptics+Actuation.swift"; path = "Stream/ControllerHaptics+Actuation.swift"; sourceTree = "<group>"; };
-		ABCD20260610000000004D03 /* ControllerForwarder+QuitChord.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = "ControllerForwarder+QuitChord.swift"; path = "Stream/ControllerForwarder+QuitChord.swift"; sourceTree = "<group>"; };
+		ABCD20260610000000004D03 /* ControllerSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ControllerSettings.swift; path = Models/ControllerSettings.swift; sourceTree = "<group>"; };
 		ABCD20260610000000005F01 /* EnvSignalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/EnvSignalController.swift; sourceTree = "<group>"; };
 		B1755AEB5F01C33DF87D6FCE /* ControllerForwarder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ControllerForwarder.swift; path = Stream/ControllerForwarder.swift; sourceTree = "<group>"; };
 		C426DA508131A2723B2CF131 /* StreamInputView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StreamInputView.swift; path = Stream/StreamInputView.swift; sourceTree = "<group>"; };
@@ -712,7 +712,7 @@
 		DEC0DE84000000000000001C /* WindowPointerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPointerTests.swift; sourceTree = "<group>"; };
 		DEC0DE2026083000000000A1 /* IOReportSamplerLifetimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOReportSamplerLifetimeTests.swift; sourceTree = "<group>"; };
 		D2000036 /* KeyboardScanMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardScanMapTests.swift; sourceTree = "<group>"; };
-		D20000A0 /* ControllerQuitChordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerQuitChordTests.swift; sourceTree = "<group>"; };
+		D20000A0 /* ControllerSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerSettingsTests.swift; sourceTree = "<group>"; };
 		D20000F0 /* ControllerArrivalOrderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerArrivalOrderTests.swift; sourceTree = "<group>"; };
 		D20000F2 /* DatagramSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatagramSourceTests.swift; sourceTree = "<group>"; };
 		A1C0DE000320000000000000 /* PictureInPictureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PictureInPictureTests.swift"; sourceTree = "<group>"; };
@@ -1081,7 +1081,7 @@
 				398ABCA94CDDF4D5B2770B8F /* KeyboardScanMap.swift */,
 				C426DA508131A2723B2CF131 /* StreamInputView.swift */,
 				B1755AEB5F01C33DF87D6FCE /* ControllerForwarder.swift */,
-				ABCD20260610000000004D03 /* ControllerForwarder+QuitChord.swift */,
+				ABCD20260610000000004D03 /* ControllerSettings.swift */,
 				ABCD20260609000000001801 /* ControllerBattery.swift */,
 				ABCD202606090000000000F1 /* ControllerHaptics.swift */,
 				ABCD20260610000000004D01 /* ControllerHaptics+Actuation.swift */,
@@ -1153,7 +1153,7 @@
 				DEC0DE84000000000000001C /* WindowPointerTests.swift */,
 				DEC0DE2026083000000000A1 /* IOReportSamplerLifetimeTests.swift */,
 				D2000036 /* KeyboardScanMapTests.swift */,
-				D20000A0 /* ControllerQuitChordTests.swift */,
+				D20000A0 /* ControllerSettingsTests.swift */,
 				D20000F0 /* ControllerArrivalOrderTests.swift */,
 				D20000F2 /* DatagramSourceTests.swift */,
 				A1C0DE000320000000000000 /* PictureInPictureTests.swift */,
@@ -1572,7 +1572,7 @@
 				14DC834601C3BEE65839AC02 /* KeyboardScanMap.swift in Sources */,
 				5E6BA9AE8CE78DA47BAA02C4 /* StreamInputView.swift in Sources */,
 				2025092633A13B85B01C5E46 /* ControllerForwarder.swift in Sources */,
-				ABCD20260610000000004D04 /* ControllerForwarder+QuitChord.swift in Sources */,
+				ABCD20260610000000004D04 /* ControllerSettings.swift in Sources */,
 				ABCD20260609000000001802 /* ControllerBattery.swift in Sources */,
 				ABCD202606090000000000F2 /* ControllerHaptics.swift in Sources */,
 				ABCD20260610000000004D02 /* ControllerHaptics+Actuation.swift in Sources */,
@@ -1633,7 +1633,7 @@
 				DEC0DE84000000000000001B /* WindowPointerTests.swift in Sources */,
 				DEC0DE2026083000000000A2 /* IOReportSamplerLifetimeTests.swift in Sources */,
 				D2000037 /* KeyboardScanMapTests.swift in Sources */,
-				D20000A1 /* ControllerQuitChordTests.swift in Sources */,
+				D20000A1 /* ControllerSettingsTests.swift in Sources */,
 				D20000F1 /* ControllerArrivalOrderTests.swift in Sources */,
 				D20000F3 /* DatagramSourceTests.swift in Sources */,
 				A1C0DE000310000000000000 /* PictureInPictureTests.swift in Sources */,

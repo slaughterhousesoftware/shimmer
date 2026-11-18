@@ -283,12 +283,6 @@ extension AppModel {
                     statsThresholdsProvider: { [weak self] in
                         self?.statsThresholds ?? .default
                     },
-                    controllerQuitChordProvider: { [weak self] in
-                        self?.controllerQuitChord ?? .none
-                    },
-                    customControllerChordProvider: { [weak self] in
-                        self?.customControllerChord ?? []
-                    },
                     onBackgroundedChanged: { [weak self] backgrounded in
                         guard self?.currentStreamToken == token else { return }
                         self?.nativeStreamBackgrounded = backgrounded

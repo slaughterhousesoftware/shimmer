@@ -15,8 +15,7 @@
 //  Split further by topic, for the same length reason: the per-frame state push
 //  those handlers run (and the button bitmask it builds) in
 //  ControllerForwarder+StatePush.swift, the touchpad surface → host touch events
-//  in ControllerForwarder+Touchpad.swift, the quit chord + its hold-to-quit
-//  dwell in ControllerForwarder+QuitChord.swift.
+//  in ControllerForwarder+Touchpad.swift.
 //
 
 import AppKit
@@ -178,10 +177,9 @@ extension InputForwarder {
         // measured on macOS 26 for the DualSense (isBoundToSystemGesture == true;
         // the WWDC21 contract is double-press = screenshot, long-press = start or
         // stop a ReplayKit recording). "Bound" means GameController runs the
-        // recognizer FIRST and withholds the press from the app, and the Moonlight
-        // quit chord is by definition a long-press of Create: the hold never
-        // reached us through GameController AND asked macOS to start a screen
-        // recording. A streaming client has exactly one consumer for that button,
+        // recognizer FIRST and withholds the press from the app: a long-press of
+        // Create never reached us through GameController AND asked macOS to
+        // start a screen recording. A streaming client has exactly one consumer for that button,
         // the host, so disable the gesture: the press is delivered immediately and
         // macOS stays out of it. Home (PS / Xbox / Guide) gets the same
         // treatment: by default it opens macOS's Game Overlay, which is never
@@ -209,19 +207,6 @@ extension InputForwarder {
         // prompt never fires unless the feature is on.
         let isDualSense = gamepad.extendedGamepad is GCDualSenseGamepad
         let useHID = isDualSense && DualSenseHID.isEnabled
-        // OBSERVABILITY: a DualSense with raw-HID OFF can't read its Create/Mute
-        // centre buttons, so a quit chord that needs them silently never fires
-        // (the diagnosed regression - invisible because the open state only logged
-        // at INFO). Surface it once, plainly, so the fix is obvious.
-        if isDualSense, !useHID, quitChordNeedsRawHIDCenterButtons(),
-           !Self.warnedQuitChordNeedsRawHID {
-            Self.warnedQuitChordNeedsRawHID = true
-            Diag.notice("Quit chord needs DualSense centre buttons (Create/Mute) that require "
-                + "raw-HID, but raw-HID controller support is OFF - the chord will NOT fire on "
-                + "this DualSense. Enable 'Extra DualSense buttons' in Settings → Input (and grant Input "
-                + "Monitoring), or pick a chord that uses GameController-native buttons.",
-                "Controller")
-        }
         if useHID {
             // Retain the raw-HID reader (Options/Create/Mute centre buttons +
             // battery). The onChange handler that turns a centre-button edge into
@@ -262,10 +247,10 @@ extension InputForwarder {
 
         // Install the live input handlers (GameController valueChangedHandler +
         // the raw-HID centre-button onChange). Factored into installInputHandlers
-        // so resyncControllers() can RE-install them on every focus regain: the
-        // Settings chord-capture sheet grabs both single-slot handlers to record a
-        // chord and nils them on dismiss, which otherwise left controller input
-        // dead until a stream restart. See installInputHandlers.
+        // so resyncControllers() can RE-install them on every focus regain: a
+        // component that grabs both single-slot handlers and nils them when done
+        // would otherwise leave controller input dead until a stream restart.
+        // See installInputHandlers.
         installInputHandlers(for: state)
 
         // If the stream is already up, announce arrival immediately;
@@ -295,10 +280,6 @@ extension InputForwarder {
             }
             DualSenseHID.shared.release()
         }
-        // If this pad armed the in-flight quit-chord dwell, the hold can no
-        // longer complete - cancel rather than let the timer re-read a
-        // disconnected profile.
-        if quitChordDwellSlot == state.slot { cancelQuitChordDwell(reason: "arming pad detached") }
         log.info("Gamepad detached: slot=\(state.slot) remaining mask=0x\(String(self.gamepadMask, radix: 16), privacy: .public)")
         // DETACH-CONTEXT breadcrumb (NOTICE - a detach is rare and is exactly
         // the postmortem anchor the file sink must keep): last-input and
@@ -501,10 +482,9 @@ extension InputForwarder {
     /// GameController `valueChangedHandler` (the single full-state forward) and,
     /// for a raw-HID DualSense, `DualSenseHID.shared.onChange` (the centre-button
     /// edge GameController never delivers). Idempotent, so it doubles as a HEAL:
-    /// the Settings chord-capture sheet (ChordCaptureSheet.engage/disengage) takes
-    /// over both single-slot handlers to record a chord and sets them to `nil` on
-    /// dismiss - which, with a stream live, left the forwarder's input path dead
-    /// until a session restart re-ran attach(). resyncControllers() calls this on
+    /// a component that takes over both single-slot handlers and sets them to
+    /// `nil` when done would, with a stream live, leave the forwarder's input
+    /// path dead until a session restart re-ran attach(). resyncControllers() calls this on
     /// every focus regain, so returning to the stream restores input with no
     /// restart.
     func installInputHandlers(for state: AttachedController) {
@@ -524,8 +504,7 @@ extension InputForwarder {
         }
         // Raw-HID centre buttons (Options/Create/Mute): GameController never fires
         // valueChangedHandler for them, so this onChange is the only path that
-        // carries a centre-button edge (e.g. the Moonlight-default chord's Create)
-        // to the host. DualSenseHID gates onChange on a real bit change; the push
+        // carries a centre-button edge to the host. DualSenseHID gates onChange on a real bit change; the push
         // does NOT re-forward the touchpad (that stays on the GameController path,
         // the single full-state source - no double-feed).
         // One hook for every DualSense: a centre-button change on any pad
@@ -563,8 +542,8 @@ extension InputForwarder {
         guard isReady else { return }
         for state in attachedControllers.values {
             // Re-install handlers FIRST: a component that grabbed the single-slot
-            // valueChangedHandler / DualSenseHID.onChange while we were not key -
-            // the Settings chord-capture sheet - may have nil'd ours, leaving
+            // valueChangedHandler / DualSenseHID.onChange while we were not key
+            // may have nil'd ours, leaving
             // controller input dead. Healing here means returning focus to the
             // stream restores live input without a session restart. Then push
             // current state so a held stick/button snaps to live immediately.
@@ -574,9 +553,7 @@ extension InputForwarder {
         }
     }
 
-    // (matchesControllerQuitChord and the shared heldControllerButtons reader
-    // live in ControllerForwarder+QuitChord.swift; sendGamepadUpdate /
-    // sendCenterButtonUpdate - the handlers installed above - in
+    // (sendGamepadUpdate / sendCenterButtonUpdate - the handlers installed above - in
     // ControllerForwarder+StatePush.swift, and forwardTouchpad in
     // ControllerForwarder+Touchpad.swift - the topic split.)
 }

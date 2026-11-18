@@ -7,6 +7,7 @@
 //    Computers - the PCs sidebar and the selected PC's cover grid, with the
 //                add/remove actions along the bottom (Tailscale's Accounts tab)
 //    General   - grouped sections of rows, Rex / System Settings style
+//    Controller - the connected pad, and what games may do to it
 //    About     - the centred identity page
 //
 //  There is deliberately no `Settings` scene and no second window: a SwiftUI
@@ -77,6 +78,7 @@ struct AppShell: View {
             switch model.settingsTab {
             case .computers: ComputersTab(pairingTarget: $pairingTarget)
             case .general: GeneralTabPage()
+            case .controller: ControllerTabPage()
             case .about: AboutPane()
             }
         }

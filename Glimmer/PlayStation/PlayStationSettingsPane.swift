@@ -11,8 +11,9 @@ import SwiftUI
 struct PlayStationSettingsPane: View {
     @Bindable var settings: PlayStationSettings
 
-    /// The page's Video and Controller sections (a grouped Form). Two-way
-    /// choices are segmented, as Rex lays out its few-option rows.
+    /// The page's Video section (a grouped Form; the pad's settings are on
+    /// the Controller tab). Two-way choices are segmented, as Rex lays out
+    /// its few-option rows.
     var body: some View {
         Section {
             ResolutionFrameRateRow(
@@ -42,18 +43,6 @@ struct PlayStationSettingsPane: View {
                 : "Frames wait for the display: steadier, a little more lag.")
         } header: {
             FormSectionHeader("Video")
-        }
-        Section {
-            Picker("Vibration", selection: $settings.haptics) {
-                ForEach(PlayStationSettings.HapticsMode.allCases, id: \.self) { Text($0.displayName).tag($0) }
-            }
-            Toggle("Adaptive triggers", isOn: $settings.adaptiveTriggers)
-            Toggle(isOn: $settings.lightBar) {
-                Text("Light bar colours from the console")
-                Text("Games and the PS5 set the controller’s light.")
-            }
-        } header: {
-            FormSectionHeader("Controller")
         }
     }
 }

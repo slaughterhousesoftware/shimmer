@@ -4,14 +4,14 @@
 //  Raw-HID side-channel for the Sony DualSense, read over IOKit's
 //  IOHIDManager - exactly how moonlight-qt / SDL's HIDAPI driver does it.
 //  macOS's GameController framework does NOT deliver the DualSense's centre
-//  buttons (Options ≡, Create/Share, Mute) to apps, so a controller-only exit
-//  chord and full button parity are impossible through GCController alone.
+//  buttons (Options ≡, Create/Share, Mute) to apps, so full button parity is
+//  impossible through GCController alone.
 //  This reads the raw input report alongside GameController (non-exclusive
 //  open - it never seizes the device, so GCController keeps everything it
 //  already provides: sticks, face, shoulders, triggers, touchpad, battery).
 //
 //  Surfaces the centre buttons GameController drops (plus the two shoulder bits
-//  the quit-chord predicate reads from the same byte). Everything else stays
+//  from the same byte). Everything else stays
 //  on the GameController path.
 //
 //  REQUIRES the "Input Monitoring" privacy permission (TCC kTCCServiceListenEvent
@@ -30,18 +30,15 @@ import os.log
 /// The DualSense buttons GameController doesn't expose, mapped to the host's
 /// button semantics by `ControllerForwarder`, plus the two shoulder bits from
 /// the same report byte. The shoulders are NOT forwarded from here (GameController
-/// stays the host's source for L1/R1); they exist so the quit-chord predicate
-/// can read every button of "Start + Select + L1 + R1" from ONE coherent report
-/// instead of splicing raw-HID centre bits onto GameController's view of the
-/// shoulders - the two sources disagree in time, and GameController withholds
-/// input around a bound system gesture (Create is bound on macOS 26).
+/// stays the host's source for L1/R1); a change in them only re-pushes the
+/// pad's state, like a centre-button edge.
 struct DualSenseExtraButtons: Equatable, Sendable {
     var options = false    // ≡  → Start  (PLAY_FLAG)
     var create = false     // Share/Create → Back/Select (BACK_FLAG)
     var ps = false         // PS → Guide  (SPECIAL_FLAG)
     var mute = false       // Mic mute → MISC_FLAG
-    var l1 = false         // chord-only; host L1 rides GameController
-    var r1 = false         // chord-only; host R1 rides GameController
+    var l1 = false         // not forwarded; host L1 rides GameController
+    var r1 = false         // not forwarded; host R1 rides GameController
 }
 
 /// Battery decoded straight from the DualSense report. We read this ourselves

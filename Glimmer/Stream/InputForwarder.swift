@@ -222,35 +222,6 @@ public final class InputForwarder {
     /// exactly as before.
     var onPointerCaptureChanged: (@MainActor (Bool) -> Void)?
 
-    /// Controller-side quit chord. The ControllerForwarder extension
-    /// consults this on every gamepad update and fires `onQuitHotkey`
-    /// when all chord buttons are held simultaneously. Closure so live
-    /// edits in Settings take effect on the next gamepad event.
-    public var controllerQuitChordProvider: (@MainActor () -> ControllerQuitChord) = { .none }
-
-    /// The user-recorded button set for the `.custom` quit chord.
-    /// Consulted only when `controllerQuitChordProvider()` returns `.custom`.
-    public var customControllerChordProvider: (@MainActor () -> Set<ControllerButton>) = { [] }
-
-    /// In-flight hold-to-quit dwell for the controller quit chord. Armed by
-    /// the ControllerForwarder extension when the chord first reads fully
-    /// held; cancelled when it releases, when the arming pad detaches, or at
-    /// session teardown (`detach()`). Stored here because extensions can't
-    /// add stored properties - the dwell logic lives with the chord matcher
-    /// in ControllerForwarder+QuitChord.swift.
-    var quitChordDwellTask: Task<Void, Never>?
-
-    /// Slot that armed the in-flight dwell. Only that pad's value-changed
-    /// frames may cancel the count - a second pad's frames (which won't
-    /// match the chord) say nothing about whether the holder is still
-    /// holding.
-    var quitChordDwellSlot: UInt8?
-
-    /// Rate-limit state for the quit-chord Diag breadcrumbs (arm / cancel /
-    /// expiry / partial hold). Same stored-property-in-extension constraint as
-    /// the dwell fields above; the logic is in ControllerForwarder+QuitChord.
-    var quitChordCrumbs = QuitChordBreadcrumbState()
-
     /// Whether macOS-level "system" modifier combos that use the Cmd key
     /// should be forwarded to the host or left to macOS.
     ///
