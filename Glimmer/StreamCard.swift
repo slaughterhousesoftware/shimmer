@@ -44,13 +44,14 @@ struct StreamRow: View {
 
     private var showsChooser: Bool { !host.isPlayStation && apps.count > 1 }
 
-    /// Icon 28 pt (two lines of text tall), 12 pt to the text; the name at
-    /// 13 pt and the second line at 11 pt secondary, 2 pt apart - System
-    /// Settings' two-line rows. The text wins any squeeze before the buttons.
+    /// Icon 28 pt (two lines of text tall), 10 pt to the text - the card's
+    /// own inset, so the icon sits as far from the text as from the edge;
+    /// the name at 13 pt and the second line at 11 pt secondary, 2 pt apart
+    /// - System Settings' two-line rows. The text wins any squeeze before
+    /// the buttons.
     private var leading: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: RowIcon.gap) {
             icon
-                .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 2) {
                 if showsChooser {
                     TitleChooser(title: title, apps: apps, chosen: app, choose: choose)
@@ -75,18 +76,12 @@ struct StreamRow: View {
         }
     }
 
-    /// The glyph drawn at the row's size: an SF Symbol takes its size from the
-    /// font (AppGlyphIcon's size only frames bundled marks), so both are set.
-    @ViewBuilder
-    private var icon: some View {
-        if host.isPlayStation {
-            Image(systemName: "playstation.logo").resizable().scaledToFit()
-                .frame(width: 26, height: 26)
-        } else if let app {
-            AppGlyphIcon(app: app, size: 24)
-                .font(.system(size: 21))
-        } else {
-            Image(systemName: "display").font(.system(size: 21))
+    private var icon: RowIcon {
+        if host.isPlayStation { return RowIcon(symbol: "playstation.logo") }
+        guard let app else { return RowIcon(symbol: "display") }
+        switch app.glyph {
+        case .symbol(let name): return RowIcon(symbol: name)
+        case .asset(let name): return RowIcon(asset: name)
         }
     }
 
@@ -244,5 +239,53 @@ private struct TitleChooser: View {
         sized.size = NSSize(width: sized.size.width * scale, height: sized.size.height * scale)
         sized.isTemplate = true
         return sized
+    }
+}
+
+/// A row's leading icon, sized by its ink: every mark the same optical size
+/// (the geometric mean of its ink's sides 24 pt, its longest side at most
+/// 28) and its ink centred in a 28 pt column. An SF Symbol drawn by frame
+/// keeps its padding, which left a wide mark like the PlayStation logo
+/// small and pushed the text away from it.
+struct RowIcon: View {
+    /// The column, and the gap to the text (a form row's own inset).
+    static let column: CGFloat = 28
+    static let gap: CGFloat = 10
+
+    private let image: NSImage?
+    private let key: String
+
+    init(symbol: String) {
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 64, weight: .regular))
+        key = "row-symbol:" + symbol
+    }
+
+    init(asset: String) {
+        image = NSImage(named: asset)
+        key = "row-asset:" + asset
+    }
+
+    var body: some View {
+        if let image, image.size.width > 0, image.size.height > 0 {
+            let box = InkMeasure.measure(image, key: key).inkBox
+            let ink = Self.inkSize(aspect: image.size.width / image.size.height * box.width / box.height)
+            let frame = CGSize(width: ink.width / box.width, height: ink.height / box.height)
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: (0.5 - box.midX) * frame.width, y: (0.5 - box.midY) * frame.height)
+                .frame(width: Self.column, height: Self.column)
+        } else {
+            Color.clear.frame(width: Self.column, height: Self.column)
+        }
+    }
+
+    static func inkSize(aspect: CGFloat) -> CGSize {
+        var width = 24 * aspect.squareRoot(), height = 24 / aspect.squareRoot()
+        let longest = max(width, height)
+        if longest > column { width *= column / longest; height *= column / longest }
+        return CGSize(width: width, height: height)
     }
 }

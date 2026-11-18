@@ -68,7 +68,7 @@ struct ControllerTabPage: View {
 }
 
 /// The connected pad: its art, its name, a green dot with its battery, and
-/// Test Buttons. Laid out like a machine's Stream row (28 pt icon, 13 pt
+/// Test Buttons. Laid out like a machine's Stream row (RowIcon, 13 pt
 /// name over an 11 pt line).
 private struct ConnectedControllerRow: View {
     @Environment(AppModel.self) private var model
@@ -85,12 +85,8 @@ private struct ConnectedControllerRow: View {
 
     var body: some View {
         let pad = pad
-        HStack(spacing: 12) {
-            Image(MenuBarBatteryGlyph.glyphName(kind: model.menuBarControllerKind ?? "generic"))
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 28, height: 28)
+        HStack(spacing: RowIcon.gap) {
+            RowIcon(asset: MenuBarBatteryGlyph.glyphName(kind: model.menuBarControllerKind ?? "generic"))
                 .foregroundStyle(pad == nil ? .secondary : .primary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(pad.map(Self.name) ?? "No controller connected").lineLimit(1)

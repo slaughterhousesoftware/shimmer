@@ -234,7 +234,7 @@ struct HostAvatar: View {
             let ns = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 64, weight: .regular))
             let size = ns?.size ?? CGSize(width: 1, height: 1)
-            let measure = Self.measure(ns, key: "symbol:" + symbol)
+            let measure = InkMeasure.measure(ns, key: "symbol:" + symbol)
             let image = ns.map { Image(nsImage: $0).renderingMode(.template) } ?? Image(systemName: symbol)
             self.init(image: image, aspect: size.width / max(size.height, 1), fill: fill,
                       ink: .white, optical: measure.optical, inkBox: measure.inkBox)
@@ -243,7 +243,7 @@ struct HostAvatar: View {
         private init(asset: String, fill: AnyShapeStyle, ink: Color = .white) {
             let ns = NSImage(named: asset)
             let size = ns?.size ?? CGSize(width: 1, height: 1)
-            let measure = Self.measure(ns, key: asset)
+            let measure = InkMeasure.measure(ns, key: asset)
             self.init(image: Image(asset).renderingMode(.template),
                       aspect: size.width / max(size.height, 1), fill: fill, ink: ink,
                       optical: measure.optical, inkBox: measure.inkBox)
@@ -257,43 +257,6 @@ struct HostAvatar: View {
             self.ink = ink
             self.optical = optical
             self.inkBox = inkBox
-        }
-
-        @MainActor private static var measureCache: [String: (optical: CGFloat, inkBox: CGRect)] = [:]
-
-        /// Measures the mark once: draws it into a 256-pixel square, finds its
-        /// ink's bounding box (for `inkBox`), and the share of that box that
-        /// is ink (for `optical`).
-        @MainActor private static func measure(_ image: NSImage?, key: String) -> (optical: CGFloat, inkBox: CGRect) {
-            let whole = CGRect(x: 0, y: 0, width: 1, height: 1)
-            if let cached = measureCache[key] { return cached }
-            let side = 256
-            guard let image, image.size.width > 0, image.size.height > 0, let rep = NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
-                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                bytesPerRow: 0, bitsPerPixel: 0) else { return (1, whole) }
-            let scale = min(CGFloat(side) / image.size.width, CGFloat(side) / image.size.height)
-            let drawn = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-            image.draw(in: NSRect(origin: .zero, size: drawn))
-            NSGraphicsContext.restoreGraphicsState()
-            var inked = 0, minX = side, maxX = -1, minY = side, maxY = -1
-            for y in 0..<side { for x in 0..<side where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5 {
-                inked += 1
-                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
-            } }
-            guard inked > 0 else { return (1, whole) }
-            let boxW = CGFloat(maxX - minX + 1), boxH = CGFloat(maxY - minY + 1)
-            let coverage = CGFloat(inked) / (boxW * boxH)
-            let nudge = min(1.1, max(0.9, pow(0.55 / coverage, 0.2)))
-            // The drawing sits at the bitmap's bottom-left; colorAt's rows
-            // run down from the top.
-            let top = CGFloat(side) - drawn.height
-            let box = CGRect(x: CGFloat(minX) / drawn.width, y: (CGFloat(minY) - top) / drawn.height,
-                             width: boxW / drawn.width, height: boxH / drawn.height)
-            measureCache[key] = (nudge, box)
-            return (nudge, box)
         }
     }
 
@@ -352,5 +315,48 @@ extension HostAvatar {
         guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }
         try? png.write(to: url)
+    }
+}
+
+/// Where a mark's ink sits inside its artwork, so it can be sized and
+/// centred by what the eye sees rather than by its frame (an SF Symbol's
+/// frame carries padding; bundled marks vary). Shared by the sidebar's
+/// avatars and the Stream row's icon.
+@MainActor enum InkMeasure {
+    private static var cache: [String: (optical: CGFloat, inkBox: CGRect)] = [:]
+
+    /// Measures a mark once (by `key`): draws it into a 256-pixel square, finds its
+    /// ink's bounding box (for `inkBox`), and the share of that box that
+    /// is ink (for `optical`).
+    static func measure(_ image: NSImage?, key: String) -> (optical: CGFloat, inkBox: CGRect) {
+        let whole = CGRect(x: 0, y: 0, width: 1, height: 1)
+        if let cached = cache[key] { return cached }
+        let side = 256
+        guard let image, image.size.width > 0, image.size.height > 0, let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0) else { return (1, whole) }
+        let scale = min(CGFloat(side) / image.size.width, CGFloat(side) / image.size.height)
+        let drawn = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(origin: .zero, size: drawn))
+        NSGraphicsContext.restoreGraphicsState()
+        var inked = 0, minX = side, maxX = -1, minY = side, maxY = -1
+        for y in 0..<side { for x in 0..<side where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5 {
+            inked += 1
+            minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+        } }
+        guard inked > 0 else { return (1, whole) }
+        let boxW = CGFloat(maxX - minX + 1), boxH = CGFloat(maxY - minY + 1)
+        let coverage = CGFloat(inked) / (boxW * boxH)
+        let nudge = min(1.1, max(0.9, pow(0.55 / coverage, 0.2)))
+        // The drawing sits at the bitmap's bottom-left; colorAt's rows
+        // run down from the top.
+        let top = CGFloat(side) - drawn.height
+        let box = CGRect(x: CGFloat(minX) / drawn.width, y: (CGFloat(minY) - top) / drawn.height,
+                         width: boxW / drawn.width, height: boxH / drawn.height)
+        cache[key] = (nudge, box)
+        return (nudge, box)
     }
 }
