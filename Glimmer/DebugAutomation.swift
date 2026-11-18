@@ -132,6 +132,30 @@ extension AppModel {
                 AWDLGuard.shared.streamEnded()
             }
         }
+        // `--debug-cycle-tabs=<pane>[,<pane>...]`: open the window once, then
+        // only change the tab every 3 s - what a click on the tab strip does,
+        // without re-showing or re-activating the window (which
+        // --debug-open-settings does at every step). For profiling a switch.
+        if let panes = Self.debugKnob("cycle-tabs") {
+            if let appearance = Self.debugKnob("appearance") {
+                if appearance == "light" { NSApp.appearance = NSAppearance(named: .aqua) }
+                if appearance == "dark" { NSApp.appearance = NSAppearance(named: .darkAqua) }
+            }
+            let list = panes.split(separator: ",").compactMap { SettingsTab(persisted: String($0)) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                AppDelegate.openMainWindow?()
+                NSApp.activate()
+            }
+            for (i, pane) in list.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0 + Double(i) * 3.0) { [weak self] in
+                    self?.settingsTab = pane
+                }
+            }
+            if let quitAfter = Self.debugKnob("quit-after").flatMap(Double.init) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + quitAfter) { Self.terminateFromRunLoop() }
+            }
+            return
+        }
         // `--debug-open-settings=<pane>[,<pane>...]`: open the Settings window
         // on each pane in turn, 3s apart (a screenshot loop for UI work), then
         // quit after --debug-quit-after seconds if given.
