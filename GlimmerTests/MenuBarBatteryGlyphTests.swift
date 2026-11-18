@@ -338,26 +338,64 @@ struct MenuServerRowTests {
              gfeVersion: nil, macAddress: nil)
     }
 
-    /// The colour just inside the disc's left rim, as sRGB 0-255.
-    private func rim(_ image: NSImage) -> (r: Int, g: Int, b: Int) {
-        let rep = NSBitmapImageRep(cgImage: image.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
-        let colour = rep.colorAt(x: rep.pixelsWide / 10, y: rep.pixelsHigh / 2)!.usingColorSpace(.sRGB)!
-        return (Int(colour.redComponent * 255), Int(colour.greenComponent * 255), Int(colour.blueComponent * 255))
+    /// The image drawn into a 2x bitmap - a Retina menu's.
+    private func bitmap(_ image: NSImage) -> NSBitmapImageRep {
+        let side = Int(image.size.width * 2)
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
+                                   samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = image.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(origin: .zero, size: image.size))
+        NSGraphicsContext.restoreGraphicsState()
+        return rep
     }
 
-    @Test func theServerInUseIsInItsColourTheOthersGrey() {
+    private func rgb(_ rep: NSBitmapImageRep, _ x: Int, _ y: Int) -> (r: Int, g: Int, b: Int, a: Int) {
+        let c = rep.colorAt(x: x, y: y)!
+        return (Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255),
+                Int(c.alphaComponent * 255))
+    }
+
+    @Test func theServerInUseIsTintedInItsColourTheOthersGrey() {
         let light = NSAppearance(named: .aqua)!
-        let current = MenuHostMark.image(for: playStation(), look: .current, appearance: light)
-        let off = MenuHostMark.image(for: playStation(), look: .off, appearance: light)
-        #expect(current.size == NSSize(width: 26, height: 26))
-        #expect(off.size == NSSize(width: 26, height: 26))
-        // PlayStation blue, 0x0070D1.
-        let blue = rim(current)
-        #expect(blue.b > 180 && blue.r < 40)
-        // Grey: no hue.
-        let grey = rim(off)
-        #expect(abs(grey.r - grey.b) < 12 && abs(grey.g - grey.b) < 12)
-        #expect(current.accessibilityDescription == "PlayStation")
+        let current = bitmap(MenuHostMark.image(for: playStation(), look: .current, appearance: light))
+        let off = bitmap(MenuHostMark.image(for: playStation(), look: .off, appearance: light))
+        // In use: a pale PlayStation-blue disc, like an on Focus.
+        let tint = rgb(current, current.pixelsWide / 10, current.pixelsHigh / 2)
+        #expect(tint.b > tint.r + 30 && tint.r > 150)
+        // Off: a faint grey disc, no hue.
+        let grey = rgb(off, off.pixelsWide / 10, off.pixelsHigh / 2)
+        #expect(abs(grey.r - grey.b) < 12 && grey.a < 40)
+    }
+
+    @Test(arguments: [MenuHostMark.Look.current, .off])
+    func thePlayStationMarkIsCentredSidewaysAndLiftedALittle(look: MenuHostMark.Look) {
+        let rep = bitmap(MenuHostMark.image(for: playStation(), look: look, appearance: NSAppearance(named: .aqua)!))
+        let disc = rgb(rep, rep.pixelsWide / 10, rep.pixelsHigh / 2)
+        var minX = Int.max, maxX = -1, minY = Int.max, maxY = -1
+        for y in 0..<rep.pixelsHigh {
+            for x in 0..<rep.pixelsWide {
+                let p = rgb(rep, x, y)
+                // Half-strength ink or more, the way the mark is measured.
+                // (Off, the disc is 8% black and the ink 50%: by alpha.)
+                let inked = look == .off ? p.a > 80
+                    : p.a > 200 && abs(p.r - disc.r) + abs(p.g - disc.g) + abs(p.b - disc.b) > 120
+                guard inked else { continue }
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        // In points, y down.
+        let centre = Double(rep.pixelsWide) / 2
+        let boxX = (Double(minX + maxX + 1) / 2 - centre) / 2, boxY = (Double(minY + maxY + 1) / 2 - centre) / 2
+        // Sideways: on the centre, to the pixel.
+        #expect(abs(boxX) <= 0.25)
+        // Up by its weight's offset, 6.5% of its ~12 pt height (~0.8 pt).
+        #expect(boxY < -0.4 && boxY > -1.3)
+        // About half the disc across (Focus: 13 pt in 26).
+        let width = Double(maxX - minX + 1) / 2
+        #expect(width > 11 && width < 17)
     }
 
     @Test func aRowsHighlightGoesWhenThePointerMovesOn() {
