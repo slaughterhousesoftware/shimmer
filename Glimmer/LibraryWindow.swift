@@ -387,11 +387,8 @@ struct ComputersTab: View {
     private func endOfStreamToggle(for host: Host) -> some View {
         if host.isPlayStation {
             let settings = PlayStationSettings.forConsole(host.id)
-            Toggle(isOn: Binding(
-                get: { settings.restWhenStreamEnds }, set: { settings.restWhenStreamEnds = $0 })) {
-                Text("Rest the PS5 when the stream ends")
-                Text("Puts the console in rest mode when you end the stream.")
-            }
+            Toggle("Rest the PS5 when the stream ends", isOn: Binding(
+                get: { settings.restWhenStreamEnds }, set: { settings.restWhenStreamEnds = $0 }))
         } else {
             Toggle("Quit the game when the stream ends", isOn: Binding(
                 get: { model.quitAppWhenStreamEnds }, set: { model.quitAppWhenStreamEnds = $0 }))
