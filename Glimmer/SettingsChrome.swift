@@ -69,19 +69,14 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Each tab's window height (content only: macOS adds a 32pt title bar
-    /// even with `.fullSizeContentView`). Servers and General scroll inside it.
-    var windowHeight: CGFloat {
-        switch self {
-        // Tailscale's Accounts window. A machine's page scrolls if its
-        // settings run longer; the sidebar's bottom bar stays put.
-        case .computers: return 528 - 32
-        case .general: return 744 - 32
-        // The pad, its feedback and its buttons, without scrolling.
-        case .controller: return 528 - 32
-        case .about: return 540 - 32
-        }
-    }
+    /// The window's height on every tab (content only: macOS adds a 32pt
+    /// title bar even with `.fullSizeContentView`): Tailscale's Accounts
+    /// window. One height, so switching tabs never resizes the window - a
+    /// resize re-laid out the whole page on every frame of its animation,
+    /// and with the pages kept (AppShell) a switch is close to free
+    /// (profiled on the MacBook: 39-88 ms a switch before, 15-36 after).
+    /// A page that runs longer scrolls.
+    var windowHeight: CGFloat { 528 - 32 }
 }
 
 /// The centred icon-over-label tab strip. Tailscale draws the selected tab as

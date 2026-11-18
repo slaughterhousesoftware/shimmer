@@ -22,6 +22,10 @@ struct AppShell: View {
     @Environment(AppModel.self) private var model
     @Environment(\.controlActiveState) private var activeState
     @State private var pairingTarget: PCPairingTarget?
+    /// Tabs built so far. A tab is built on its first visit and then only
+    /// shown and hidden: rebuilding a page on every switch re-ran its layout
+    /// (profiled), and threw away its scroll position and state.
+    @State private var builtTabs: Set<SettingsTab> = []
 
     private var showsWelcome: Bool {
         model.hosts.isEmpty && model.settingsTab == .computers
@@ -75,12 +79,18 @@ struct AppShell: View {
                 }
                 if !showsWelcome { Divider() }
             }
-            switch model.settingsTab {
-            case .computers: ComputersTab(pairingTarget: $pairingTarget)
-            case .general: GeneralTabPage()
-            case .controller: ControllerTabPage()
-            case .about: AboutPane()
+            ZStack(alignment: .top) {
+                ForEach(SettingsTab.allCases) { tab in
+                    if tab == model.settingsTab || builtTabs.contains(tab) {
+                        let shown = tab == model.settingsTab
+                        page(for: tab)
+                            .opacity(shown ? 1 : 0)
+                            .allowsHitTesting(shown)
+                            .accessibilityHidden(!shown)
+                    }
+                }
             }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         // Waived on the WHOLE stack, not just the title row. Waiving it on the
         // title alone drew that row beside the traffic lights but still let the
@@ -90,8 +100,19 @@ struct AppShell: View {
         // Fixed, not resizable - the window follows the tab.
         .frame(width: SettingsMetrics.windowWidth, height: contentHeight, alignment: .top)
         .background(Color(nsColor: showsWelcome ? .windowBackgroundColor : .textBackgroundColor))
-        .onChange(of: model.settingsTab) { _, tab in
+        .onChange(of: model.settingsTab, initial: true) { _, tab in
+            builtTabs.insert(tab)
             if tab != .computers { pairingTarget = nil }
+        }
+    }
+
+    @ViewBuilder
+    private func page(for tab: SettingsTab) -> some View {
+        switch tab {
+        case .computers: ComputersTab(pairingTarget: $pairingTarget)
+        case .general: GeneralTabPage()
+        case .controller: ControllerTabPage()
+        case .about: AboutPane()
         }
     }
 }

@@ -22,6 +22,8 @@ struct SettingsLayoutTests {
     @Test func windowIsTailscaleSized() {
         #expect(SettingsMetrics.windowWidth == 600)
         #expect(SettingsTab.computers.windowHeight == CGFloat(528 - 32))
+        // One height on every tab: switching tabs never resizes the window.
+        #expect(Set(SettingsTab.allCases.map(\.windowHeight)).count == 1)
     }
     @Test func bitrateStops() {
         #expect(BitrateSlider.stopsMbps == [5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300])
