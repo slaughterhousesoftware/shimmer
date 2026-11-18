@@ -58,11 +58,12 @@ final class MenuVolumeSlider: NSView {
 /// A server's round mark for its menu row, in the design language of
 /// Control Center's Focus list (measured off a macOS 27 Focus menu at 2x,
 /// 2026-11-18): a 26 pt disc with the mark at about half its size, centred
-/// on its ink. Off, the disc is an 8% grey and the mark a 50% grey. On, the
-/// disc is a pale tint of the mark's own colour and the mark is drawn in
-/// that colour - Reduce Interruptions' purple flower on lavender - so each
-/// machine keeps its logo's colours (the PlayStation blue, Bazzite's
-/// blue-to-purple). The marks are the Settings sidebar's (HostAvatar).
+/// on its ink; off, the disc an 8% grey and the mark a 50% grey. On, the
+/// real logo rather than Focus's pale tint - a tinted, shrunken Bazzite mark
+/// stopped looking like Bazzite (Kevin): Bazzite's own logo file as it is,
+/// the PlayStation logo white on PlayStation blue, a distro's mark white on
+/// its colour (the Settings sidebar's avatars). A logo that is a disc with
+/// its mark (Bazzite) keeps that mark's size and place when it goes grey.
 @MainActor
 enum MenuHostMark {
     static let diameter: CGFloat = 26
@@ -78,6 +79,12 @@ enum MenuHostMark {
         /// width and height (y up), for a mark whose weight sits far from
         /// that centre.
         var optical = CGVector.zero
+        /// The whole logo, drawn as it is for the machine in use, when the
+        /// brand's logo is itself a disc with its mark.
+        var logo: NSImage?
+        /// Where `image` (the mark alone) sits in `logo`, as fractions of
+        /// the disc (y up) - kept for the grey disc, so it stays the logo.
+        var placement: CGRect?
     }
 
     static func art(for mark: HostAvatar.Mark) -> Art {
@@ -99,8 +106,13 @@ enum MenuHostMark {
             art.optical = CGVector(dx: 0, dy: 0.065)
             return art
         case .icon(.bazzite):
-            return Art(image: NSImage(named: "HostLogo-bazzite-mark") ?? NSImage(), key: "HostLogo-bazzite-mark",
-                       colours: [colour(0x0047AB), colour(0x8A2BE2)])
+            // The press kit's logo: a 500-unit disc (viewBox 50-550) with the
+            // mark's own artwork at 124.9-475.1 - 15% in, 70% of the disc.
+            var art = Art(image: NSImage(named: "HostLogo-bazzite-mark") ?? NSImage(), key: "HostLogo-bazzite-mark",
+                          colours: [colour(0x0047AB), colour(0x8A2BE2)])
+            art.logo = NSImage(named: "HostLogo-bazzite")
+            art.placement = CGRect(x: 74.9 / 500, y: 74.9 / 500, width: 350.2 / 500, height: 350.2 / 500)
+            return art
         case .icon(.chimeraOS):
             return symbol("gamecontroller.fill", HostIcon.chimeraOS.backgroundRGB)
         case .icon(.macOS):
@@ -141,12 +153,18 @@ enum MenuHostMark {
             disc = NSColor.white.withAlphaComponent(0.22)
             ink = [.white]
         case .current:
-            // Opaque, so the disc holds its tint on the blue highlight too.
-            let base = dark ? NSColor(white: 0.16, alpha: 1) : NSColor(white: 0.985, alpha: 1)
-            let mid = art.colours.count > 1
-                ? (art.colours[0].blended(withFraction: 0.5, of: art.colours[1]) ?? art.colours[0]) : art.colours[0]
-            disc = base.blended(withFraction: dark ? 0.34 : 0.26, of: mid) ?? base
-            ink = art.colours.map { readable($0, dark: dark) }
+            if let logo = art.logo {
+                let d = diameter
+                let image = NSImage(size: NSSize(width: d, height: d), flipped: false) { rect in
+                    logo.draw(in: rect)
+                    return true
+                }
+                image.accessibilityDescription = HostAvatar.name(of: mark)
+                return image
+            }
+            disc = art.colours[0]
+            // Linux's Tux stays black on its yellow, as in Settings.
+            ink = [mark == .icon(.linux) ? .black : .white]
         }
 
         let measure = InkMeasure.measure(art.image, key: art.key)
@@ -155,8 +173,9 @@ enum MenuHostMark {
         let aspect = imageSize.height > 0 ? imageSize.width / imageSize.height : 1
         let inkSize = inkSize(aspect: aspect * box.width / max(box.height, 0.01), size: diameter,
                               optical: measure.optical)
-        // The whole artwork's size for that much ink.
-        let frame = CGSize(width: inkSize.width / max(box.width, 0.01), height: inkSize.height / max(box.height, 0.01))
+        // The whole artwork's size for that much ink - or the logo's own.
+        let frame = art.placement.map { CGSize(width: $0.width * diameter, height: $0.height * diameter) }
+            ?? CGSize(width: inkSize.width / max(box.width, 0.01), height: inkSize.height / max(box.height, 0.01))
         let image = NSImage(size: NSSize(width: diameter, height: diameter))
         // A bitmap for each screen scale, its mark measured in that bitmap
         // and set on the disc's centre to the pixel: at menu sizes a symbol
@@ -206,6 +225,24 @@ enum MenuHostMark {
         }
         NSGraphicsContext.restoreGraphicsState()
 
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        guard let context = NSGraphicsContext(bitmapImageRep: rep), let mark = glyph.makeImage() else { return nil }
+        NSGraphicsContext.current = context
+        let cg = context.cgContext
+        let whole = CGRect(x: 0, y: 0, width: side, height: side)
+        cg.setFillColor(disc.cgColor)
+        cg.fillEllipse(in: whole)
+        cg.setAlpha(ink[0].alphaComponent)
+        let markSize = CGSize(width: CGFloat(glyphWidth), height: CGFloat(glyphHeight))
+
+        // A logo's own geometry, where it has one.
+        if let placement = art.placement {
+            cg.draw(mark, in: CGRect(origin: CGPoint(x: placement.minX * diameter * scale - 1,
+                                                     y: placement.minY * diameter * scale - 1), size: markSize))
+            return rep
+        }
+
         // Where its ink landed (pixels at least half opaque; rows in memory
         // run down from the top).
         let bytes = pixels.bindMemory(to: UInt8.self, capacity: glyphWidth * glyphHeight * 4)
@@ -216,40 +253,19 @@ enum MenuHostMark {
                 minX = min(minX, x); maxX = max(maxX, x); minRow = min(minRow, row); maxRow = max(maxRow, row)
             }
         }
-        guard maxX >= 0, let mark = glyph.makeImage() else { return nil }
+        guard maxX >= 0 else { return nil }
         let inkMidX = CGFloat(minX + maxX + 1) / 2
         let inkMidY = CGFloat(glyphHeight) - CGFloat(minRow + maxRow + 1) / 2   // y up
-
-        NSGraphicsContext.saveGraphicsState()
-        defer { NSGraphicsContext.restoreGraphicsState() }
-        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
-        NSGraphicsContext.current = context
-        let cg = context.cgContext
-        let whole = CGRect(x: 0, y: 0, width: side, height: side)
-        cg.setFillColor(disc.cgColor)
-        cg.fillEllipse(in: whole)
         // The ink's centre on the disc's, plus the mark's own lift, whole
         // pixels so it stays crisp.
         let x = (CGFloat(side) / 2 - inkMidX + art.optical.dx * inkSize.width * scale).rounded()
         let y = (CGFloat(side) / 2 - inkMidY + art.optical.dy * inkSize.height * scale).rounded()
-        cg.setAlpha(ink[0].alphaComponent)
-        cg.draw(mark, in: CGRect(x: x, y: y, width: CGFloat(glyphWidth), height: CGFloat(glyphHeight)))
+        cg.draw(mark, in: CGRect(origin: CGPoint(x: x, y: y), size: markSize))
         return rep
     }
 
     private static func imageSizeIsUsable(_ image: NSImage) -> Bool {
         image.size.width > 0 && image.size.height > 0
-    }
-
-    /// A brand colour as a mark on its own pale disc: kept unless it would
-    /// fade into it - Linux's yellow darkened in light mode, SteamOS's navy
-    /// lightened in dark mode.
-    private static func readable(_ colour: NSColor, dark: Bool) -> NSColor {
-        let c = colour.usingColorSpace(.sRGB) ?? colour
-        let luminance = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
-        if !dark, luminance > 0.55 { return c.blended(withFraction: 0.45, of: .black) ?? c }
-        if dark, luminance < 0.3 { return c.blended(withFraction: 0.45, of: .white) ?? c }
-        return c
     }
 
     private static func colour(_ rgb: UInt32) -> NSColor {

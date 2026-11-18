@@ -358,13 +358,13 @@ struct MenuServerRowTests {
                 Int(c.alphaComponent * 255))
     }
 
-    @Test func theServerInUseIsTintedInItsColourTheOthersGrey() {
+    @Test func theServerInUseIsInItsLogosColourTheOthersGrey() {
         let light = NSAppearance(named: .aqua)!
         let current = bitmap(MenuHostMark.image(for: playStation(), look: .current, appearance: light))
         let off = bitmap(MenuHostMark.image(for: playStation(), look: .off, appearance: light))
-        // In use: a pale PlayStation-blue disc, like an on Focus.
+        // In use: the logo's own colours, PlayStation blue (0x0070D1).
         let tint = rgb(current, current.pixelsWide / 10, current.pixelsHigh / 2)
-        #expect(tint.b > tint.r + 30 && tint.r > 150)
+        #expect(tint.b > 180 && tint.r < 40)
         // Off: a faint grey disc, no hue.
         let grey = rgb(off, off.pixelsWide / 10, off.pixelsHigh / 2)
         #expect(abs(grey.r - grey.b) < 12 && grey.a < 40)
@@ -396,6 +396,36 @@ struct MenuServerRowTests {
         // About half the disc across (Focus: 13 pt in 26).
         let width = Double(maxX - minX + 1) / 2
         #expect(width > 11 && width < 17)
+    }
+
+    private func bazzite() -> Glimmer.Host {
+        Glimmer.Host(id: "bazzite-row-test", name: "bazzite", customName: nil, localAddress: nil,
+                     manualAddress: nil, apps: [], lastConnected: nil, serverCertPEM: nil, appVersion: nil,
+                     gfeVersion: nil, macAddress: nil)
+    }
+
+    /// Bazzite's logo is a disc with its mark: in use it is that logo as it
+    /// is; off, the same mark at the same size and place, in grey.
+    @Test func bazziteKeepsItsOwnLogo() {
+        let light = NSAppearance(named: .aqua)!
+        let current = bitmap(MenuHostMark.image(for: bazzite(), look: .current, appearance: light))
+        // The logo's gradient, blue at the top left to purple.
+        let rim = rgb(current, current.pixelsWide / 4, current.pixelsHigh * 3 / 4)
+        #expect(rim.b > 150 && rim.g < 100)
+
+        let off = bitmap(MenuHostMark.image(for: bazzite(), look: .off, appearance: light))
+        var minX = Int.max, maxX = -1, minY = Int.max, maxY = -1
+        for y in 0..<off.pixelsHigh {
+            for x in 0..<off.pixelsWide where rgb(off, x, y).a > 80 {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        // The press kit's mark: 68% of the disc (342 of 500), on its centre.
+        let width = Double(maxX - minX + 1) / 2
+        #expect(width > 16.5 && width < 19)
+        let centre = Double(off.pixelsWide) / 2
+        #expect(abs(Double(minX + maxX + 1) / 2 - centre) <= 1)
+        #expect(abs(Double(minY + maxY + 1) / 2 - centre) <= 1)
     }
 
     @Test func aRowsHighlightGoesWhenThePointerMovesOn() {
