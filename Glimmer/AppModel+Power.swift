@@ -69,7 +69,8 @@ extension AppModel {
     /// has the request, so the PC may still come up on its own. Leaves no
     /// latched state - a cancel followed by a fresh Wake starts clean.
     func cancelWake(_ host: Host) {
-        guard LunaPower.shared.actionInFlight[host.id] == "on" else { return }
+        // Waking (luna), or Wake & Connect waiting for Sunshine after it.
+        guard LunaPower.shared.actionInFlight[host.id] == "on" || powerWaitHostID == host.id else { return }
         Diag.notice("luna: wake \(host.displayName, privacy: .private) cancelled by the user - abandoning "
             + "the wait (UpSnap has the request; the PC may still come up)", "Power")
         Self.wakeTask?.cancel()

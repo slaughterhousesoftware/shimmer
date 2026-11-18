@@ -346,6 +346,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
+        // A PC wake under way (the spinner is up): the way out of it, first.
+        if let host = model.selectedHost,
+           LunaPower.shared.actionInFlight[host.id] == "on" || model.powerWaitHostID == host.id {
+            menu.addItem(action("Stop Waking \(host.displayName)", #selector(stopWaking)))
+            menu.addItem(.separator())
+        }
+
         if model.selectedHost != nil {
             if model.isStreaming {
                 // The rows follow where the stream is: in PiP the way back is
@@ -493,6 +500,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func enterPictureInPicture() { model.enterPictureInPicture() }
     @objc private func endStream() { model.endStream() }
     @objc private func dismissWarning() { model.dismissStreamError() }
+    @objc private func stopWaking() {
+        guard let host = model.selectedHost else { return }
+        model.cancelWake(host)
+    }
 
     @objc private func switchHost(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String,

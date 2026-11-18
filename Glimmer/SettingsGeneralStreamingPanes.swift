@@ -54,7 +54,7 @@ struct AppPane: View {
                 } else {
                     Toggle(isOn: $launchAtLogin) {
                         Text("Be ready at login")
-                        Text("Opens in the menu bar when you log in.")
+                        Text("Opens quietly when you log in.")
                     }
                     .onChange(of: launchAtLogin) { _, on in
                         scheduleLoginItemRegistration(launchAtLogin: on)
