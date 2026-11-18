@@ -11,10 +11,6 @@
 //  than one: once is easy to miss when a game takes your attention the instant
 //  the cursor disappears.
 //
-//  Window mode only. A fullscreen cover captures for the whole session, so
-//  there is nothing to hint about; every entry point here is gated on
-//  `displayMode == .window` and the fullscreen path never reaches them.
-//
 
 import AppKit
 

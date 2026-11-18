@@ -1,8 +1,7 @@
 //
 //  StreamWindow+Cursor.swift
 //
-//  StreamWindow's cursor-visibility ownership and the single foreground
-//  re-engage. The CGDisplay hide/show latch (single source of truth =
+//  StreamWindow's cursor-visibility ownership and the foreground re-engage. The CGDisplay hide/show latch (single source of truth =
 //  `didHideCursor`), the per-view transparent-cursor backstop, and the one
 //  method both return-to-foreground paths funnel through. Split out of
 //  StreamWindow.swift to keep each unit focused; see that file for the
@@ -45,24 +44,13 @@ extension StreamWindow {
     }
 
     /// Flip "Disable mouse input" on a live session. Disabling shows the
-    /// pointer and the arrow over the picture at once; enabling re-hides it
-    /// only when a full-screen stream is the thing in front (window mode's
-    /// cursor follows the capture edge the forwarder reports instead).
+    /// pointer and the arrow over the picture at once; enabling leaves the
+    /// cursor to the capture edge the forwarder reports.
     func setMouseInputDisabled(_ disabled: Bool) {
         mouseInputDisabled = disabled
-        guard !didClose else { return }
-        // The menu bar's reachability follows who owns the pointer.
-        if displayMode == .fullScreen, !isBackgrounded, window.isKeyWindow {
-            NSApp.presentationOptions = fullScreenPresentationOptions(coversNotch: coversNotch)
-        }
-        let view = window.contentView as? StreamInputView
-        if disabled {
-            setCursorHidden(false)
-            view?.setTransparentCursorEnabled(false)
-        } else if displayMode == .fullScreen, !isBackgrounded, window.isKeyWindow {
-            view?.setTransparentCursorEnabled(true)
-            setCursorHidden(true)
-        }
+        guard !didClose, disabled else { return }
+        setCursorHidden(false)
+        (window.contentView as? StreamInputView)?.setTransparentCursorEnabled(false)
     }
 
     /// Re-assert invisibility when the OS may have silently re-shown the cursor
@@ -98,37 +86,15 @@ extension StreamWindow {
         (window.contentView as? StreamInputView)?.refreshCursor()
     }
 
-    /// THE single foreground re-engage. Re-hides the cursor, restores the
-    /// streaming window level, and re-applies the fullscreen presentation
-    /// flags - everything that must happen when the stream window comes back
-    /// to the foreground from the backgrounded (resigned-key, ordered-out)
-    /// state.
-    ///
-    /// Why this exists: there are TWO return paths and they MUST be identical.
-    ///   (a) Cmd-Tab / app reactivation → AppKit fires `didBecomeKey`, whose
-    ///       observer calls this.
-    ///   (b) The launcher "Back to stream" / menubar CTA → `resumeWindow()`
-    ///       calls `makeKeyAndOrderFront` and then this DIRECTLY. The menubar
-    ///       path does not reliably re-fire `didBecomeKey` (the launcher window
-    ///       is already key when the user clicks, and ordering the stream
-    ///       window front from an already-active app can resolve key status
-    ///       synchronously inside makeKeyAndOrderFront without posting a fresh
-    ///       notification) - so the cursor-hide latch that path (a) re-engages
-    ///       was being skipped, leaving the system cursor drawn over the stream
-    ///       (the cursor-model-adjacent bug). Funnelling both paths through this one
-    ///       method makes them indistinguishable.
-    ///
-    /// Single-owner safe: `setCursorHidden(true)` is idempotent off
-    /// `didHideCursor`, so calling this when the cursor is already hidden
-    /// (e.g. didBecomeKey fired AND resumeWindow called it) is a no-op for the
-    /// latch - the count stays capped at 1. Genuine exit/resign/teardown still
-    /// own the balanced show; this never fights them (it only ever hides).
+    /// The window is back in front after being hidden (Picture in Picture,
+    /// a miniaturize, a launch that opened in PiP): its own observers apply
+    /// again, it is visible, any PiP goes, and the launcher hears it's back.
+    /// The cursor follows pointer capture, so there is nothing to re-hide.
+    /// Idempotent.
     func reengageForeground() {
         guard !didClose else { return }
         PiPTrace.log("reengageForeground backgrounded=\(isBackgrounded)", window)
         isBackgrounded = false
-        // The window is back: its own key/resign observers apply again, and it
-        // is visible even if it was never shown (a stream opened in PiP).
         pipSourceMode = false
         window.alphaValue = 1
         // Coming back to the window means the PiP window goes. Stop it AFTER
@@ -138,38 +104,6 @@ extension StreamWindow {
             pictureInPicture.stop()
         }
         publishPresentSuppression()
-        // Window mode: the cursor follows pointer capture (the pointer being
-        // over the window), and the level and presentation options are AppKit's.
-        // Only the backgrounded signal applies - the "Back to stream" /
-        // Dock-click return after a miniaturize lands here.
-        if displayMode == .window {
-            onBackgroundedChanged?(false)
-            return
-        }
-        // Cursor: re-hide. Idempotent + latch-balanced via the single owner -
-        // hides iff currently shown, capping the count at 1. A no-op with mouse
-        // input disabled, which also keeps the arrow over the picture.
-        (window.contentView as? StreamInputView)?.setTransparentCursorEnabled(!mouseInputDisabled)
-        setCursorHidden(true)
-        // Belt-and-braces: if the WindowServer had the system cursor drawn at
-        // the moment we re-hid (it was visible while backgrounded), the per-view
-        // transparent-cursor backstop guarantees no arrow can paint over the
-        // stream on the next mouse move.
-        reassertCursorHiddenIfNeeded()
-        // Window level: re-elevate to the saved streaming level so we cover the
-        // notch again. Only in the borderless-covering path - the Space-based
-        // (`coversNotch == false`) window's level is owned by AppKit's
-        // fullscreen system, so we leave it alone there (matching the
-        // becomeKey observer's gate).
-        if coversNotch, let level = streamingWindowLevel {
-            window.level = level
-        }
-        // Re-apply the streaming presentation flags so the menu bar / Dock
-        // auto-hide again while we're in fullscreen-cover mode. Mirrors the
-        // gate in show() - coversNotch picks the strict `.hideMenuBar +
-        // .hideDock` for notch coverage, otherwise the softer
-        // `.autoHideMenuBar + .autoHideDock`.
-        NSApp.presentationOptions = fullScreenPresentationOptions(coversNotch: coversNotch)
         onBackgroundedChanged?(false)
     }
 }

@@ -63,10 +63,13 @@ struct StreamChoicesTests {
 
     // MARK: Resolution rules
 
-    @Test func aPickedRateIsVerbatimFullScreenAndCappedInAWindow() {
-        #expect(QualityResolution.frameRate(customFPS: 144, displayHz: 60, windowed: false) == 144)
-        #expect(QualityResolution.frameRate(customFPS: 144, displayHz: 60, windowed: true) == 60)
-        #expect(QualityResolution.frameRate(customFPS: 1000, displayHz: 60, windowed: false) == 240)
+    /// Every stream is a window (full screen is the same window in a Space),
+    /// so a picked rate is capped at what the display can show.
+    @Test func aPickedRateIsCappedAtTheDisplay() {
+        #expect(QualityResolution.frameRate(customFPS: 144, displayHz: 60) == 60)
+        #expect(QualityResolution.frameRate(customFPS: 120, displayHz: 120) == 120)
+        #expect(QualityResolution.frameRate(customFPS: 60, displayHz: 120) == 60)
+        #expect(QualityResolution.frameRate(customFPS: 1000, displayHz: 240) == 240)
     }
 
     @Test func bitrateIsTheRecommendationOrTheUsersNumber() {

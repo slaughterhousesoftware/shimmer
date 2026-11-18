@@ -70,7 +70,6 @@ final class AgentControl: NSObject {
     static let hiddenSettings: [(name: String, applies: String)] = [
         ("recording", "from the next stream; recordings go to ~/Library/Logs/Shimmer"),
         ("stats", "from the next stream (the stats shortcut toggles them mid-stream)"),
-        ("auto-pip", "the next time the stream window is switched away from"),
         ("keep-awake", "from the next stream"),
         ("cmd-keys", "from the next stream (⌘ shortcuts go to the PC)"),
         ("mouse-input", "now (also the menu bar's Disable / Enable Mouse Input)"),
@@ -90,7 +89,6 @@ final class AgentControl: NSObject {
         switch name {
         case "recording": model.telemetryEnabled = on
         case "stats": model.showStreamStats = on
-        case "auto-pip": model.autoPictureInPicture = on
         case "cmd-keys": model.captureSysKeys = on
         case "mouse-input": model.mouseInputDisabled = !on
         default: model.keepAwakePolicy = on ? .always : .never
@@ -102,7 +100,6 @@ final class AgentControl: NSObject {
     static func settingsState(_ model: AppModel) -> [String: Any] {
         ["recording": model.telemetryEnabled,
          "stats": model.showStreamStats,
-         "auto-pip": model.autoPictureInPicture,
          "keep-awake": model.keepAwakePolicy == .always,
          "cmd-keys": model.captureSysKeys,
          "mouse-input": !model.mouseInputDisabled,

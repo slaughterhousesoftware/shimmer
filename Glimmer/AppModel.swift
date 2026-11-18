@@ -343,14 +343,6 @@ final class AppModel {
     let quitHotkey = HotkeyChord.defaultQuit
     let statsHotkey = HotkeyChord.defaultStats
     let pipHotkey = HotkeyChord.defaultPiP
-    /// Pop the stream out to Picture in Picture automatically when the user
-    /// switches away from the stream window (Cmd-Tab, Dock click, ...)
-    /// instead of just hiding it. Read live at the switch-away edge. Off for a
-    /// fresh install; no longer in Settings.
-    static let defaultAutoPictureInPicture = false
-    var autoPictureInPicture: Bool = AppModel.defaultAutoPictureInPicture {
-        didSet { UserDefaults.standard.set(autoPictureInPicture, forKey: "autoPictureInPicture") }
-    }
     /// The menu bar's "... in Picture in Picture": the next stream opens
     /// straight into PiP - no stream window, no app switch. One-shot, and
     /// stale after a minute so a launch that never got as far as its window
@@ -442,16 +434,6 @@ final class AppModel {
             Task { [weak self] in await self?.nativeSession?.setMouseInputDisabled(disabled) }
         }
     }
-    /// Full-screen streams always cover the whole panel, notch included, so a
-    /// panel-native stream renders 1:1. This was a switch; it is a constant now
-    /// because the answer was always yes - which is why it defaulted on.
-    let streamCoversNotch = true
-    /// The Custom preset's "Show the stream in a window" choice: full screen
-    /// (the default) or a normal titled window at Custom's own resolution,
-    /// refresh, bitrate and HDR. Only in force under Custom (see
-    /// `effectiveDisplayMode`); snapshotted into the StreamConfig at session
-    /// start, like `streamCoversNotch`. A windowed stream caps the refresh at
-    /// the display, so a flip recomputes the "Your next stream" summary.
     /// Settings › "Quit the game when the stream ends". Off (the default,
     /// and Moonlight's): ending a stream disconnects and the host keeps the
     /// app running, so the next Stream click resumes it. On: every stop
@@ -478,12 +460,6 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(keepAwakePolicy.rawValue, forKey: KeepAwakePolicy.defaultsKey)
             Task { [weak self] in await self?.nativeSession?.reconcileKeepAwake() }
-        }
-    }
-    var streamDisplayMode: StreamDisplayMode = StreamDisplayMode.defaultMode {
-        didSet {
-            UserDefaults.standard.set(streamDisplayMode.rawValue, forKey: StreamDisplayMode.defaultsKey)
-            if qualityPreset == .custom { persistQualitySettings() }
         }
     }
     /// Window-mode pointer chord (default ⌃⌥R): a TOGGLE - hands the mouse to
@@ -751,16 +727,11 @@ final class AppModel {
         customHDR = Self.persistedBool("customHDR") ?? customHDR
         captureSysKeys = Self.persistedBool("captureSysKeys") ?? captureSysKeys
         mouseInputDisabled = Self.persistedBool("mouseInputDisabled") ?? mouseInputDisabled
-        // Registered default (GlimmerApp) answers the absent-key case; an
-        // unrecognised raw value lands on the default rather than guessing.
-        streamDisplayMode = StreamDisplayMode.persisted(
-            rawValue: UserDefaults.standard.string(forKey: StreamDisplayMode.defaultsKey))
         quitAppWhenStreamEnds = Self.persistedBool("quitAppWhenStreamEnds") ?? quitAppWhenStreamEnds
         preferLowAudioLatency = Self.persistedBool("preferLowAudioLatency") ?? preferLowAudioLatency
         keepAwakePolicy = KeepAwakePolicy.persisted(
             rawValue: UserDefaults.standard.string(forKey: KeepAwakePolicy.defaultsKey))
         showStreamStats = Self.persistedBool("showStreamStats") ?? showStreamStats
-        autoPictureInPicture = Self.persistedBool("autoPictureInPicture") ?? autoPictureInPicture
     }
 
     // MARK: Mute/restore Mac audio

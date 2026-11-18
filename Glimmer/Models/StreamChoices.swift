@@ -146,12 +146,10 @@ extension StreamSizeBounds {
 /// AppKit so they can be tested directly.
 enum QualityResolution {
 
-    /// The refresh a stream asks for. Window mode caps at the panel (it can't
-    /// present more); full screen sends the choice verbatim.
-    static func frameRate(customFPS: Int, displayHz: Int, windowed: Bool) -> Int {
-        windowed
-            ? StreamDisplayMode.windowedRefresh(customFPS: customFPS, displayMaxHz: displayHz)
-            : StreamSizeBounds.clampFPS(customFPS)
+    /// The refresh a stream asks for: the choice, capped at the panel (it
+    /// can't present more).
+    static func frameRate(customFPS: Int, displayHz: Int) -> Int {
+        StreamRefresh.capped(customFPS: customFPS, displayMaxHz: displayHz)
     }
 
     /// The bitrate in kbps: the recommendation, or the user's Mbps.

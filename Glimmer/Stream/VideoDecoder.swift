@@ -415,8 +415,7 @@ public final class VideoDecoder {
     /// Fires exactly once per session when VT produces its first decoded
     /// pixel buffer. The session owner uses this to flip the stream window
     /// from invisible (alphaValue 0) to a smooth fade-in - without it the
-    /// borderless covering window paints a black/letterboxed rectangle
-    /// over the desktop during the multi-hundred-ms C-handshake gap before
+    /// window paints a black rectangle over the desktop during the multi-hundred-ms C-handshake gap before
     /// the first frame lands, which reads as a hard visual snap.
     ///
     /// Read from the nonisolated VT output callback, set from MainActor

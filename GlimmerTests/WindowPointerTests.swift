@@ -283,24 +283,20 @@ struct WindowPointerTests {
 
     // MARK: Hold Esc
 
-    /// The arming case, and only it: a first Esc down while a windowed session
-    /// holds the pointer.
+    /// The arming case, and only it: a first Esc down while the pointer is
+    /// held.
     @Test func escArmsOnlyWhileCapturedInAWindow() {
         #expect(EscapeHold.onKeyDown(
             keyCode: EscapeHold.keyCode, isRepeat: false,
-            windowMode: true, captured: true, armed: false) == .arm)
-        // Full screen has no released state to return to.
-        #expect(EscapeHold.onKeyDown(
-            keyCode: EscapeHold.keyCode, isRepeat: false,
-            windowMode: false, captured: true, armed: false) == .none)
+            captured: true, armed: false) == .arm)
         // A free pointer has nothing to free.
         #expect(EscapeHold.onKeyDown(
             keyCode: EscapeHold.keyCode, isRepeat: false,
-            windowMode: true, captured: false, armed: false) == .none)
+            captured: false, armed: false) == .none)
         // Any other key is somebody else's business.
         #expect(EscapeHold.onKeyDown(
             keyCode: 13, isRepeat: false,
-            windowMode: true, captured: true, armed: false) == .none)
+            captured: true, armed: false) == .none)
     }
 
     /// macOS auto-repeat fires further key-downs while Esc is held. They say
@@ -309,13 +305,13 @@ struct WindowPointerTests {
     @Test func escRepeatsAndDoubleArmsAreIgnored() {
         #expect(EscapeHold.onKeyDown(
             keyCode: EscapeHold.keyCode, isRepeat: true,
-            windowMode: true, captured: true, armed: true) == .none)
+            captured: true, armed: true) == .none)
         #expect(EscapeHold.onKeyDown(
             keyCode: EscapeHold.keyCode, isRepeat: true,
-            windowMode: true, captured: true, armed: false) == .none)
+            captured: true, armed: false) == .none)
         #expect(EscapeHold.onKeyDown(
             keyCode: EscapeHold.keyCode, isRepeat: false,
-            windowMode: true, captured: true, armed: true) == .none)
+            captured: true, armed: true) == .none)
     }
 
     /// A tap - down then up inside the dwell - cancels, which is what leaves

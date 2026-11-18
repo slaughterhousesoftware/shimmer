@@ -1,28 +1,19 @@
 //
 //  StreamWindow+Windowed.swift
 //
-//  Window mode: the stream as a real titled window (the Custom preset's "Show
-//  the stream in a window" toggle), plus the mid-session conversion a Path-B
-//  Space exit performs to land here instead of leaving a vanished window
-//  (issue #84).
+//  The stream as a real titled window: its opening size (1:1 with the
+//  stream's pixels), the frame it remembers, the red button, and the pointer.
+//  Full screen is the same window in a macOS Space (StreamWindow+FullScreen).
 //
-//  What is deliberately NOT here: the presentation-options dance, the
-//  `mainMenuWindow + 1` level, the resign-key orderOut, the level re-raise on
-//  becomeKey. Those are the fullscreen cover's business and stay byte-for-byte
-//  in StreamWindow+Show / +Cursor / +Fade behind `displayMode == .fullScreen`
-//  gates. A window gets: the shared display observers (pacer rebind), a
-//  miniaturize = backgrounded signal, and a cursor that follows pointer
-//  capture instead of key status.
-//
-//  The pointer in a window is GRABBED while it is over the picture - hidden
-//  cursor, relative aim - the way a VM window or a game behaves, and given
-//  back by a held Esc, the pointer chord, or switching apps. Off the picture
-//  it is a normal Mac pointer, mirrored onto the host as absolute positions.
-//  InputForwarder owns the engagement and the grab rule (as in full screen it
-//  owns capture); it reports each edge through `setPointerCaptured(_:)` and
-//  this file keeps VISIBILITY in the single `setCursorHidden` owner - the
-//  one-owner rule the cursor latch depends on. The hint that teaches the way
-//  out lives in StreamWindow+PointerAffordances.swift.
+//  The pointer is GRABBED while it is over the picture - hidden cursor,
+//  relative aim - the way a VM window or a game behaves, and given back by a
+//  held Esc, the pointer chord, or switching apps. Off the picture it is a
+//  normal Mac pointer, mirrored onto the host as absolute positions. In full
+//  screen the picture is the screen, so it stays grabbed. InputForwarder owns
+//  the engagement and the grab rule; it reports each edge through
+//  `setPointerCaptured(_:)` and this file keeps VISIBILITY in the single
+//  `setCursorHidden` owner - the one-owner rule the cursor latch depends on.
+//  The hint that teaches the way out lives in StreamWindow+PointerAffordances.
 //
 
 import AppKit
@@ -33,56 +24,6 @@ extension StreamWindow {
     /// and size persist across sessions and launches, and the pixel-mapped
     /// opening size only applies until the user has moved or resized it once.
     static let frameAutosaveName = "GlimmerStreamWindow"
-
-    /// The window-mode bring-up. Mirrors Path A's shape (activate, order
-    /// front, install input next runloop, 1.5s key backstop) without the
-    /// cover, the cursor hide, or the presentation options.
-    func showWindowed() {
-        // The Space the green button can enter keeps AppKit's safe-area
-        // framing; "Fill the notch" is a full-screen-only choice.
-        streamDelegate.coversNotch = false
-        streamDelegate.displayMode = .window
-        if launchesInPictureInPicture {
-            // Configured but never ordered in: the stream opens in Picture in
-            // Picture and the app the user is in stays in front.
-            configureWindowedChrome()
-            window.alphaValue = 0.0
-            awaitingFirstFrameFadeIn = true
-            installWindowedLifecycleObservers()
-            beginLaunchIntoPictureInPicture()
-            return
-        }
-        AppDelegate.refreshActivationPolicy()   // a stage of our own, not behind the focused one
-        NSApp.activate()
-        configureWindowedChrome()
-        // Same first-frame fade-in as full screen: an empty display layer
-        // renders black, so the window stays invisible until video exists.
-        window.alphaValue = 0.0
-        awaitingFirstFrameFadeIn = true
-        window.makeKeyAndOrderFront(nil)
-        installWindowedLifecycleObservers()
-        // The way the user left the last stream (StreamWindow+FullScreen).
-        enterRememberedFullScreen()
-        let size = window.contentRect(forFrameRect: window.frame).size
-        log.info(
-            "Stream window windowed - content \(size.width, privacy: .public)×\(size.height, privacy: .public) pt")
-        // No Space animation; install input next runloop (didClose guard like
-        // every sibling: a connect that fails first must not re-capture).
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !self.didClose else { return }
-            self.onDidBecomeReadyForInput?()
-        }
-        // Key backstop - same reasoning as Path A's: a window can be on screen
-        // and still not key if the app wasn't active at makeKeyAndOrderFront.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self, !self.didClose, !self.window.isKeyWindow else { return }
-            self.log.error("Window not key 1.5s after show(); retrying activate + makeKeyAndOrderFront + first-responder install")
-            NSApp.activate()
-            self.window.orderFrontRegardless()   // on top even when activation is refused
-            self.window.makeKeyAndOrderFront(nil)
-            self.onDidBecomeReadyForInput?()
-        }
-    }
 
     /// Title, aspect lock, minimum size, and the opening frame.
     ///
@@ -95,7 +36,7 @@ extension StreamWindow {
     /// resolution's size, not whatever size they last dragged to (which is what
     /// broke the pixel density before). A 4K request on a smaller panel is
     /// scaled DOWN to fit, preserving aspect.
-    private func configureWindowedChrome() {
+    func configureWindowedChrome() {
         window.title = windowTitle
         let aspect = streamPixelSize.width > 0 && streamPixelSize.height > 0
             ? streamPixelSize : CGSize(width: 16, height: 9)
@@ -170,19 +111,19 @@ extension StreamWindow {
     /// The delegate's close request (red button / Cmd-W). Handed to the
     /// session's stop() via `onCloseRequested`; nothing is closed here.
     func handleUserCloseRequest() {
-        guard displayMode == .window, !didClose else { return }
+        guard !didClose else { return }
         log.info("Stream window close requested by the user - stopping the session")
         onCloseRequested?()
     }
 
-    /// InputForwarder's capture edge in window mode. Visibility stays with the
+    /// InputForwarder's capture edge. Visibility stays with the
     /// single `setCursorHidden` owner; the per-view transparent cursor
     /// backstop is switched with it so a free pointer shows the arrow over the
     /// picture and a captured one never can. Entering capture spends one of
     /// the hint's few shows - the only teaching surface left now that the grab
     /// is the pointer being over the window rather than a control to press.
     func setPointerCaptured(_ captured: Bool) {
-        guard displayMode == .window, !didClose else { return }
+        guard !didClose else { return }
         setCursorHidden(captured)
         (window.contentView as? StreamInputView)?.setTransparentCursorEnabled(captured)
         if captured {
@@ -190,11 +131,11 @@ extension StreamWindow {
         } else {
             hideCaptureHint()
         }
-        log.info("Pointer \(captured ? "captured" : "released", privacy: .public) (window mode)")
+        log.info("Pointer \(captured ? "captured" : "released", privacy: .public)")
     }
 
-    /// The window-mode observer set: the shared display observers (pacer
-    /// rebind + cursor re-assert) and miniaturize/deminiaturize as the
+    /// The window's observer set: the display observers (pacer rebind +
+    /// cursor re-assert), full screen in and out, and miniaturize/deminiaturize as the
     /// backgrounded signal - a minimized window presents nothing, so the
     /// decoder's present suppression and the launcher's "Back to stream" both
     /// apply. NO key/activation observers: the window stays put when the user
@@ -220,80 +161,5 @@ extension StreamWindow {
                 self.onBackgroundedChanged?(false)
             }
         })
-    }
-
-    // MARK: - Path B Space exit → window (issue #84)
-
-    /// Registered by the Path-B bring-up. A user-driven exit from the Space
-    /// (Mission Control, the Esc gesture) converts this window to window mode
-    /// instead of leaving it ordered out: `willExit` disarms the fullscreen
-    /// key observers (so the resign-key orderOut can't fire mid-transition)
-    /// and flips the mode; `didExit` applies the titled chrome once AppKit has
-    /// finished the animation. `close()` sets `didClose` before its own
-    /// toggleFullScreen, so a teardown exit never converts.
-    func installSpaceExitObservers() {
-        let nc = NotificationCenter.default
-        spaceExitObservers.append(nc.addObserver(
-            forName: NSWindow.willExitFullScreenNotification, object: window, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, !self.didClose, self.displayMode == .fullScreen else { return }
-                self.beginSpaceExitConversion()
-            }
-        })
-        spaceExitObservers.append(nc.addObserver(
-            forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, !self.didClose, self.displayMode == .window else { return }
-                self.finishSpaceExitConversion()
-            }
-        })
-    }
-
-    /// The transition is under way: make the fullscreen machinery inert
-    /// BEFORE anything can fire against it. Removing the key observers and
-    /// bumping the resign generation together guarantee that neither a fresh
-    /// resign nor one already sitting in its debounce can orderOut the window
-    /// - the vanish in #84. The menu bar and cursor come back now, the chrome
-    /// waits for didExit.
-    private func beginSpaceExitConversion() {
-        log.notice("Leaving the fullscreen Space (user-driven) - converting the stream window to window mode")
-        resignGeneration &+= 1
-        for token in keyObservers { NotificationCenter.default.removeObserver(token) }
-        keyObservers.removeAll()
-        let wsnc = NSWorkspace.shared.notificationCenter
-        for token in workspaceObservers { wsnc.removeObserver(token) }
-        workspaceObservers.removeAll()
-        if let saved = previousPresentationOptions {
-            NSApp.presentationOptions = saved
-            previousPresentationOptions = nil
-        }
-        displayMode = .window
-        streamDelegate.displayMode = .window
-        streamDelegate.coversNotch = false
-        // Cursor back first, then the forwarder switches to the window pointer
-        // model (which releases the association) - the order a resign uses.
-        setCursorHidden(false)
-        onDisplayModeChanged?(.window)
-    }
-
-    /// AppKit has restored the pre-Space frame: dress the window as a real
-    /// window (style mask, level, aspect lock, size, autosave), bring it back
-    /// key, re-install the input path (the Space exit resets the responder
-    /// chain, exactly as the enter did), and arm the windowed observers.
-    private func finishSpaceExitConversion() {
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.collectionBehavior = [.fullScreenPrimary]
-        window.level = .normal
-        configureWindowedChrome()
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-        installWindowedLifecycleObservers()
-        for token in spaceExitObservers { NotificationCenter.default.removeObserver(token) }
-        spaceExitObservers.removeAll()
-        onBackgroundedChanged?(false)
-        onDidBecomeReadyForInput?()
-        Diag.notice("Left the full-screen Space - the stream continues in a window (the pointer is yours again)", "Stream")
     }
 }

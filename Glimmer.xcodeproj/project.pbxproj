@@ -268,7 +268,7 @@
 		D1000BE0 /* FramePacer+TickThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1000BE1 /* FramePacer+TickThread.swift */; };
 		D1000BD3 /* VideoDecoder+GovernorRepaint.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1000BD4 /* VideoDecoder+GovernorRepaint.swift */; };
 		D1000C01 /* StreamWindow+Cursor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1000C02 /* StreamWindow+Cursor.swift */; };
-		DEC0DE840000000000000001 /* StreamDisplayMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC0DE840000000000000002 /* StreamDisplayMode.swift */; };
+		DEC0DE840000000000000001 /* StreamSizeBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC0DE840000000000000002 /* StreamSizeBounds.swift */; };
 		A1C0DEKAWPOL100000000000 /* KeepAwakePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEKAWPOL200000000000 /* KeepAwakePolicy.swift */; };
 		A1C0DE781000000000000000 /* StreamChoices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE782000000000000000 /* StreamChoices.swift */; };
 		DEC0DE840000000000000003 /* StreamWindowGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC0DE840000000000000004 /* StreamWindowGeometry.swift */; };
@@ -311,7 +311,7 @@
 		D2000081 /* AnnexBToAVCCTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000080 /* AnnexBToAVCCTests.swift */; };
 		D2000091 /* ContainerMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000090 /* ContainerMigrationTests.swift */; };
 		D2000095 /* QualityPresetMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000094 /* QualityPresetMigrationTests.swift */; };
-		DEC0DE840000000000000011 /* StreamDisplayModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC0DE840000000000000012 /* StreamDisplayModeTests.swift */; };
+		DEC0DE840000000000000011 /* StreamSizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC0DE840000000000000012 /* StreamSizeTests.swift */; };
 		A1C0DE791000000000000000 /* StreamChoicesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE792000000000000000 /* StreamChoicesTests.swift */; };
 		A1C0DESVOLTST10000000000 /* StreamVolumeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DESVOLTST20000000000 /* StreamVolumeTests.swift */; };
 		A1C0HEROTST10000000000 /* HeroAppTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0HEROTST20000000000 /* HeroAppTargetTests.swift */; };
@@ -655,7 +655,7 @@
 		D1000BE1 /* FramePacer+TickThread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/FramePacer+TickThread.swift"; sourceTree = "<group>"; };
 		D1000BD4 /* VideoDecoder+GovernorRepaint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/VideoDecoder+GovernorRepaint.swift"; sourceTree = "<group>"; };
 		D1000C02 /* StreamWindow+Cursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/StreamWindow+Cursor.swift"; sourceTree = "<group>"; };
-		DEC0DE840000000000000002 /* StreamDisplayMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamDisplayMode.swift; sourceTree = "<group>"; };
+		DEC0DE840000000000000002 /* StreamSizeBounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamSizeBounds.swift; sourceTree = "<group>"; };
 		A1C0DEKAWPOL200000000000 /* KeepAwakePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "KeepAwakePolicy.swift"; sourceTree = "<group>"; };
 		A1C0DE782000000000000000 /* StreamChoices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamChoices.swift; sourceTree = "<group>"; };
 		DEC0DE840000000000000004 /* StreamWindowGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/StreamWindowGeometry.swift; sourceTree = "<group>"; };
@@ -699,7 +699,7 @@
 		D2000080 /* AnnexBToAVCCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnexBToAVCCTests.swift; sourceTree = "<group>"; };
 		D2000090 /* ContainerMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerMigrationTests.swift; sourceTree = "<group>"; };
 		D2000094 /* QualityPresetMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QualityPresetMigrationTests.swift; sourceTree = "<group>"; };
-		DEC0DE840000000000000012 /* StreamDisplayModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamDisplayModeTests.swift; sourceTree = "<group>"; };
+		DEC0DE840000000000000012 /* StreamSizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamSizeTests.swift; sourceTree = "<group>"; };
 		A1C0DE792000000000000000 /* StreamChoicesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StreamChoicesTests.swift"; sourceTree = "<group>"; };
 		A1C0DESVOLTST20000000000 /* StreamVolumeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StreamVolumeTests.swift"; sourceTree = "<group>"; };
 		A1C0HEROTST20000000000 /* HeroAppTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HeroAppTargetTests.swift"; sourceTree = "<group>"; };
@@ -795,7 +795,7 @@
 				CE1000000000000000000101 /* HostIcon.swift */,
 				4917C6C3B98327258B22AC8C /* HostStreamSettings.swift */,
 				83756D58A7C3644346941403 /* HostSystemKind.swift */,
-				DEC0DE840000000000000002 /* StreamDisplayMode.swift */,
+				DEC0DE840000000000000002 /* StreamSizeBounds.swift */,
 				A1C0DEKAWPOL200000000000 /* KeepAwakePolicy.swift */,
 				A1C0DE782000000000000000 /* StreamChoices.swift */,
 			);
@@ -1142,7 +1142,7 @@
 				D2000080 /* AnnexBToAVCCTests.swift */,
 				D2000090 /* ContainerMigrationTests.swift */,
 				D2000094 /* QualityPresetMigrationTests.swift */,
-				DEC0DE840000000000000012 /* StreamDisplayModeTests.swift */,
+				DEC0DE840000000000000012 /* StreamSizeTests.swift */,
 				A1C0DE792000000000000000 /* StreamChoicesTests.swift */,
 				A1C0DESVOLTST20000000000 /* StreamVolumeTests.swift */,
 				A1C0HEROTST20000000000 /* HeroAppTargetTests.swift */,
@@ -1425,7 +1425,7 @@
 				D1000E51 /* StreamBannerLayer.swift in Sources */,
 				D100006E /* StreamWindow+Show.swift in Sources */,
 				D1000C01 /* StreamWindow+Cursor.swift in Sources */,
-				DEC0DE840000000000000001 /* StreamDisplayMode.swift in Sources */,
+				DEC0DE840000000000000001 /* StreamSizeBounds.swift in Sources */,
 				A1C0DEKAWPOL100000000000 /* KeepAwakePolicy.swift in Sources */,
 				A1C0DE781000000000000000 /* StreamChoices.swift in Sources */,
 				DEC0DE840000000000000003 /* StreamWindowGeometry.swift in Sources */,
@@ -1625,7 +1625,7 @@
 				D2000081 /* AnnexBToAVCCTests.swift in Sources */,
 				D2000091 /* ContainerMigrationTests.swift in Sources */,
 				D2000095 /* QualityPresetMigrationTests.swift in Sources */,
-				DEC0DE840000000000000011 /* StreamDisplayModeTests.swift in Sources */,
+				DEC0DE840000000000000011 /* StreamSizeTests.swift in Sources */,
 				A1C0DE791000000000000000 /* StreamChoicesTests.swift in Sources */,
 				A1C0DESVOLTST10000000000 /* StreamVolumeTests.swift in Sources */,
 				A1C0HEROTST10000000000 /* HeroAppTargetTests.swift in Sources */,

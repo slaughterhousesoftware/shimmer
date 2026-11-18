@@ -90,7 +90,7 @@ extension InputForwarder: StreamInputViewDelegate {
         // reason. In full screen capture follows key status and there is
         // nothing to toggle, so the chord is never intercepted there and
         // reaches the host like any key.
-        if !event.isARepeat, isWindowMode,
+        if !event.isARepeat,
            releasePointerHotkeyProvider().matches(event: event, modifiers: mods) {
             log.info("Pointer hotkey detected - toggling capture")
             togglePointerCapture(reason: "pointer chord")
@@ -438,11 +438,11 @@ extension InputForwarder: StreamInputViewDelegate {
     func streamView(_ view: StreamInputView, handleMouseUp event: NSEvent) {
         guard isReady, forwardsMouseEvents, !pipSuspended else { return }
         let hostButton = button(for: event)
-        // Window mode: never send a release for a press the host has already
-        // been told about. `releasePointer` raises held buttons first, so a
+        // Never send a release for a press the host has already been told
+        // about. `releasePointer` raises held buttons first, so a
         // button held through a capture release would otherwise double-release
         // when the physical up arrives.
-        if isWindowMode, !heldMouseButtons.contains(hostButton) { return }
+        if !heldMouseButtons.contains(hostButton) { return }
         // Land the release where the pointer actually ended up - a drag that
         // moved between down and up must not release at the down position.
         sendAbsolutePointer(for: event, in: view)

@@ -198,7 +198,7 @@ extension AppModel {
         cfg.windowTitle = Self.streamWindowTitle(hostName: host.displayName, appName: app.name)
         // One line naming how the stream will be shown and what was asked for,
         // so a "why is it 1080p in a window" report answers itself from the log.
-        Diag.info("Show the stream: \(cfg.displayMode.displayName.lowercased()) - requesting "
+        Diag.info("Stream \(StreamFullScreenMemory.opensFullScreen() ? "opens full screen" : "opens in a window") - requesting "
             + "\(cfg.width)x\(cfg.height) at \(cfg.fps) Hz", "Stream")
         return cfg
     }
@@ -288,7 +288,6 @@ extension AppModel {
                         self?.nativeStreamBackgrounded = backgrounded
                     },
                     pipHotkeyProvider: { [weak self] in self?.pipHotkey ?? .defaultPiP },
-                    autoPictureInPictureProvider: { [weak self] in self?.autoPictureInPicture ?? false },
                     startInPictureInPictureProvider: { [weak self] in
                         standby ? false : (self?.consumePictureInPictureLaunch() ?? false)
                     },

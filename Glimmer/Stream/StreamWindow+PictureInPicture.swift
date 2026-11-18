@@ -86,9 +86,6 @@ extension StreamWindow {
             if pipStartIsLaunch { showWindowAfterFailedPiPLaunch("Picture in Picture isn't possible right now") }
             return
         }
-        // Any resign-debounce teardown in flight is superseded by this
-        // explicit hide (same token discipline as the becomeKey observer).
-        resignGeneration &+= 1
         if !isBackgrounded { hideStreamWindow(forPictureInPicture: true) }
         startPictureInPictureNow()
         publishPresentSuppression()
@@ -271,7 +268,7 @@ extension StreamWindow {
         // joins the full-screen Space where the user is.
         // Not when the stream goes back into full screen itself: it takes its
         // own Space then, and an auxiliary window could not.
-        let overFullScreen = displayMode == .window && !StreamFullScreenMemory.opensFullScreen()
+        let overFullScreen = !StreamFullScreenMemory.opensFullScreen()
             && MenuBarController.frontmostAppIsFullScreen()
         if !overFullScreen { Self.becomeRegularApp() }
         pipReturnInFlight = true
@@ -282,20 +279,18 @@ extension StreamWindow {
         // into it, and takes over the video only once PiP has stopped (didStop
         // hands the frames back). Clear the frame it showed before PiP.
         displayLayer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
-        if displayMode == .window {
-            // The window comes to the user: on every Space for the return
-            // (over a full-screen app too), so it is already on the one they
-            // are looking at when the app activates - macOS has no other
-            // Space to switch to. Floating and unmanaged until then: Stage
-            // Manager files an inactive app's window into the strip.
-            if savedShapeBeforePiP == nil { savedShapeBeforePiP = (window.level, window.collectionBehavior) }
-            returnedOverFullScreenApp = overFullScreen
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
-            window.level = .floating
-        }
+        // The window comes to the user: on every Space for the return (over a
+        // full-screen app too), so it is already on the one they are looking
+        // at when the app activates - macOS has no other Space to switch to.
+        // Floating and unmanaged until then: Stage Manager files an inactive
+        // app's window into the strip.
+        if savedShapeBeforePiP == nil { savedShapeBeforePiP = (window.level, window.collectionBehavior) }
+        returnedOverFullScreenApp = overFullScreen
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        window.level = .floating
         window.alphaValue = 1
         window.orderFrontRegardless()
-        // Activate only once the window is on this Space (window mode), so
+        // Activate only once the window is on this Space, so
         // activation has nowhere else to take the user.
         Self.forceActivate()
         isBackgrounded = false
@@ -309,13 +304,7 @@ extension StreamWindow {
             // AVKit's fly-back ends on the source layer's rect: exactly over
             // the window's picture, now on the screen the user is looking at.
             self.pipSource.place(at: self.pipReturnTarget())
-            if self.displayMode == .window {
-                self.presentReturnedWindow()
-            } else {
-                self.window.makeKeyAndOrderFront(nil)
-                self.reengageForeground()
-                self.reassertActivation(attempt: 0)
-            }
+            self.presentReturnedWindow()
             // The PiP flies back now: AVKit's own return finishes, or ours
             // (menu bar) stops it (reengageForeground; a no-op when stopping).
             ready?()
@@ -403,12 +392,11 @@ extension StreamWindow {
         savedShapeBeforePiP = nil
     }
 
-    /// The second half of a window-mode return: back to the normal window
+    /// The second half of a return: back to the normal window
     /// shape, key + front, foreground re-engaged. Idempotent.
     func presentReturnedWindow() {
         guard !didClose else { return }
         restorePiPSourceShape()
-        resignGeneration &+= 1
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         reengageForeground()

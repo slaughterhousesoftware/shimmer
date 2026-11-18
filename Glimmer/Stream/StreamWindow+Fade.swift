@@ -2,18 +2,11 @@
 //  StreamWindow+Fade.swift
 //
 //  The stream window's two OPACITY TRANSITIONS and the teardown the
-//  fade-out completes: the first-frame fade-in, the menu-bar/Dock
-//  presentation-options handoff that is deliberately deferred until the
-//  window is opaque (the "bare-desktop flash"), and close() with its final
-//  post-fade teardown. Split out of StreamWindow.swift (pure move) to keep
-//  each unit under the length limit; see that file for the window's stored
-//  state and the AVSampleBufferDisplayLayer rationale, and
-//  StreamWindow+Show.swift for the bring-up this pairs with.
-//
-//  Both fades honor Reduce Motion by snapping instead of ramping - a
-//  large-surface opacity animation is exactly what that setting asks us to
-//  drop - and both keep the presentation-options change on the OPAQUE side
-//  of the transition. MainActor throughout (AppKit).
+//  fade-out completes: the first-frame fade-in, and close() with its final
+//  post-fade teardown. Split out of StreamWindow.swift; see that file for the
+//  window's stored state, and StreamWindow+Show.swift for the bring-up this
+//  pairs with. Both fades honor Reduce Motion by snapping instead of ramping.
+//  MainActor throughout (AppKit).
 //
 
 import AppKit
@@ -37,63 +30,20 @@ extension StreamWindow {
             finishLaunchIntoPictureInPicture()
             return
         }
-        // The window is at level `mainMenuWindow + 1` (notch path) or in a
-        // fullscreen Space (safe-area path), so as alphaValue ramps 0 → 1
-        // it visually covers the menu bar (level 24) and the Dock (level
-        // ~20). We DEFER hiding them via `NSApp.presentationOptions` until
-        // AFTER the fade completes: setting those flags is instant in the
-        // compositor, so doing it at fade-start leaves a one-vsync window
-        // where the bars are gone but the window is still at ~0 alpha -
-        // that's the "bare-desktop flash" the user was seeing. Post-fade
-        // the flags become a no-op user-side because the now-opaque
-        // window is already covering everything they hide.
         let win = window
-        let cover = coversNotch
         // Under Reduce Motion, snap to visible instead of the 350ms fade -
         // the fade is exactly the kind of large-surface opacity ramp the
-        // setting exists to suppress. We still defer presentationOptions to
-        // after alpha is set so the menu bar / Dock never visibly vanish
-        // against a transparent window (the "bare-desktop flash").
+        // setting exists to suppress.
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             win.alphaValue = 1.0
-            applyPresentationOptions(coversNotch: cover)
             return
         }
-        NSAnimationContext.runAnimationGroup({ ctx in
+        NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.35
             ctx.allowsImplicitAnimation = true
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             win.animator().alphaValue = 1.0
-        }, completionHandler: {
-            // runAnimationGroup delivers the completion on the main run loop,
-            // so we are already on the MainActor - assumeIsolated bridges the
-            // SDK's non-isolated @Sendable handler back to MainActor state.
-            MainActor.assumeIsolated { self.applyPresentationOptions(coversNotch: cover) }
-        })
-    }
-
-    /// Hide/auto-hide the menu bar + Dock once the stream window is opaque.
-    /// Extracted from `fadeInOnFirstFrame` so the fade completion handler
-    /// captures no non-Sendable closure - the handler runs on the main run
-    /// loop, so MainActor isolation is sound.
-    private func applyPresentationOptions(coversNotch cover: Bool) {
-        // Window mode never touches the app's presentation options - the menu
-        // bar and Dock stay, that's the point of a window. (`show()` skipped
-        // saving them too, so close() has nothing to restore.)
-        guard displayMode == .fullScreen else { return }
-        NSApp.presentationOptions = fullScreenPresentationOptions(coversNotch: cover)
-    }
-
-    /// The menu bar and Dock while a full-screen stream is up. Covering the
-    /// notch normally hides them outright, so a pointer driving the game can't
-    /// drag the menu bar down over the picture. With mouse input disabled the
-    /// pointer is the Mac's own, and hiding the menu bar outright made
-    /// Shimmer's menu bar icon (and every other) unreachable for the whole
-    /// stream - so it auto-hides instead and slides down at the top edge.
-    func fullScreenPresentationOptions(coversNotch: Bool) -> NSApplication.PresentationOptions {
-        coversNotch && !mouseInputDisabled
-            ? [.hideMenuBar, .hideDock]
-            : [.autoHideMenuBar, .autoHideDock]
+        }
     }
 
     /// Tear the stream window down cleanly. Safe to call more than once.
@@ -108,7 +58,7 @@ extension StreamWindow {
         // and would otherwise outlive the session showing a frozen frame.
         tearDownPictureInPicture()
 
-        // 1. Display-layer flush is DEFERRED to the fade completion (step 5).
+        // 1. Display-layer flush is DEFERRED to the fade completion (step 4).
         //    Flushing here (removingDisplayedImage) blanks the layer before the
         //    fade runs, so the user only ever sees an already-empty window fade
         //    out - imperceptible. Keeping the last decoded frame on screen
@@ -137,48 +87,19 @@ extension StreamWindow {
             wsnc.removeObserver(token)
         }
         workspaceObservers.removeAll()
-        // Path B's one-shot didEnterFullScreen token: consumed by its own
-        // closure on the happy path, but a session that ends before AppKit
-        // posts the enter notification leaves it registered - sweep it here.
-        if let token = enterFullScreenObserver {
-            NotificationCenter.default.removeObserver(token)
-            enterFullScreenObserver = nil
-        }
-        // Path B's Space-exit observers (StreamWindow+Windowed.swift) - the
-        // toggleFullScreen in step 4 below would otherwise fire them against
-        // a closing window. `didClose` already gates them; sweeping is the
-        // clean cut.
-        for token in spaceExitObservers {
-            NotificationCenter.default.removeObserver(token)
-        }
-        spaceExitObservers.removeAll()
-        // Window mode: persist the frame under its autosave name and release
-        // the name, so the next session's window can claim it (see
-        // StreamWindow+Windowed.swift).
-        if displayMode == .window { finishWindowedFrameAutosave() }
+        // Persist the frame under its autosave name and release the name, so
+        // the next session's window can claim it (StreamWindow+Windowed).
+        finishWindowedFrameAutosave()
 
-        // 3. Restore the app's presentation options BEFORE orderOut'ing the
-        //    window. Order matters: if we orderOut first, the user briefly
-        //    sees their desktop with the menu bar/Dock still hidden as
-        //    AppKit catches up - a flash of "what happened to my menu bar".
-        //    Restoring first means by the time the window disappears, the
-        //    chrome is already back.
-        if let saved = previousPresentationOptions {
-            NSApp.presentationOptions = saved
-            previousPresentationOptions = nil
-        }
-
-        // 4. Exit the Space-based fullscreen. If the window never made it
-        //    into fullscreen (early failure path), this is a no-op.
-        //    `toggleFullScreen` runs an async animation; orderOut + activate
-        //    after the exit notification fires would be cleaner, but the
-        //    in-flight orderOut below still works in practice because AppKit
-        //    queues the orderOut after the exit-fullscreen Space animation.
+        // 3. Leave a full-screen Space. The observers are gone already, so
+        //    this exit is never remembered as the user choosing a window.
+        //    `toggleFullScreen` animates; the orderOut below still lands
+        //    because AppKit queues it after the Space animation.
         if window.styleMask.contains(.fullScreen) {
             window.toggleFullScreen(nil)
         }
 
-        // 5. Drop first responder, fade out, orderOut. Fading instead of a
+        // 4. Drop first responder, fade out, orderOut. Fading instead of a
         //    hard orderOut gives the user a 250ms acknowledgement that the
         //    stream ended - without the fade the window snaps off and the
         //    launcher snaps in, which reads as a crash. Apple's first-party

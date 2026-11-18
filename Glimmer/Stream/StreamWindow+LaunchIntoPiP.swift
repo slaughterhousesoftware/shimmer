@@ -27,8 +27,8 @@ extension StreamWindow {
     /// UserDefaults key: the PiP panel's last frame, screen coordinates.
     static let lastPiPPanelFrameKey = "pipLastPanelFrame"
 
-    /// Mark the hidden window as launching into PiP. Called by show() /
-    /// showWindowed() after the window is configured but not ordered in.
+    /// Mark the hidden window as launching into PiP. Called by show() after
+    /// the window is configured but not ordered in.
     func beginLaunchIntoPictureInPicture() {
         launchingIntoPiP = true
         isBackgrounded = true

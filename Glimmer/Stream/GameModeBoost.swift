@@ -15,8 +15,8 @@
 //  reports/s) only fit on the link with it on.
 //
 //  On its own, macOS turns Game Mode on only for an app in the games category
-//  that is frontmost in native (Space) full screen. Shimmer's full screen is a
-//  borderless window and PiP is neither, so it never triggers. Apple's
+//  that is frontmost in native (Space) full screen - Shimmer's full screen,
+//  but not a window or PiP. Apple's
 //  `gamepolicyctl` (Xcode's developer tools) can force the policy on; the
 //  daemon's tool interface needs Apple's private entitlement, so we run that
 //  tool rather than call it ourselves. No Xcode, no boost - nothing breaks.

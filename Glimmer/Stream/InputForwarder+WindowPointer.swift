@@ -1,7 +1,7 @@
 //
 //  InputForwarder+WindowPointer.swift
 //
-//  Window mode's pointer model. Capture (relative aim, cursor hidden,
+//  The stream window's pointer model. Capture (relative aim, cursor hidden,
 //  associate-false) is grabbed by the pointer simply being OVER the picture,
 //  the way a VM window or a game does it, and left again with a held Esc, the
 //  pointer chord, or Cmd-Tab. The grab rule itself and its suppression latch
@@ -13,13 +13,10 @@
 //  while it is off the picture, or the window is not key, or a release latch
 //  is holding the grab off) but it is the honest thing to send there.
 //
-//  Everything here is gated on `isWindowMode`, which only a window-mode
-//  session (or a Path-B Space exit landing in window mode) turns on. Full
-//  screen keeps its always-on relative capture - entered on key, released on
-//  resign - and never reaches the absolute path. The engagement mechanics
-//  themselves (associate-false, coalescing, acceleration) are unchanged and
-//  shared: `enterCapturedMode()` / `exitCapturedMode()` in
-//  InputForwarder+Capture.swift. Cursor VISIBILITY is never touched here; the
+//  In full screen the picture is the screen, so the pointer stays grabbed
+//  until a held Esc or the chord frees it. The engagement mechanics
+//  (associate-false, coalescing, acceleration) are `enterCapturedMode()` /
+//  `exitCapturedMode()` in InputForwarder+Capture.swift. Cursor VISIBILITY is never touched here; the
 //  capture edge is reported to StreamWindow, which owns the one hide/show
 //  latch.
 //
@@ -34,51 +31,25 @@ extension InputForwarder {
     /// everything else below - it's a session-wide off switch, not a capture
     /// state.
     ///
-    /// Full screen: always - capture there tracks key status and the window
-    /// orders out when it resigns, so the view only receives events while it
-    /// owns the input.
-    ///
-    /// Window mode: only while the window is KEY. A window keeps its tracking
+    /// Only while the window is KEY. A window keeps its tracking
     /// area alive with `.activeAlways` (the stream needs mouseMoved without a
     /// button held), so without this gate a pointer sweeping over an inactive
     /// stream window on the way to another app would drag the host's cursor
     /// around behind the user's back.
     var forwardsMouseEvents: Bool {
         guard !mouseInputDisabled else { return false }
-        guard isWindowMode else { return true }
         return window?.isKeyWindow ?? false
     }
 
     /// Whether pointer motion should be sent as an absolute POSITION rather
-    /// than a relative delta: window mode with the pointer free. Constant
-    /// `false` in full screen, so the relative path there is untouched.
-    var sendsAbsolutePointer: Bool { isWindowMode && !isMouseCaptured }
-
-    /// Switch pointer policy mid-session. Used by the Path-B Space exit that
-    /// lands a fullscreen session in a window: the always-on capture is
-    /// released (association restored, cursor shown via the reported edge) and
-    /// the pointer goes back to being a normal Mac pointer. Idempotent.
-    func setWindowMode(_ enabled: Bool) {
-        guard isWindowMode != enabled else { return }
-        isWindowMode = enabled
-        if enabled {
-            exitCapturedMode()
-            log.info("Pointer policy: relative capture while the pointer is over the window")
-        } else {
-            // Leaving window mode retires the latch with the rule it belongs
-            // to: full screen never reads it, and a later return to a window
-            // must not inherit a stale "do not grab" from the last release.
-            isHoverCaptureSuppressed = false
-            log.info("Pointer policy: always-on relative capture (full screen)")
-        }
-    }
+    /// than a relative delta: whenever the pointer is free.
+    var sendsAbsolutePointer: Bool { !isMouseCaptured }
 
     /// The pointer chord (⌃⌥R). A toggle, so the combo is never a dead key:
     /// it grabs a free pointer and frees a grabbed one. It is the way to
     /// re-grab without leaving and re-entering the window, and the way to
     /// release without reaching for Esc.
     func togglePointerCapture(reason: String) {
-        guard isWindowMode else { return }
         if isMouseCaptured {
             releasePointer(reason: reason)
         } else {
@@ -91,7 +62,7 @@ extension InputForwarder {
     /// input, so a pointer sweeping over a background stream window on its way
     /// somewhere else would vanish into a game the user is not looking at.
     func capturePointer(reason: String) {
-        guard isWindowMode, !isMouseCaptured, !mouseInputDisabled,
+        guard !isMouseCaptured, !mouseInputDisabled,
               let window, window.isKeyWindow else { return }
         log.info("Pointer capture requested (\(reason, privacy: .public))")
         // Clear the latch as the grab lands: it exists to keep a release from
@@ -151,16 +122,14 @@ extension InputForwarder {
     /// carries no information, which is why there is no delta-coalescing drain
     /// on this path the way there is on the relative one.
     ///
-    /// A no-op unless the pointer is free in a window, so every call site can
-    /// invoke it unconditionally and full screen pays one bool for it.
     /// One absolute position for the pointer's CURRENT location, read from the
     /// window rather than an event so the two capture paths that have no event
     /// to hand (a hover grab, a Cmd-Tab back onto a resting pointer) can both
     /// use it. Deliberately NOT routed through `sendAbsolutePointer`: that one
     /// is gated on the pointer being free, which is exactly the state this is
-    /// leaving. Window mode only, so full screen never emits an absolute event.
+    /// leaving.
     func syncHostPointerToCurrentLocation() {
-        guard isReady, isWindowMode, let window, let view = inputView else { return }
+        guard isReady, let window, let view = inputView else { return }
         let viewPoint = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
         guard view.bounds.contains(viewPoint) else { return }
         guard let point = PointerMapping.streamPoint(

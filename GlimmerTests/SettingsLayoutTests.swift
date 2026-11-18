@@ -31,19 +31,13 @@ struct SettingsLayoutTests {
         #expect(BitrateSlider.nearestStopIndex(mbps: 25, maxMbps: 300) == 3)
         #expect(BitrateSlider.nearestStopIndex(mbps: 400, maxMbps: 100) == 8)
     }
-
-    /// Picture in Picture on switching away is off for a fresh install (its
-    /// row left General).
-    @MainActor @Test func switchingAwayDoesNotStartPictureInPicture() {
-        #expect(AppModel.defaultAutoPictureInPicture == false)
-    }
 }
 
 /// What left Settings stays reachable from `shimmerctl set` (an agent turns
 /// recording on to diagnose a stream), and `shimmerctl state` shows it.
 @MainActor
 struct AgentSettingsTests {
-    private static let keys = ["telemetryEnabled", "showStreamStats", "autoPictureInPicture",
+    private static let keys = ["telemetryEnabled", "showStreamStats",
                                KeepAwakePolicy.defaultsKey, "captureSysKeys", "mouseInputDisabled"]
 
     private static func preservingDefaults(_ body: () -> Void) {
@@ -67,14 +61,11 @@ struct AgentSettingsTests {
         Self.preservingDefaults {
             let model = AppModel()
             _ = AgentControl.applySetting("stats", "on", to: model)
-            _ = AgentControl.applySetting("auto-pip", "on", to: model)
             _ = AgentControl.applySetting("keep-awake", "on", to: model)
             #expect(model.showStreamStats)
-            #expect(model.autoPictureInPicture)
             #expect(model.keepAwakePolicy == .always)
             let settings = AgentControl.settingsState(model)
             #expect(settings["stats"] as? Bool == true)
-            #expect(settings["auto-pip"] as? Bool == true)
             #expect(settings["keep-awake"] as? Bool == true)
             #expect((settings["recordings_folder"] as? String)?.hasSuffix("Library/Logs/Shimmer") == true)
         }

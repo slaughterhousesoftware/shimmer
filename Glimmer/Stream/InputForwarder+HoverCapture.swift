@@ -21,11 +21,6 @@
 //  is only the wiring: it reads live state, asks the table, and calls the
 //  existing `capturePointer` / `releasePointer` paths.
 //
-//  Window mode only. Full screen captures for the whole session on key status
-//  and has no free state to return to, so every entry point here returns
-//  immediately on `isWindowMode` and the fullscreen path never reaches the
-//  table at all.
-//
 
 import AppKit
 
@@ -98,7 +93,6 @@ extension InputForwarder {
 
     /// The pointer crossed into the picture. The grab, if the table allows it.
     func notePointerEnteredStreamView() {
-        guard isWindowMode else { return }
         noteHoverCaptureEvent(.pointerEntered)
         guard HoverCapture.shouldCaptureOnEnter(
             isKeyWindow: window?.isKeyWindow ?? false,
@@ -118,7 +112,7 @@ extension InputForwarder {
     /// cursor), and honouring it would clear the latch a held Esc has not even
     /// set yet.
     func notePointerExitedStreamView() {
-        guard isWindowMode, !isMouseCaptured else { return }
+        guard !isMouseCaptured else { return }
         noteHoverCaptureEvent(.pointerExited)
     }
 
@@ -126,7 +120,7 @@ extension InputForwarder {
     /// the two moments where the window gains the input without the pointer
     /// moving: the windowed bring-up, and a Cmd-Tab back.
     func captureIfPointerIsOverTheStreamView(reason: String) {
-        guard isWindowMode, let window, let view = inputView else { return }
+        guard let window, let view = inputView else { return }
         guard HoverCapture.shouldCaptureOnKey(
             pointerIsInside: Self.pointerIsInside(view, of: window),
             isKeyWindow: window.isKeyWindow,
@@ -140,7 +134,6 @@ extension InputForwarder {
     /// ones the pure table names. Inert in full screen, where there is no
     /// free state and nothing to suppress.
     func noteHoverCaptureEvent(_ event: HoverCapture.Event) {
-        guard isWindowMode else { return }
         isHoverCaptureSuppressed = HoverCapture.suppression(isHoverCaptureSuppressed, after: event)
     }
 

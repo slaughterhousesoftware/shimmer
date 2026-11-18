@@ -1,7 +1,7 @@
 //
 //  StreamWindow.swift
 //
-//  Fullscreen NSWindow hosting the AVSampleBufferDisplayLayer that
+//  The NSWindow hosting the AVSampleBufferDisplayLayer that
 //  VideoDecoder enqueues decoded sample buffers into. Owned by StreamSession.
 //  Captures the cursor while frontmost, releases it when the user invokes
 //  the quit hotkey.
@@ -36,33 +36,12 @@
 //  This is the same architectural choice moonlight-qt made on macOS and
 //  the reason their HDR output is correct on the same panel.
 //
-//  Why we don't use `NSWindow.toggleFullScreen(_:)`:
-//
-//    `toggleFullScreen` puts the window in macOS's *Space-based* fullscreen
-//    mode. That mode is owned by the OS, which means:
-//      • Cursor-to-top reveals the menu bar.
-//      • Esc / ⌘Esc can yank the user out of the stream.
-//      • Cmd-Tab into the app surfaces the menu bar and Dock.
-//    None of that is acceptable for a game-streaming client where Esc is a
-//    game input and the user genuinely wants the host to own the screen.
-//
-//  What we do instead - same approach SDL's `SDL_WINDOW_FULLSCREEN_DESKTOP`
-//  takes on macOS, which moonlight-qt selects on this platform:
-//
-//    • Borderless window sized to the target NSScreen's full frame.
-//    • Window level kept at `.normal` (same as SDL FULLSCREEN_DESKTOP).
-//      `CGShieldingWindowLevel()` looks attractive - chrome can't paint
-//      above it - but it's the screen-lock / screensaver level, and
-//      AppKit lets a window become first responder at that level while
-//      silently dropping `sendEvent:` key delivery, so hotkeys (quit,
-//      stats) stop firing in-stream. The
-//      `presentationOptions = [.autoHideMenuBar, .autoHideDock]` gate is
-//      what hides the chrome, NOT the window level.
-//    • `collectionBehavior` includes `.canJoinAllSpaces` so the window stays
-//      visible across Space switches, and explicitly does NOT include
-//      `.fullScreenPrimary` (we're not using Space-based fullscreen).
-//    • `NSApplication.presentationOptions` is set to auto-hide the menu bar
-//      and Dock while the stream is up, then restored on close.
+//  Full screen is macOS's own (StreamWindow+FullScreen.swift): the stream is
+//  always a titled window, and the green button / ⌃⌘F take it into a Space.
+//  An earlier build drew its own borderless cover over the screen instead, to
+//  keep Esc and the menu bar away from the game; with the pointer grabbed
+//  (relative aim, cursor disassociated) the menu bar can't be reached anyway,
+//  and Esc is forwarded to the game by the input view, never to AppKit.
 
 import AppKit
 import AVFoundation
@@ -95,7 +74,7 @@ public final class StreamWindow {
     public let statsOverlay: StatsOverlayLayer
     /// Top-center "Reconnecting..." banner shown over the frozen frame during a
     /// silent reconnect episode or a watchdog video-hold (the launcher's phase
-    /// chip is occluded by this fullscreen window).
+    /// chip is behind this window).
     public let reconnectBanner: StreamBannerLayer
     /// Bottom-center "Network unstable" pill, auto-shown when the link enters
     /// caution/distress - independent of the full stats HUD toggle.
@@ -104,9 +83,8 @@ public final class StreamWindow {
     /// stream so the quit chord is discoverable (Esc is a game input).
     public let leaveHintBanner: StreamBannerLayer
     /// Bottom-center "Hold Esc to free the pointer" hint, shown over the
-    /// picture for the first few window-mode captures. Window mode only - the
-    /// sole caller is the capture edge in StreamWindow+Windowed.swift, which
-    /// full screen never reaches.
+    /// picture for the first few captures. The sole caller is the capture
+    /// edge in StreamWindow+Windowed.swift.
     public let captureHintBanner: StreamBannerLayer
     let displayView: DisplayContainerView
     /// The NSView hosting the AVSampleBufferDisplayLayer. Exposed so the
@@ -141,65 +119,20 @@ public final class StreamWindow {
     /// observer from the default center is a silent no-op and leaks it. Used
     /// for the display-wake observer that rebinds the pacer's CADisplayLink.
     var workspaceObservers: [NSObjectProtocol] = []
-    /// Path B's ONE-SHOT `didEnterFullScreenNotification` token (safe-area /
-    /// Space-based fullscreen only; nil on the borderless covering path). The
-    /// happy path consumes it inside its own closure the moment AppKit posts
-    /// the enter notification - but a session that tears down first (a
-    /// connect-fail inside the ~1s Space-enter animation, or the dropped-
-    /// notification quirk show()'s 1.5s backstop exists for) never fires it.
-    /// Stored here, not in a closure-local box, so `close()` can sweep it:
-    /// block-based observers are retained by NotificationCenter until
-    /// explicitly removed, so an unswept token leaked the observation per
-    /// aborted Path-B session.
-    var enterFullScreenObserver: NSObjectProtocol?
     var didClose = false
 
-    /// `NSApplication.presentationOptions` we observed at `show()` time, so we
-    /// can restore exactly that on `close()` rather than guessing at a sane
-    /// default. If the app embeds Glimmer inside a larger surface later (e.g.
-    /// the menu-bar agent path), preserving the host's options is the only
-    /// safe thing to do.
-    var previousPresentationOptions: NSApplication.PresentationOptions?
-
-    /// Whether to extend the fullscreen window into the notch zone on
-    /// notched MacBook displays. When `true`, we override AppKit's
-    /// `window(_:willUseFullScreenContentSize:)` delegate to claim the
-    /// full physical panel (screen.frame plus the safeAreaInsets.top
-    /// notch reserve), so a bitstream at the panel's true native
-    /// resolution renders 1:1 without letterboxing. When `false`, AppKit's
-    /// default safe-area-trimmed framing is used and a host bitstream
-    /// taller than the trimmed framebuffer letterboxes left/right - the
-    /// classic "panel-native stream content in safe-area fullscreen
-    /// window" symptom. moonlight-qt exposes the same choice as a
-    /// per-host preference.
-    public var coversNotch: Bool = true
-
-    /// How the window presents. Fixed at construction (it picks the style
-    /// mask) from the session's snapshot of the user's "Show the stream"
-    /// choice; the ONE later flip is a user-driven exit from a Path-B Space,
-    /// which converts this same window to `.window` mid-session rather than
-    /// leaving it vanished (StreamWindow+Windowed.swift). Every fullscreen-only
-    /// behaviour - the cover, the presentation options, the resign-key
-    /// orderOut, the level re-raise - is gated on this being `.fullScreen`, so
-    /// the fullscreen path runs exactly as it always has.
-    public internal(set) var displayMode: StreamDisplayMode
-
-    /// Window-mode title ("Tower - Desktop"). Ignored by the borderless cover.
+    /// The window's title ("Tower - Desktop").
     public var windowTitle: String = ""
 
-    /// The stream's requested pixel size. Window mode opens pixel-mapped to it
+    /// The stream's requested pixel size. The window opens pixel-mapped to it
     /// (points = pixels / backingScaleFactor, fit to the screen) and locks the
     /// content aspect to it so a drag-resize scales the picture instead of
     /// letterboxing.
     public var streamPixelSize: CGSize = .zero
 
-    /// Window mode: the user closed the window (red button / Cmd-W). The
-    /// session wires this to the same stop() the quit hotkey runs.
+    /// The user closed the window (red button / Cmd-W). The session wires
+    /// this to the same stop() the quit hotkey runs.
     public var onCloseRequested: (@MainActor () -> Void)?
-
-    /// Fired when `displayMode` flips mid-session (the Path-B Space exit). The
-    /// session uses it to switch the InputForwarder to the window pointer model.
-    public var onDisplayModeChanged: (@MainActor (StreamDisplayMode) -> Void)?
 
     /// The full-screen transition under way is Shimmer's own (Picture in
     /// Picture leaving or re-entering), not the user's choice to remember.
@@ -212,13 +145,8 @@ public final class StreamWindow {
     /// timer. See StreamWindow+PointerAffordances.swift.
     var captureHintGeneration: UInt64 = 0
 
-    /// Path B's will/didExitFullScreen tokens, kept apart from `keyObservers`
-    /// because the exit conversion sweeps the fullscreen key observers while
-    /// these must keep firing until the exit completes. Swept by `close()`.
-    var spaceExitObservers: [NSObjectProtocol] = []
-
-    /// Called whenever the window's "is it currently visible or sitting
-    /// orderOut'd in the background?" state flips. The session owner wires
+    /// Called whenever the window's "is it on screen, or hidden (Picture in
+    /// Picture, minimized)?" state flips. The session owner wires
     /// this to AppModel so the launcher can show a "Back to stream"
     /// affordance while the stream window is hidden.
     public var onBackgroundedChanged: (@MainActor (Bool) -> Void)?
@@ -227,7 +155,7 @@ public final class StreamWindow {
 
     /// AVKit Picture-in-Picture adapter built on `displayLayer` (re-targeted
     /// by `rebuildDisplayLayer()`). The system PiP window shows the SAME layer
-    /// the fullscreen window paints into, so the two are mutually exclusive:
+    /// the stream window paints into, so the two are mutually exclusive:
     /// entering PiP hides this window, returning to this window stops PiP.
     /// App-wide (PictureInPictureStage), so PiP can outlive a stream when
     /// switching PCs; this window drives it only while it owns the stage.
@@ -264,7 +192,7 @@ public final class StreamWindow {
     /// first frames call `onStandbyReady` and AppModel hands PiP over.
     var standbyForHandover = false
     var onStandbyReady: (@MainActor () -> Void)?
-    /// The PiP return found another app full screen in front (window mode).
+    /// The PiP return found another app full screen in front.
     var returnedOverFullScreenApp = false
     /// AppModel's "Switch PC" is ending this stream for another: the closing
     /// window leaves the app where it is (no launcher hand-off).
@@ -286,10 +214,6 @@ public final class StreamWindow {
     /// Keeps the PiP picture from staying frozen after a Stage Manager or
     /// Mission Control animation during a screen recording (`PiPKeepAlive`).
     var pipKeepAlive: PiPKeepAlive?
-    /// Read at the confirmed switch-away edge: should the stream pop out to
-    /// Picture in Picture instead of just hiding? Wired to the user's
-    /// Settings toggle by the session owner.
-    public var autoPictureInPictureProvider: (@MainActor () -> Bool) = { false }
     /// PiP window came up / went away. The session owner rebinds the frame
     /// pacer (screen link vs view link) and tells the launcher UI.
     public var onPictureInPictureChanged: (@MainActor (Bool) -> Void)?
@@ -320,55 +244,21 @@ public final class StreamWindow {
     /// visible, no fade needed).
     var awaitingFirstFrameFadeIn = false
 
-    /// The window level `show()` parked the streaming window at (in the
-    /// `coversNotch == true` borderless-covering path, `mainMenuWindow + 1`).
-    /// Snapshotted so the foreground re-engage can restore it after a resign
-    /// dropped us to `.normal`. `nil` until `show()` runs. In the Space-based
-    /// `coversNotch == false` path AppKit owns the level, so the re-engage
-    /// only touches the level when `coversNotch` is true (matching the
-    /// becomeKey observer's gate).
-    var streamingWindowLevel: NSWindow.Level?
-
-    /// Monotonically-incrementing token used to debounce sub-second key blips
-    /// on the borderless stream window. A transient app activation - most
-    /// notably a DualSense/HID controller connecting over Bluetooth mid-stream
-    /// - makes the WindowServer briefly flutter key status away from our
-    /// borderless window and post `didResignKeyNotification`, then snap key
-    /// back within a frame (`didBecomeKeyNotification`). The naive
-    /// resign-handler `orderOut`'d the stream window synchronously, which
-    /// uncovered the still-alive (merely dimmed) launcher window for one frame
-    /// - a blank/dark flash over the stream on every mid-stream controller
-    /// connect. The resign handler now defers its teardown and bails if this
-    /// token changed (a becomeKey landed) or the app never actually
-    /// deactivated. Bumped by BOTH observers so the later event always wins.
-    var resignGeneration = 0
     /// True from the start of a return from Picture in Picture until AVKit has
-    /// reported the stop and the window has been re-asserted key. While set, a
-    /// resign of the stream window is NOT a Cmd-Tab-away: AVKit's panel close
-    /// and the deferred activation can cost the freshly-shown window key status
-    /// for a moment, and the 0.2 s resign teardown would background it again
-    /// (and pop it straight back out to Picture in Picture).
+    /// reported the stop and the window has been re-asserted key.
     var pipReturnInFlight = false
 
     /// Called once the window is on screen and key. InputForwarder uses this
     /// to install its StreamInputView as the window's first responder.
     ///
-    /// Why this hook exists: a borderless KeyableWindow can be on screen,
-    /// orderedFront, and *still* not be key if the app wasn't active at the
-    /// moment makeKeyAndOrderFront ran. We delay first-responder install
-    /// until after we've confirmed key status; without this delay the
-    /// responder chain silently routes nowhere and `keyDown` never reaches
-    /// our content view.
-    ///
-    /// (Historical note: we used to drive this off `didEnterFullScreenNotification`
-    /// because `toggleFullScreen` was async and reset the responder chain
-    /// as part of its Space transition. We no longer go through Space-based
-    /// fullscreen, so there's no async transition and no responder reset -
-    /// we fire this synchronously once the window is up.)
+    /// Fired after the window comes up (next runloop, and again from the
+    /// 1.5 s key backstop) and after every full-screen transition, which
+    /// resets the responder chain. A window can be on screen and still not
+    /// key if the app wasn't active at makeKeyAndOrderFront; without the
+    /// re-install the responder chain routes nowhere and keyDown is lost.
     public var onDidBecomeReadyForInput: (@MainActor () -> Void)?
 
-    public init(displayMode: StreamDisplayMode = .fullScreen) {
-        self.displayMode = displayMode
+    public init() {
         // Pick the screen the user is *currently* on at construction time.
         // StreamSession constructs us right when the user clicks "Stream",
         // so NSScreen.main reflects the display the launcher window was on
@@ -384,69 +274,21 @@ public final class StreamWindow {
             // why rather than trapping with a bare `!`.
             preconditionFailure("StreamWindow.init: no attached display to host the stream window")
         }
-        // Window mode is a real titled window: closable (the red button ends
-        // the stream), miniaturizable, resizable (aspect-locked in show()).
-        // Full screen keeps the borderless cover exactly as before.
-        let style: NSWindow.StyleMask = displayMode == .window
-            ? [.titled, .closable, .miniaturizable, .resizable]
-            : [.borderless]
-        // Borderless NSWindows return canBecomeKeyWindow = false by default,
-        // which means makeKeyAndOrderFront silently fails to make us key and
-        // the responder chain never delivers keyDown to our content view.
-        // KeyableWindow overrides both canBecomeKeyWindow + canBecomeMainWindow
-        // to return true so input routes correctly.
+        // A real titled window: closable (the red button ends the stream),
+        // miniaturizable, resizable (aspect-locked in show()).
         let window = KeyableWindow(
             contentRect: screen.frame,
-            styleMask: style,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false,
             screen: screen
         )
         window.isReleasedWhenClosed = false
 
-        // Window level: keep at `.normal` (the AppKit default). This is the
-        // same level SDL uses for SDL_WINDOW_FULLSCREEN_DESKTOP and what
-        // moonlight-qt rides on for its borderless cover on macOS.
-        //
-        // We *tried* `NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))`
-        // - the level the system uses for the screen-lock window. It is
-        // indeed above all chrome. But it has a fatal flaw for an interactive
-        // app: AppKit will mark a window at that level as `isKeyWindow = true`
-        // and `firstResponder` will point at our StreamInputView, yet
-        // `sendEvent:` silently drops keyDown/keyUp delivery. The window
-        // becomes a one-way visual surface - mouse hover works (it's
-        // position-based), but the user's quit / stats hotkeys never fire.
-        //
-        // The right gate for hiding the menu bar + Dock is
-        // `NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]`
-        // below, NOT the window level. AppKit will not surface the menu bar
-        // over our content while those options are set, even at `.normal`.
-        // If a future macOS release decides to paint chrome over us anyway,
-        // bump to `.mainMenu` (one above the menu bar's level, still inside
-        // AppKit's event-routable range) - never to shielding level.
-        window.level = .normal
-
-        // Collection behavior:
-        //   .fullScreenPrimary - declare we're a primary fullscreen window so
-        //                        `toggleFullScreen:` puts us into a Space-
-        //                        based fullscreen (Path B in show(), and the
-        //                        green button in window mode). NOTE: this is
-        //                        NOT what engages display HDR. An earlier
-        //                        revision believed the OS only raised the
-        //                        screen's EDR headroom for windows owning a
-        //                        Space; that was wrong - the default
-        //                        borderless cover (Path A, no Space) engages
-        //                        HDR just fine, as does a plain window: EDR
-        //                        follows the layer's PQ content +
-        //                        wantsExtendedDynamicRangeContent, not the
-        //                        window's Space membership.
-        //   .stationary        - don't get tossed into a different Space
-        //                        when Mission Control reflows windows. Full
-        //                        screen only: a real window should follow
-        //                        the user's own Space management.
-        window.collectionBehavior = displayMode == .window
-            ? [.fullScreenPrimary]
-            : [.fullScreenPrimary, .stationary]
+        // `.fullScreenPrimary`: the green button and ⌃⌘F take the window into
+        // its own full-screen Space. HDR doesn't depend on it - EDR follows
+        // the layer's PQ content + wantsExtendedDynamicRangeContent.
+        window.collectionBehavior = [.fullScreenPrimary]
         window.backgroundColor = .black
         window.acceptsMouseMovedEvents = true
         window.hidesOnDeactivate = false
@@ -523,12 +365,8 @@ public final class StreamWindow {
             anchor: .bottomCenter, accent: NSColor.white.cgColor, inset: 116)
         captureHint.attach(to: layer)
 
-        // Install the delegate that overrides fullscreen content size so
-        // the window covers the panel's notch reserve zone on notched
-        // MacBooks. The delegate is created up-front so its `coversNotch`
-        // flag stays in sync with `self.coversNotch` via show() time.
+        // The red button and full-screen failures (StreamWindow+Views).
         let delegate = StreamWindowDelegate()
-        delegate.displayMode = displayMode
         window.delegate = delegate
 
         self.window = window
@@ -543,9 +381,9 @@ public final class StreamWindow {
         // PiP handlers go in when this window claims or adopts the stage
         // (StreamWindow+PictureInPicture.swift), never before: a switch may
         // still be holding the previous stream's PiP.
-        // Window mode: the red button / Cmd-W route through the delegate to
-        // the session's stop() (StreamWindow+Windowed.swift). Wired after
-        // full initialization because it captures self.
+        // The red button / Cmd-W route through the delegate to the session's
+        // stop() (StreamWindow+Windowed.swift). Wired after full
+        // initialization because it captures self.
         delegate.onCloseRequested = { [weak self] in self?.handleUserCloseRequest() }
     }
 

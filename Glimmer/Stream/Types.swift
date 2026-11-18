@@ -89,18 +89,7 @@ public struct StreamConfig: Sendable {
     /// value; a mid-stream change arrives via `StreamSession.setMouseInputDisabled`.
     public var mouseInputDisabled: Bool = false
 
-    /// On notched MacBooks, whether the fullscreen stream window covers
-    /// the entire panel (including the 37pt notch reserve zone) or stops
-    /// at the safe-area boundary. Default true. See `StreamWindow.coversNotch`.
-    public var coversNotch: Bool = true
-
-    /// How the stream window presents: the fullscreen cover (default) or a
-    /// normal titled window the user can drag and resize. Snapshotted at
-    /// session start like `coversNotch`; see `StreamDisplayMode`.
-    public var displayMode: StreamDisplayMode = .fullScreen
-
-    /// Title for the Window-mode window ("Tower - Desktop"). Unused in full
-    /// screen (a borderless cover has no title bar).
+    /// The stream window's title ("Tower - Desktop").
     public var windowTitle: String = ""
 
     public init(width: Int, height: Int, fps: Int, bitrateKbps: Int) {

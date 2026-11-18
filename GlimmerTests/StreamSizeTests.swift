@@ -1,67 +1,36 @@
 //
-//  StreamDisplayModeTests.swift
+//  StreamSizeTests.swift
 //
-//  Covers the "show the stream in a window" rules: the persisted default and
-//  migration (a fresh install is full screen), which preset the choice applies
-//  to (Custom only - the panel-native presets are always full screen), the
-//  refresh cap a windowed stream takes, the shared size clamps, and the
-//  window geometry (pixel-mapped opening size, fit-to-screen, aspect
-//  conformance of a restored frame). All pure - no AppModel, screen, or
-//  window involved.
+//  The refresh cap at the display, the shared size clamps, and the window
+//  geometry (pixel-mapped opening size, fit-to-screen, aspect conformance of
+//  a restored frame). All pure - no AppModel, screen, or window involved.
 //
 
 import CoreGraphics
 import Testing
 @testable import Glimmer
 
-struct StreamDisplayModeTests {
+struct StreamSizeTests {
 
-    // MARK: Defaults + migration
-
-    @Test func freshInstallIsFullScreen() {
-        #expect(StreamDisplayMode.defaultMode == .fullScreen)
-        #expect(StreamDisplayMode.persisted(rawValue: nil) == .fullScreen)
-    }
-
-    @Test func rawValuesDecodeAndUnknownLandsOnFullScreen() {
-        #expect(StreamDisplayMode.persisted(rawValue: "window") == .window)
-        #expect(StreamDisplayMode.persisted(rawValue: "fullScreen") == .fullScreen)
-        // A downgrade from a build with a mode this one doesn't know.
-        #expect(StreamDisplayMode.persisted(rawValue: "floating") == .fullScreen)
-        #expect(StreamDisplayMode.persisted(rawValue: "") == .fullScreen)
-    }
-
-    // MARK: Which preset the choice applies to
-
-    @Test func theChoiceAppliesUnderEveryPreset() {
-        #expect(StreamDisplayMode.effective(chosen: .window, preset: .custom) == .window)
-        #expect(StreamDisplayMode.effective(chosen: .fullScreen, preset: .custom) == .fullScreen)
-        // shimmer: the preset only decides the size; a panel-native stream in
-        // a window just scales, so Window is honoured there too.
-        #expect(StreamDisplayMode.effective(chosen: .window, preset: .matchDisplay) == .window)
-        #expect(StreamDisplayMode.effective(chosen: .window, preset: .hidpi) == .window)
-        #expect(StreamDisplayMode.effective(chosen: .fullScreen, preset: .hidpi) == .fullScreen)
-    }
-
-    // MARK: Windowed refresh
+    // MARK: Refresh cap
 
     @Test func windowedRefreshIsCappedAtTheDisplay() {
         // A 60 Hz panel can't show 120 - asking would only drop frames.
-        #expect(StreamDisplayMode.windowedRefresh(customFPS: 120, displayMaxHz: 60) == 60)
-        #expect(StreamDisplayMode.windowedRefresh(customFPS: 120, displayMaxHz: 144) == 120)
-        #expect(StreamDisplayMode.windowedRefresh(customFPS: 60, displayMaxHz: 120) == 60)
+        #expect(StreamRefresh.capped(customFPS: 120, displayMaxHz: 60) == 60)
+        #expect(StreamRefresh.capped(customFPS: 120, displayMaxHz: 144) == 120)
+        #expect(StreamRefresh.capped(customFPS: 60, displayMaxHz: 120) == 60)
     }
 
     @Test func windowedRefreshIsClampedThenCapped() {
-        #expect(StreamDisplayMode.windowedRefresh(customFPS: 5, displayMaxHz: 120) == 30)
-        #expect(StreamDisplayMode.windowedRefresh(customFPS: 1000, displayMaxHz: 240) == 240)
-        #expect(StreamDisplayMode.windowedRefresh(customFPS: 1000, displayMaxHz: 120) == 120)
+        #expect(StreamRefresh.capped(customFPS: 5, displayMaxHz: 120) == 30)
+        #expect(StreamRefresh.capped(customFPS: 1000, displayMaxHz: 240) == 240)
+        #expect(StreamRefresh.capped(customFPS: 1000, displayMaxHz: 120) == 120)
     }
 
     @Test func unknownDisplayRefreshFallsBackTo60() {
-        #expect(StreamDisplayMode.windowedRefresh(customFPS: 120, displayMaxHz: 0) == 60)
-        #expect(StreamDisplayMode.windowedRefresh(customFPS: 120, displayMaxHz: -1) == 60)
-        #expect(StreamDisplayMode.windowedRefresh(customFPS: 30, displayMaxHz: 0) == 30)
+        #expect(StreamRefresh.capped(customFPS: 120, displayMaxHz: 0) == 60)
+        #expect(StreamRefresh.capped(customFPS: 120, displayMaxHz: -1) == 60)
+        #expect(StreamRefresh.capped(customFPS: 30, displayMaxHz: 0) == 30)
     }
 
     // MARK: Shared size clamps

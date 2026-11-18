@@ -41,15 +41,15 @@ enum EscapeHold {
         case cancel
     }
 
-    /// A key going down. Arms only for a first (non-repeat) Esc while a
-    /// windowed session holds the pointer and nothing is already counting.
+    /// A key going down. Arms only for a first (non-repeat) Esc while the
+    /// pointer is held and nothing is already counting.
     /// macOS auto-repeat fires further key-downs while Esc is held; those say
     /// nothing the timer does not already know, so they are ignored rather
     /// than re-arming.
     static func onKeyDown(
-        keyCode: UInt16, isRepeat: Bool, windowMode: Bool, captured: Bool, armed: Bool
+        keyCode: UInt16, isRepeat: Bool, captured: Bool, armed: Bool
     ) -> Action {
-        guard keyCode == Self.keyCode, windowMode, captured, !isRepeat, !armed else { return .none }
+        guard keyCode == Self.keyCode, captured, !isRepeat, !armed else { return .none }
         return .arm
     }
 
@@ -71,7 +71,7 @@ extension InputForwarder {
     func noteEscapeKeyDown(_ event: NSEvent) {
         let action = EscapeHold.onKeyDown(
             keyCode: event.keyCode, isRepeat: event.isARepeat,
-            windowMode: isWindowMode, captured: isMouseCaptured,
+            captured: isMouseCaptured,
             armed: escapeHoldTask != nil)
         if action == .arm { armEscapeHold() }
     }
@@ -105,7 +105,7 @@ extension InputForwarder {
             // Clear the slot before any early return, or the arm guard above
             // stays wedged for the rest of the session.
             self.escapeHoldTask = nil
-            guard self.isWindowMode, self.isMouseCaptured else { return }
+            guard self.isMouseCaptured else { return }
             Diag.notice("input: Esc held - freeing the pointer (window mode)", "Stream")
             self.releasePointer(reason: "held Esc")
         }

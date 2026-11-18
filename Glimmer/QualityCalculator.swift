@@ -352,12 +352,7 @@ extension AppModel {
             size = (hd.width, hd.height)
         case .custom: size = (customWidth, customHeight)
         }
-        // `effectiveDisplayMode`, not the raw choice: the fps cap belongs to
-        // the mode the SESSION will actually take (StreamConfig reads the same
-        // property), so the two can never disagree if the mode is ever re-gated.
-        let fps = QualityResolution.frameRate(
-            customFPS: customFPS,
-            displayHz: display.fps, windowed: effectiveDisplayMode == .window)
+        let fps = QualityResolution.frameRate(customFPS: customFPS, displayHz: display.fps)
         let recommended: Int
         switch preset {
         case .matchDisplay, .hidpi:
@@ -424,9 +419,7 @@ extension AppModel {
     /// bitrate starts from.
     var recommendedBitrateMbpsNow: Int {
         let display = smartDefaultsForCurrentDisplay()
-        let fps = QualityResolution.frameRate(
-            customFPS: customFPS,
-            displayHz: display.fps, windowed: effectiveDisplayMode == .window)
+        let fps = QualityResolution.frameRate(customFPS: customFPS, displayHz: display.fps)
         switch qualityPreset {
         case .matchDisplay:
             return bitrateKbps(width: display.width, height: display.height, fps: fps, preset: .matchDisplay) / 1000

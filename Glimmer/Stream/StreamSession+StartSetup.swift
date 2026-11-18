@@ -39,7 +39,6 @@ extension StreamSession {
         let releasePointerHotkeyProvider: @MainActor () -> HotkeyChord
         let onBackgroundedChanged: (@MainActor (Bool) -> Void)?
         let pipHotkeyProvider: @MainActor () -> HotkeyChord
-        let autoPictureInPictureProvider: @MainActor () -> Bool
         let startInPictureInPictureProvider: @MainActor () -> Bool
         let keepAwakeProvider: @MainActor () -> KeepAwakePolicy
         let onPictureInPictureChanged: (@MainActor (Bool) -> Void)?
@@ -66,8 +65,7 @@ extension StreamSession {
         let onBackgroundedChanged = options.onBackgroundedChanged
         // The display mode is a construction-time choice (it picks the style
         // mask); the notch flag, title, and stream size feed show().
-        let win = StreamWindow(displayMode: config.displayMode)
-        win.coversNotch = config.coversNotch
+        let win = StreamWindow()
         win.windowTitle = config.windowTitle
         win.streamPixelSize = CGSize(width: config.width, height: config.height)
         let dec = VideoDecoder()
@@ -105,7 +103,6 @@ extension StreamSession {
         // firing off screen - rebind the pacer to a screen link for the
         // duration. The caller gets the edge for its UI.
         let onPictureInPictureChanged = options.onPictureInPictureChanged
-        win.autoPictureInPictureProvider = options.autoPictureInPictureProvider
         // Standby: the pad stays with the live stream until the cut-over.
         let inp = options.standby ? InputForwarder(observeGamepads: false) : InputForwarder()
         // Picture in Picture up/down: rebind the pacer to a screen link, and
@@ -204,23 +201,15 @@ extension StreamSession {
         inp.mouseInputDisabled = config.mouseInputDisabled
         // Cruise ceiling is derived from the stream width (4K→2.0, 1080p→1.0 inert).
         inp.cruiseGMax = CruiseTraversal.gMax(forStreamWidth: config.width)
-        // Window mode: the pointer is grabbed into relative capture while it
-        // is over the window, and is a normal Mac pointer mirrored onto the
-        // host as absolute positions the rest of the time. The window hides +
-        // shows the cursor off the capture edges (visibility stays
-        // StreamWindow's; the forwarder only reports the edge). Every hook is
-        // inert in full screen: the forwarder fires the edge callback only in
-        // window mode, and the mode callback only runs when a Path-B Space
-        // exit lands the session in a window mid-stream
-        // (StreamWindow+Windowed.swift).
-        inp.isWindowMode = config.displayMode == .window
+        // The pointer is grabbed into relative capture while it is over the
+        // picture, and is a normal Mac pointer mirrored onto the host as
+        // absolute positions the rest of the time. The window hides + shows
+        // the cursor off the capture edges (visibility stays StreamWindow's;
+        // the forwarder only reports the edge).
         // The reference frame absolute positions are measured against.
         inp.streamPixelSize = CGSize(width: config.width, height: config.height)
         inp.onPointerCaptureChanged = { [weak win] captured in
             win?.setPointerCaptured(captured)
-        }
-        win.onDisplayModeChanged = { [weak inp] mode in
-            inp?.setWindowMode(mode == .window)
         }
         inp.attach(to: win.window)
         // After attach: the window's half turns off the transparent-cursor
