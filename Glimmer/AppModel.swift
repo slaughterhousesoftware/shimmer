@@ -372,6 +372,11 @@ final class AppModel {
     /// That check's task, and the token that tells its end from a newer one's.
     @ObservationIgnored var streamCheckTask: Task<Void, Never>?
     @ObservationIgnored var streamCheckToken: UUID?
+    /// Wake & Connect waiting for the woken PC's Sunshine to answer before it
+    /// starts the stream (AppModel+Power) - loading, for the menu bar.
+    var powerWaitHostID: String?
+    /// The user stopped the connect in flight (AppModel+Streaming).
+    @ObservationIgnored var connectCancelRequested = false
     /// The session's start() while it runs (the connect). Cancelled along
     /// with a stop, so its control requests abort instead of timing out.
     @ObservationIgnored var streamStartTask: Task<AsyncStream<StreamEvent>, Error>?

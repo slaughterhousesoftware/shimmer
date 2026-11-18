@@ -36,7 +36,7 @@ final class MenuBarSpinner: NSObject {
         return framesSinceStart % frameCount
     }
 
-    static func frameName(_ index: Int) -> String { String(format: "MenuBarSpinner-%03d", index) }
+    nonisolated static func frameName(_ index: Int) -> String { String(format: "MenuBarSpinner-%03d", index) }
 
     static let frames: [NSImage] = (0..<frameCount).map { index in
         let image = NSImage(named: frameName(index)) ?? NSImage(size: size)

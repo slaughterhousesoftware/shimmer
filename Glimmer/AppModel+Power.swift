@@ -37,6 +37,10 @@ extension AppModel {
                 Diag.notice("luna: \(host.displayName, privacy: .private) confirmed awake", "Power")
                 restartHostStatusPolling()
                 guard thenConnect, !Task.isCancelled else { return }
+                // Wake & Connect: still on its way to a stream while Sunshine
+                // comes up - the menu bar keeps spinning through it.
+                powerWaitHostID = host.id
+                defer { if powerWaitHostID == host.id { powerWaitHostID = nil } }
                 if await waitForSunshine(host: host, budgetSeconds: 90) {
                     guard selectedHost?.id == host.id, !isStreaming else { return }
                     streamDefaultApp()
@@ -70,6 +74,7 @@ extension AppModel {
             + "the wait (UpSnap has the request; the PC may still come up)", "Power")
         Self.wakeTask?.cancel()
         Self.wakeTask = nil
+        powerWaitHostID = nil
         LunaPower.shared.cancelAction(hostID: host.id)
         restartHostStatusPolling()
     }

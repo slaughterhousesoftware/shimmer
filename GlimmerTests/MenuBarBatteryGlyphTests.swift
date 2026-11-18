@@ -182,12 +182,20 @@ struct MenuBarVisibilityTests {
         #expect(defaults.object(forKey: MenuBarPreferences.retiredVisibilityKey) == nil)
     }
 
-    @Test func idleShowsTheShimmerPrismAndLeavesTheDock() {
+    /// Nothing to show: no menu bar icon at all (Shimmer has no icon of its
+    /// own there), and the Dock is the way in.
+    @Test func idleShowsNoIconAndKeepsTheDock() {
         let idle = MenuBarPresentation(warning: false, controller: nil, appGlyph: nil)
-        #expect(idle?.glyph == .asset(MenuBarPresentation.idleAsset))
-        // Nothing open, nothing streaming: menu bar only.
+        #expect(idle == nil)
         #expect(AppDelegate.activationPolicy(mainOpen: false, streaming: false,
-                                             menuBarVisible: idle != nil) == .accessory)
+                                             menuBarVisible: idle != nil) == .regular)
+    }
+
+    /// Loading with nothing else to show still gets the spinner.
+    @Test func loadingWithNothingElseShowsTheSpinnerAlone() {
+        let loading = MenuBarPresentation(warning: false, busy: true, controller: nil, appGlyph: nil)
+        #expect(loading?.spinning == true)
+        #expect(loading?.glyph == .asset(MenuBarSpinner.frameName(0)))
     }
 
     @Test @MainActor func aSelectedPlayStationShowsItsMarkWhileIdle() {
@@ -198,7 +206,6 @@ struct MenuBarVisibilityTests {
                                   gfeVersion: nil, macAddress: nil)
         model.isStreaming = false
         let mark = LibraryApp.playStationHome.glyph
-        #expect(mark != .asset(MenuBarPresentation.idleAsset))
         #expect(model.menuBarPresentation?.glyph == mark || model.menuBarControllerKind != nil)
     }
 
@@ -211,7 +218,7 @@ struct MenuBarVisibilityTests {
         #expect(AppDelegate.activationPolicy(mainOpen: false, streaming: false,
                                              menuBarVisible: steam != nil) == .accessory)
         let ended = MenuBarPresentation(warning: false, controller: nil, appGlyph: nil)
-        #expect(ended?.glyph == .asset(MenuBarPresentation.idleAsset))
+        #expect(ended == nil)
     }
 
     /// Connecting, switching PCs, waking a PS5: a spinner, over the pad and
@@ -282,6 +289,15 @@ struct MenuBarSpinnerTests {
         #expect(model.menuBarBusy)
         #expect(model.menuBarPresentation?.spinning == true)
         model.streamCheckHostID = nil
+        #expect(!model.menuBarBusy)
+    }
+
+    /// Wake & Connect waiting for the woken PC to answer is loading too.
+    @MainActor @Test func wakeAndConnectWaitingForThePCCountsAsLoading() {
+        let model = AppModel()
+        model.powerWaitHostID = "tower"
+        #expect(model.menuBarBusy)
+        model.powerWaitHostID = nil
         #expect(!model.menuBarBusy)
     }
 

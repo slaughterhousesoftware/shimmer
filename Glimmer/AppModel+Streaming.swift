@@ -212,7 +212,7 @@ extension AppModel {
         ConnectTimingTelemetry.shared.resetForNewSession()
         ConnectTimingTelemetry.shared.anchorClick()
         Self.connectCapsuleShown = false
-        Self.connectCancelRequested = false
+        self.connectCancelRequested = false
         activeStreamApp = app
         activeStreamHostID = host.id
         activeStreamHasVideo = false
@@ -389,7 +389,7 @@ extension AppModel {
     func cleanupAfterStream(host: Host, caughtError: Error?) {
         AWDLGuard.shared.streamEnded()
         GameModeBoost.shared.streamLive(false, enabled: gameModeDuringStreams)
-        if let caughtError, Self.connectCancelRequested || Self.isCancellation(caughtError) {
+        if let caughtError, self.connectCancelRequested || Self.isCancellation(caughtError) {
             // The stream was stopped while it was still connecting - Cancel,
             // End Stream, the quit shortcut, closing the window, a switch to
             // another machine. start()'s throw is that stop ARRIVING, not a
@@ -539,7 +539,7 @@ extension AppModel {
         case .stageStarting:
             // Don't let a late stage event repaint "Connecting…" over the
             // "Cancelling…" the user's cancel click just earned.
-            if !Self.connectCancelRequested { streamPhase = .connecting(stage: connecting) }
+            if !self.connectCancelRequested { streamPhase = .connecting(stage: connecting) }
         case .stageComplete:              break
         case .stageFailed:
             nativeStreamError = "Couldn't reach \(host.displayName)."
@@ -654,7 +654,9 @@ extension AppModel {
     /// teardown cleanup to suppress the failure banner (a deliberate cancel
     /// is not a failure) and by `.stageStarting` to keep a late stage event
     /// from repainting over "Cancelling…". Reset at every stream() entry.
-    private static var connectCancelRequested = false
+    /// Lives on the model (AppModel.connectCancelRequested), not as a static:
+    /// one model's cancel must not read as another's (tests run models side
+    /// by side; a leftover static flag made a failure look like a cancel).
 
     /// ConnectSurface calls this when its 400 ms hold elapses and the
     /// connecting capsule mounts - the "shown" half of the adjudication line.
@@ -790,7 +792,7 @@ extension AppModel {
         Diag.notice("User ended the stream from the menu bar", "Stream")
         // Ended on purpose: if the stream was still connecting, its start()
         // throwing is this stop arriving, not a failure to show.
-        Self.connectCancelRequested = true
+        self.connectCancelRequested = true
         // Still finding or waking a PS5: there is no session yet, only that step.
         streamPreflightTask?.cancel()
         streamStartTask?.cancel()
@@ -813,8 +815,8 @@ extension AppModel {
     func cancelConnect() {
         if cancelStreamCheck() { return }
         guard isStreaming, case .connecting = streamPhase else { return }
-        guard !Self.connectCancelRequested else { return }  // one stop() is plenty (it's idempotent anyway)
-        Self.connectCancelRequested = true
+        guard !self.connectCancelRequested else { return }  // one stop() is plenty (it's idempotent anyway)
+        self.connectCancelRequested = true
         Diag.notice("User cancelled connect - stopping the in-flight session", "Stream")
         streamPhase = .connecting(stage: Self.cancellingStage)
         // Still finding or waking a PS5: there is no session yet, only that step.

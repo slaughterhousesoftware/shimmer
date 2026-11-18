@@ -32,10 +32,11 @@ enum MenuBarPreferences {
     }
 }
 
-/// What the menu bar icon shows: warnings, then the connected pad and its
-/// battery, then the streamed app, and otherwise the Shimmer prism - the icon
-/// is always there, so Shimmer can live in the menu bar with no window and no
-/// Dock icon (Kevin, 2026-11-16).
+/// What the menu bar icon shows: warnings, loading, then the connected pad
+/// and its battery, then the streamed or running app. With none of those
+/// there is no menu bar icon - Shimmer has no icon of its own up there
+/// (Kevin, 2026-11-18: the prism it used to fall back to looked bad) - and
+/// the Dock is the way in.
 struct MenuBarPresentation: Equatable {
     let glyph: LibraryApp.Glyph
     let title: String
@@ -65,14 +66,16 @@ struct MenuBarPresentation: Equatable {
             glyph = appGlyph
             title = ""
             assetHeight = 15
-        } else {
-            glyph = .asset(Self.idleAsset)
+        } else if spinning {
+            // Loading with nothing else to show: the spinner alone (its first
+            // frame stands for the glyph it covers).
+            glyph = .asset(MenuBarSpinner.frameName(0))
             title = ""
-            assetHeight = 16
+            assetHeight = nil
+        } else {
+            return nil
         }
     }
-
-    static let idleAsset = "MenuBarShimmer"
 }
 
 extension AppModel {
@@ -92,12 +95,19 @@ extension AppModel {
                                    appGlyph: appGlyph)
     }
 
-    /// A stream connecting (from the click, through asking the PC what it
-    /// runs), or a Switch PC under way (from the click, through
-    /// waking a PS5 and the old stream closing, to the new one connecting).
+    /// Shimmer is on its way somewhere and you are waiting for it:
+    ///   - a stream connecting, from the click (asking the PC what it runs)
+    ///     through finding or waking a PS5 to the connect - and reconnecting
+    ///     after a drop or the Mac's sleep, which goes the same way;
+    ///   - a Switch PC, through the old stream closing to the new one up;
+    ///   - a PC power action (Wake, Wake & Connect up to its stream, Restart,
+    ///     Shut Down, Sleep), ~10-40 s each.
+    /// Not: a question waiting for an answer (taking over a running game),
+    /// pairing (its own window shows that), or a stream that is live.
     var menuBarBusy: Bool {
         if case .connecting = streamPhase { return true }
         if streamCheckHostID != nil { return true }
+        if powerWaitHostID != nil || !LunaPower.shared.actionInFlight.isEmpty { return true }
         return pendingHostSwitch != nil
     }
 
@@ -206,14 +216,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// pad gets the bundled DualSense mark with a STEAM-style battery baked in
     /// (MenuBarBatteryGlyph); anything else gets Apple's generic controller
     /// symbol and the number. The app glyph (streaming or host-running) shows
-    /// only when NO pad is connected. Idle: the Shimmer prism.
+    /// only when NO pad is connected. Idle with none of these: no icon.
     private func applyLabel() {
         let presentation = model.menuBarPresentation
-        let visible = presentation != nil
+        // Loading just ended with nothing else to show: the spinner finishes
+        // its half-second grace (updateSpinner) before the icon goes, so a
+        // gap between two steps doesn't make it blink out and back.
+        let holdingSpinner = presentation == nil && spinner.isRunning
+        let visible = presentation != nil || holdingSpinner
         // Establish the Dock fallback before an idle status item disappears.
         AppDelegate.refreshActivationPolicy()
         if item.isVisible != visible { item.isVisible = visible }
-        guard visible, let presentation, let button = item.button else { return }
+        guard visible, let button = item.button else { return }
+        guard let presentation else {
+            updateSpinner(false, in: button)
+            return
+        }
         button.setAccessibilityLabel("Shimmer")
         button.toolTip = "Shimmer"
         button.imagePosition = .imageLeading
