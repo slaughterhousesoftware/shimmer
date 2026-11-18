@@ -39,6 +39,7 @@ extension StreamSession {
     func stop(cause: DisconnectReason) async {
         stopRequested = true
         if startInProgress {
+            if stopCauseDuringStart == nil { stopCauseDuringStart = cause }
             // The stream is still coming up. start() holds the window, the
             // decoder and the connection it is building; tearing them down
             // from here, between its awaits, left it free to finish the
@@ -273,8 +274,21 @@ extension StreamSession {
     func throwIfStopRequested() async throws {
         guard stopRequested else { return }
         log.info("start(): a stop was requested - tearing down and leaving")
-        await performStop(cause: .userStopped)
-        throw StreamError.cancelled
+        await performStop(cause: stopCauseDuringStart ?? .userStopped)
+        throw errorForStopDuringStart
+    }
+
+    /// What start() throws when a stop arrived while it ran: `.cancelled` for
+    /// a stop someone asked for, a failed connect for one the PC caused.
+    var errorForStopDuringStart: StreamError {
+        Self.errorForStopDuringStart(cause: stopCauseDuringStart)
+    }
+
+    nonisolated static func errorForStopDuringStart(cause: DisconnectReason?) -> StreamError {
+        switch cause {
+        case .hostError?, .hostClosedClean?, .watchdogStall?: return .connectFailed(.hostWentQuiet)
+        default: return .cancelled
+        }
     }
 
     // MARK: - Launch with busy recovery

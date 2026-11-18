@@ -32,8 +32,8 @@ extension StreamSession {
         } catch {
             let stoppedByRequest = stopRequested
             if !stoppedByRequest { noteTelemetryDisconnect(.connectFailed) }
-            await performStop(cause: stoppedByRequest ? .userStopped : .connectFailed)
-            throw stoppedByRequest ? StreamError.cancelled : error
+            await performStop(cause: stoppedByRequest ? (stopCauseDuringStart ?? .userStopped) : .connectFailed)
+            throw stoppedByRequest ? errorForStopDuringStart : error
         }
     }
 }

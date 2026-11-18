@@ -92,8 +92,19 @@ extension EnetControlChannel {
         case Enet.cmdAcknowledge:
             handleAcknowledge(ackChannelID: channelID, &reader)
         case Enet.cmdDisconnect:
-            stateLock.lock(); disconnected = true; stateLock.unlock()
+            stateLock.lock()
+            let first = !disconnected
+            disconnected = true
+            stateLock.unlock()
             Diag.error("ENet received DISCONNECT during/after handshake", Self.logCategory)
+            // The PC dropped the peer without a TERMINATION message. Left at
+            // the flag alone, the control loop simply ended and the stream sat
+            // frozen until the frame watchdog gave up ten seconds later. Say
+            // so now (once - a TERMINATION that came first already did), as
+            // the dead-peer cutoff would: on a live stream that reconnects.
+            // Mid-handshake nobody is listening yet and the handshake itself
+            // fails on the flag.
+            if first { onTerminated?(-1) }
             return false
         case Enet.cmdPing:
             // PING has no body; ACK if requested.

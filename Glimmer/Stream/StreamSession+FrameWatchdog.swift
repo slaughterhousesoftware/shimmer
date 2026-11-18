@@ -200,6 +200,24 @@ extension StreamSession {
         }
     }
 
+    enum WatchdogTimeoutAction: Equatable { case hold, reconnect, stop }
+
+    /// What a full window with no decoded frame means.
+    ///  * The control link is still being ACKed: the PC paused video (a
+    ///    sign-in screen, a mode change) - hold.
+    ///  * The control link is quiet as well, on a stream that had been live
+    ///    and can be rebuilt in place: the link is dropping - reconnect, the
+    ///    same thing the dead-peer cutoff does a few seconds later.
+    ///  * Otherwise - never a first frame, or nothing to reconnect to (a
+    ///    PS5) - end the stream.
+    nonisolated static func watchdogTimeoutAction(
+        neverDecodedFirstFrame: Bool, sinceLastAckMs: UInt32?, reachedLiveState: Bool, canReconnectInPlace: Bool
+    ) -> WatchdogTimeoutAction {
+        guard !neverDecodedFirstFrame else { return .stop }
+        if let sinceLastAckMs, sinceLastAckMs < enetAliveHoldThresholdMs { return .hold }
+        return reachedLiveState && canReconnectInPlace ? .reconnect : .stop
+    }
+
     private func handleWatchdogTimeout(
         decodeIdleSeconds: Double, receiveIdleSeconds: Double,
         neverDecodedFirstFrame: Bool = false
@@ -217,12 +235,26 @@ extension StreamSession {
         // gone" teardown is owned by ENet's own dead-peer detection. The
         // pre-first-frame trip is EXEMPT from the hold: a host that never
         // delivered frame ONE on a healthy control link is a broken bring-up.
-        if !neverDecodedFirstFrame,
-           let health = backend.enetHealth(),
-           health.sinceLastAckMs < StreamSession.enetAliveHoldThresholdMs {
+        let health = backend.enetHealth()
+        switch Self.watchdogTimeoutAction(
+            neverDecodedFirstFrame: neverDecodedFirstFrame, sinceLastAckMs: health?.sinceLastAckMs,
+            reachedLiveState: reachedLiveState, canReconnectInPlace: reconnectServer != nil) {
+        case .hold:
             await holdForAliveLink(
-                decodeIdle: decodeIdleSeconds, receiveIdle: receiveIdleSeconds, ackMs: health.sinceLastAckMs)
+                decodeIdle: decodeIdleSeconds, receiveIdle: receiveIdleSeconds, ackMs: health?.sinceLastAckMs ?? 0)
             return
+        case .reconnect:
+            // Video gone for the whole window and the control link quiet too,
+            // but not yet for the 10 s that calls the peer dead: the link is
+            // dropping. That was a teardown ("Connection was interrupted")
+            // seconds before the reconnect would have started on its own.
+            Diag.notice("Frame watchdog: no decoded frame in \(decodeIdleSeconds)s and the control link is "
+                + "quiet - reconnecting in place", "Stream")
+            noteTelemetryDisconnect(.watchdogStall)
+            await handleHostTerminate(code: Self.deadPeerTerminationCode)
+            return
+        case .stop:
+            break
         }
 
         let receiveDesc = receiveIdleSeconds.isFinite

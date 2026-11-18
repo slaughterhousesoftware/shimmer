@@ -204,8 +204,8 @@ extension StreamSession {
             // to the handshake, not the host terminate that may follow.
             if !stoppedByRequest { noteTelemetryDisconnect(.connectFailed) }
             await undoLaunchAfterFailedConnect(launch, network: network, duringReconnect: false)
-            await performStop(cause: stoppedByRequest ? .userStopped : .connectFailed)
-            if stoppedByRequest { throw StreamError.cancelled }
+            await performStop(cause: stoppedByRequest ? (stopCauseDuringStart ?? .userStopped) : .connectFailed)
+            if stoppedByRequest { throw errorForStopDuringStart }
             throw error
         }
     }

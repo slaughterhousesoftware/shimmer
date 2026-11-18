@@ -81,8 +81,8 @@ extension StreamSession {
             // arriving (the launch leg's "cancelled", an interrupted connect),
             // not a failure to report. Sweep anything still standing.
             guard stopRequested else { throw error }
-            await performStop(cause: .userStopped)
-            throw StreamError.cancelled
+            await performStop(cause: stopCauseDuringStart ?? .userStopped)
+            throw errorForStopDuringStart
         }
     }
 

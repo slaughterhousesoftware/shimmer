@@ -140,6 +140,20 @@ struct StopWhileStartingTests {
         #expect(!StreamSession.shouldCancelHostSession(resumed: true, duringReconnect: true))
     }
 
+    /// A stop that arrives while start() runs is a cancellation only when
+    /// someone asked for it. The PC ending the session in that window is a
+    /// failed start, and must not vanish as a silent cancel.
+    @Test func aPcThatEndsTheSessionMidStartIsAFailureNotACancel() {
+        #expect(AppModel.isCancellation(StreamSession.errorForStopDuringStart(cause: .userStopped)))
+        #expect(AppModel.isCancellation(StreamSession.errorForStopDuringStart(cause: .consumerDropped)))
+        #expect(AppModel.isCancellation(StreamSession.errorForStopDuringStart(cause: nil)))
+        for cause in [DisconnectReason.hostError, .hostClosedClean] {
+            let error = StreamSession.errorForStopDuringStart(cause: cause)
+            #expect(!AppModel.isCancellation(error))
+            #expect(StreamFailureCopy.connect(error, hostName: "Den PC").contains("stopped answering"))
+        }
+    }
+
     /// A stop that reaches the session before start() does (Cancel clicked in
     /// the same breath as Stream) used to be dropped at stop()'s guard; the
     /// stream then came up with nothing left that could end it.

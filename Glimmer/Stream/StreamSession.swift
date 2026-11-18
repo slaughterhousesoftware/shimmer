@@ -504,6 +504,10 @@ public actor StreamSession {
     // Stream, a switch, quitting) ends in a torn-down session and a thrown
     // `.cancelled`, never in a stream that came up after it was stopped.
     var stopRequested = false
+    // Why the first stop that arrived while start() was running was asked
+    // for. A stop the user made is a cancellation; one the PC caused (it
+    // terminated the session mid-start) is a failed start, and says so.
+    var stopCauseDuringStart: DisconnectReason?
     // True while start() runs. start() owns everything it builds until it
     // returns; a stop() that arrives meanwhile only latches `stopRequested`,
     // interrupts the connect, and waits for start() to do the teardown.

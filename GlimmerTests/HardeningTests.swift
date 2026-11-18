@@ -44,6 +44,25 @@ struct HardeningTests {
         #expect(Enet.retransmitTimeoutMs(baseMs: 30, attempts: 0) == 30)
     }
 
+    /// Ten seconds without a frame while the control link has been quiet for
+    /// 5-10 s is a dropping link: reconnect. It used to end the stream,
+    /// seconds before the dead-peer reconnect would have begun.
+    @Test func aStallOnAQuietLinkReconnectsInsteadOfEnding() {
+        typealias S = StreamSession
+        #expect(S.watchdogTimeoutAction(neverDecodedFirstFrame: false, sinceLastAckMs: 100,
+                                        reachedLiveState: true, canReconnectInPlace: true) == .hold)
+        #expect(S.watchdogTimeoutAction(neverDecodedFirstFrame: false, sinceLastAckMs: 7_000,
+                                        reachedLiveState: true, canReconnectInPlace: true) == .reconnect)
+        // A PS5 session has nothing to reconnect to; a stream that never
+        // showed a frame is a failed start, not an interruption.
+        #expect(S.watchdogTimeoutAction(neverDecodedFirstFrame: false, sinceLastAckMs: nil,
+                                        reachedLiveState: true, canReconnectInPlace: false) == .stop)
+        #expect(S.watchdogTimeoutAction(neverDecodedFirstFrame: true, sinceLastAckMs: 100,
+                                        reachedLiveState: false, canReconnectInPlace: true) == .stop)
+        #expect(S.watchdogTimeoutAction(neverDecodedFirstFrame: false, sinceLastAckMs: 7_000,
+                                        reachedLiveState: false, canReconnectInPlace: true) == .stop)
+    }
+
     /// An unreadable consoles file is kept, not saved over: the next
     /// registration used to write a one-console list on top of it, and every
     /// other console's registration key went with it.
