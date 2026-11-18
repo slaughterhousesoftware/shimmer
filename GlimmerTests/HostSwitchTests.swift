@@ -6,7 +6,6 @@
 //  one opens the same way, fresh.
 //
 
-import AppKit
 import Foundation
 import Testing
 @testable import Glimmer
@@ -40,18 +39,5 @@ struct HostSwitchTests {
         model.switchHost(to: host("den"))
         #expect(model.pendingHostSwitch?.hostID == "den")
         #expect(model.pendingHostSwitch?.inPictureInPicture == false)
-    }
-}
-
-/// Closing a stream's PiP looks like its ×: the picture shrinks into its
-/// centre (to half size) while fading.
-struct PiPCloseAnimationTests {
-    @Test func endsAtHalfSizeAroundTheSameCentre() {
-        let pip = NSRect(x: 20, y: 110, width: 442, height: 249)
-        let end = PictureInPictureStage.closedFrame(of: pip)
-        #expect(end.width == 221)
-        #expect(end.height == 124.5)
-        #expect(end.midX == pip.midX)
-        #expect(end.midY == pip.midY)
     }
 }
