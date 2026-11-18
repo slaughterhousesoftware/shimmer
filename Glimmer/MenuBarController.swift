@@ -439,15 +439,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // this has landed, because AppKit drops an activate() issued in the
         // same turn as a policy change. Active with no window yet is fine:
         // the stream window then arrives in the active app's stage, in front,
-        // instead of behind whatever Stage Manager had up.
-        NSApp.activate()
+        // instead of behind whatever Stage Manager had up. (The menu's
+        // header row makes macOS refuse a plain activate(): see
+        // AppDelegate.activateFromMenuBar.)
+        AppDelegate.activateFromMenuBar()
     }
 
     @objc private func resumeStream() {
         // Over another app's full screen Shimmer stays a menu-bar app: the
         // stream window joins that Space instead of macOS moving the user.
         if Self.frontmostAppIsFullScreen() {
-            NSApp.activate()
+            AppDelegate.activateFromMenuBar()
             model.resumeStreamWindow()
             return
         }
@@ -455,9 +457,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // a request made while handling the user's event, and Shimmer may be
         // headless (stream only in PiP) - by the time the session's async hop
         // asks, the grant has lapsed (measured 2026-11-16: never activated).
-        // A bare app doing exactly this activates within ~80 ms.
+        // A bare app doing exactly this activates within ~80 ms; Shimmer's
+        // menu needs the stronger call (AppDelegate.activateFromMenuBar).
         StreamWindow.becomeRegularApp()
-        NSApp.activate()
+        AppDelegate.activateFromMenuBar()
         model.resumeStreamWindow()
     }
     @objc private func enterPictureInPicture() { model.enterPictureInPicture() }

@@ -203,18 +203,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// resumed from the menu bar still joins the full-screen Space.)
     @MainActor static func showMainWindow() {
         StreamWindow.becomeRegularApp()
-        NSApp.activate()
+        activateFromMenuBar()
         openMainWindow?()
         for delay in [0.05, 0.4] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 MainActor.assumeIsolated {
                     guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" && $0.isVisible }),
                           !window.isKeyWindow || !NSApp.isActive else { return }
-                    NSApp.activate()
+                    activateFromMenuBar()
                     window.makeKeyAndOrderFront(nil)
                 }
             }
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            MainActor.assumeIsolated {
+                let window = NSApp.windows.first { $0.identifier?.rawValue == "main" }
+                guard !NSApp.isActive || window?.isKeyWindow != true else { return }
+                Diag.warn("Main window not in front 1 s after it was asked for (active=\(NSApp.isActive), "
+                    + "visible=\(window?.isVisible == true))", "Launch")
+            }
+        }
+    }
+
+    /// Bring Shimmer forward from a click in its menu bar menu. The plain
+    /// `NSApp.activate()` is refused there: macOS doesn't count a click in a
+    /// status menu that has a custom-view row (the header) as permission to
+    /// take focus (measured 2026-11-18 on macOS 27: a bare app's activate()
+    /// from its status menu comes forward in ~0.4 s, and stops coming forward
+    /// at all once one `NSMenuItem.view` row is added; Settings… opened behind
+    /// the app in front every time). The older call still comes forward.
+    @MainActor static func activateFromMenuBar() {
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     weak var model: AppModel?
