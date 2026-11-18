@@ -63,10 +63,15 @@ public final class StreamPictureInPicture: NSObject {
     /// which is why the owner defers that particular stop instead of relying
     /// on this; the watchdog is the backstop for whatever else AVKit drops.
     private var stopWatchdog: DispatchWorkItem?
-    /// Set by `reset()`: if AVKit ignores the stop, rebuild the controller.
+    /// Set by `reset()`: the stream that owned Picture in Picture has gone,
+    /// so a stop AVKit ignores is asked again until it is heard (never
+    /// replaced by a second controller - see the watchdog).
     private var rebuildIfStopIgnored = false
     private static let stopAckTimeout: TimeInterval = 0.75
     private static let stopAttempts = 3
+    /// How often a stop AVKit keeps ignoring is asked again once the quick
+    /// attempts are spent.
+    private static let stuckStopInterval: TimeInterval = 2
 
     /// PiP's play/pause state as the PiP controls last set it. Read by
     /// AVKit's `pictureInPictureControllerIsPlaybackPaused` off the main
@@ -92,8 +97,18 @@ public final class StreamPictureInPicture: NSObject {
     /// so a new start must wait for this to clear (a Switch PC in PiP closes
     /// the old stream's PiP, then opens the next one's).
     public var isInUse: Bool {
-        isActive || isStopping || controller?.isPictureInPictureActive == true
+        isActive || isStarting || isStopping || controller?.isPictureInPictureActive == true
     }
+
+    /// Between startPictureInPicture() and AVKit's answer. A stream that ends
+    /// in that fraction of a second is still "using" Picture in Picture: left
+    /// out of `isInUse`, its close skipped the reset, the start then landed
+    /// with no stream behind it, and an empty PiP window stayed up for good.
+    private var isStarting = false
+    /// The stream that asked for the start has gone (`reset`): close PiP as
+    /// soon as AVKit reports it started.
+    private var ownerLeftWhileStarting = false
+    private static let startingTimeout: TimeInterval = 5
 
     /// One line of controller + adapter state for the env-gated debug probe
     /// (`--debug-pip-probe`); never read on a normal launch.
@@ -116,30 +131,6 @@ public final class StreamPictureInPicture: NSObject {
             && (controller?.isPictureInPicturePossible ?? false)
     }
 
-    /// Point the controller at a fresh layer (the renderer hard-fail self-heal
-    /// rebuilds the display layer). The old controller's PiP window collapses
-    /// with its old layer. Returns whether PiP was active, so the owner can
-    /// reconcile its own state - this deliberately does NOT auto-restart PiP:
-    /// the system's single PiP slot is still held by the dismissing old window,
-    /// so an immediate `start()` would silently fail the `isPossible` guard and
-    /// strand the owner's `isPictureInPictureActive` flag true forever (no
-    /// callback ever comes because `build` nils the old delegate).
-    @discardableResult
-    public func retarget(layer newLayer: AVSampleBufferDisplayLayer) -> Bool {
-        guard newLayer !== layer else { return false }
-        let wasActive = isActive
-        if wasActive {
-            stoppingProgrammatically = true
-            controller?.stopPictureInPicture()
-            stoppingProgrammatically = false
-            isActive = false
-            isStopping = false
-            disarmStopWatchdog()
-        }
-        build(on: newLayer)
-        return wasActive
-    }
-
     public func start() {
         guard let controller else { return }
         guard !controller.isPictureInPictureActive else { return }
@@ -150,7 +141,15 @@ public final class StreamPictureInPicture: NSObject {
         restoreRequested = false
         pausedState.withLock { $0 = false }
         log.info("Starting Picture in Picture")
+        isStarting = true
+        ownerLeftWhileStarting = false
         controller.startPictureInPicture()
+        // AVKit usually answers within 100-300 ms, sometimes never (a locked
+        // screen): don't count as "starting" for ever.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.startingTimeout) { [weak self] in
+            guard let self, self.isStarting, !self.isActive else { return }
+            self.isStarting = false
+        }
     }
 
     public func stop() {
@@ -162,7 +161,7 @@ public final class StreamPictureInPicture: NSObject {
         armStopWatchdog(attempt: 1)
     }
 
-    private func armStopWatchdog(attempt: Int) {
+    private func armStopWatchdog(attempt: Int, after delay: TimeInterval = StreamPictureInPicture.stopAckTimeout) {
         stopWatchdog?.cancel()
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -172,28 +171,38 @@ public final class StreamPictureInPicture: NSObject {
             guard self.isStopping, let controller = self.controller,
                   controller.isPictureInPictureActive else { return }
             if attempt >= Self.stopAttempts {
+                // The stream that owned it is gone (`reset`) and AVKit still
+                // counts this controller as active (it ignores every stop
+                // while the screen is locked, for one). It used to be thrown
+                // away here and a second controller built on the SAME layer:
+                // the layer then pointed at a freed controller, and the next
+                // layout crashed in AVKit (objc_retain in
+                // avkit_sampleBufferDisplayLayerPlayerController, 2026-11-16).
+                // One layer, one controller, for the life of the process: keep
+                // it, and keep asking at a slower beat until AVKit answers. A
+                // stream that starts meanwhile finds Picture in Picture in use
+                // and opens in its window.
+                if self.rebuildIfStopIgnored {
+                    if attempt == Self.stopAttempts {
+                        self.log.error("Picture in Picture stop ignored by AVKit \(attempt) times - still asking, every \(Self.stuckStopInterval)s")
+                    }
+                    self.close(controller)
+                    self.armStopWatchdog(attempt: attempt + 1, after: Self.stuckStopInterval)
+                    return
+                }
                 self.log.error("Picture in Picture stop ignored by AVKit \(attempt) times - giving up; state unlatched")
                 self.isStopping = false
                 self.stoppingProgrammatically = false
-                // The stream that owned it is gone (`reset`): the controller
-                // is reused by the next stream, and one AVKit still counts as
-                // active would make its start() a no-op. Start over with a
-                // fresh controller; the stuck PiP window goes with the old one.
-                if self.rebuildIfStopIgnored, let layer = self.layer {
-                    self.rebuildIfStopIgnored = false
-                    self.log.error("Rebuilding the Picture in Picture controller for the next stream")
-                    controller.delegate = nil
-                    self.isActive = false
-                    self.build(on: layer)
-                }
                 return
             }
             self.log.error("Picture in Picture stop not acknowledged within \(Self.stopAckTimeout)s - asking again (attempt \(attempt + 1))")
-            controller.stopPictureInPicture()
+            // With no stream behind it there is nothing to fly back to: ask
+            // again the way it was asked first, as the × does.
+            if self.rebuildIfStopIgnored { self.close(controller) } else { controller.stopPictureInPicture() }
             self.armStopWatchdog(attempt: attempt + 1)
         }
         stopWatchdog = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.stopAckTimeout, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
     private func disarmStopWatchdog() {
@@ -207,6 +216,7 @@ public final class StreamPictureInPicture: NSObject {
     public func reset() {
         onDidStart = nil; onDidStop = nil; onRestoreRequested = nil
         onPauseChanged = nil; onFailedToStart = nil
+        if isStarting { ownerLeftWhileStarting = true }
         if let controller, controller.isPictureInPictureActive {
             rebuildIfStopIgnored = true
             if !isStopping {
@@ -294,24 +304,12 @@ public final class StreamPictureInPicture: NSObject {
         close(controller, Self.closeSelector, false)
     }
 
-    /// Drop the controller without any callbacks - session teardown.
-    public func invalidate() {
-        onDidStart = nil; onDidStop = nil; onRestoreRequested = nil
-        onPauseChanged = nil; onFailedToStart = nil
-        if controller?.isPictureInPictureActive == true {
-            stoppingProgrammatically = true
-            controller?.stopPictureInPicture()
-        }
-        controller?.delegate = nil
-        controller = nil
-        contentSource = nil
-        isActive = false
-        isStopping = false
-        disarmStopWatchdog()
-    }
-
+    /// Called once, from init. Never again on the same layer: AVKit ties the
+    /// layer to its controller without retaining it, so a second controller
+    /// (or dropping this one while the layer lives) leaves the layer
+    /// pointing at freed memory.
     private func build(on newLayer: AVSampleBufferDisplayLayer) {
-        controller?.delegate = nil
+        precondition(controller == nil, "one Picture in Picture controller per layer")
         let source = AVPictureInPictureController.ContentSource(
             sampleBufferDisplayLayer: newLayer, playbackDelegate: self)
         let ctl = AVPictureInPictureController(contentSource: source)
@@ -343,7 +341,17 @@ extension StreamPictureInPicture: AVPictureInPictureControllerDelegate {
     ) {
         onMain { [self] in
             isActive = true
+            isStarting = false
             log.info("Picture in Picture started")
+            if ownerLeftWhileStarting {
+                // Nobody is behind this PiP any more. Close it - on the next
+                // turn: a stop asked from inside this callback is dropped by
+                // AVKit (see the watchdog note above).
+                ownerLeftWhileStarting = false
+                log.notice("Picture in Picture started after its stream had gone - closing it")
+                DispatchQueue.main.async { [weak self] in self?.reset() }
+                return
+            }
             onDidStart?()
         }
     }
@@ -354,6 +362,8 @@ extension StreamPictureInPicture: AVPictureInPictureControllerDelegate {
     ) {
         onMain { [self] in
             isActive = false
+            isStarting = false
+            ownerLeftWhileStarting = false
             log.error("Picture in Picture failed to start: \(error.localizedDescription, privacy: .public)")
             onFailedToStart?(error)
         }

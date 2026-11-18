@@ -164,9 +164,28 @@ extension StreamWindow {
                 self.leavePiPSource()
                 self.onPictureInPictureChanged?(false)
                 self.publishPresentSuppression()
-                if self.pipStartIsLaunch { self.showWindowAfterFailedPiPLaunch("the start never resolved") }
+                self.showWindowAfterFailedPictureInPicture("the start never resolved")
             }
         }
+    }
+
+    /// Picture in Picture didn't start. The window was hidden for it, so
+    /// without this the stream went on with sound and no picture anywhere -
+    /// only a launch straight into PiP used to get its window back.
+    func showWindowAfterFailedPictureInPicture(_ why: String) {
+        guard !didClose else { return }
+        if pipStartIsLaunch {
+            showWindowAfterFailedPiPLaunch(why)
+            return
+        }
+        guard isBackgrounded else { return }
+        log.notice("Picture in Picture didn't start (\(why, privacy: .public)) - showing the stream window again")
+        Self.becomeRegularApp()
+        NSApp.activate()
+        window.alphaValue = 1
+        window.makeKeyAndOrderFront(nil)
+        reengageForeground()
+        reassertActivation(attempt: 0)
     }
 
     // MARK: - AVKit edges
@@ -207,7 +226,7 @@ extension StreamWindow {
             self.leavePiPSource()
             self.onPictureInPictureChanged?(false)
             self.publishPresentSuppression()
-            if self.pipStartIsLaunch { self.showWindowAfterFailedPiPLaunch("AVKit refused to start") }
+            self.showWindowAfterFailedPictureInPicture("AVKit refused to start")
         }
         pictureInPicture.onRestoreRequested = { [weak self] ready in
             // The PiP window's return button: AVKit flies back on `ready`.

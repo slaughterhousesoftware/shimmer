@@ -419,6 +419,10 @@ extension AppModel {
         // banner in place lets it survive; a clean quit set it to nil up above
         // (line 273 at stream start) so nothing stale leaks through.
         let wasStreaming = self.isStreaming
+        // A "Stream in Picture in Picture" that never got as far as a window
+        // must not ride along with the next plain Stream click (it did, for
+        // up to a minute after a failed start).
+        self.pictureInPictureLaunchRequestedAt = nil
         // Switching PCs: this stream ended so the next can start - quietly,
         // with no "stream over" in between.
         let switching = pendingHostSwitch != nil
