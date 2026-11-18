@@ -28,6 +28,7 @@ import AVFoundation
 import AVKit
 import CoreMedia
 import Foundation
+import ObjectiveC
 import os
 
 @MainActor
@@ -200,21 +201,60 @@ public final class StreamPictureInPicture: NSObject {
         stopWatchdog = nil
     }
 
-    /// A stream let go of PiP (PictureInPictureStage): stop it if it is up and
-    /// drop the stream's handlers, keeping the controller for the next stream.
+    /// A stream let go of PiP (PictureInPictureStage): close it if it is up,
+    /// the way its × does, and drop the stream's handlers, keeping the
+    /// controller for the next stream.
     public func reset() {
         onDidStart = nil; onDidStop = nil; onRestoreRequested = nil
         onPauseChanged = nil; onFailedToStart = nil
-        if controller?.isPictureInPictureActive == true {
+        if let controller, controller.isPictureInPictureActive {
             rebuildIfStopIgnored = true
             if !isStopping {
                 stoppingProgrammatically = true
                 isStopping = true
-                controller?.stopPictureInPicture()
+                close(controller)
                 armStopWatchdog(attempt: 1)
             }
         }
         pausedState.withLock { $0 = false }
+    }
+
+    // MARK: - Closing as the × does
+
+    /// What the PiP window's × runs. The controls are drawn by macOS's
+    /// PIPAgent, which messages our process on a click:
+    ///   -[PIPViewController _pipActionClose]
+    ///   -[AVPictureInPicturePlatformAdapter pipActionClose:]
+    ///   -[AVPictureInPictureController _stopPictureInPictureAndRestoreUserInterface:NO]
+    /// (call stack of a real click, 2026-11-17, macOS 27.0; the method is also
+    /// on 27.2.1). The public `stopPictureInPicture()` is the same method with
+    /// YES - "return to app", which flies the picture back to the source layer.
+    /// With NO the agent shrinks and fades the PiP where it is, about 0.16 s;
+    /// recorded next to a real click, the two match frame for frame.
+    private static let closeSelector = NSSelectorFromString("_stopPictureInPictureAndRestoreUserInterface:")
+
+    /// Whether this macOS still has that method, taking one BOOL. Private API:
+    /// without it PiP stops the public way (`PictureInPictureStage.close`
+    /// makes that an instant close).
+    static var canCloseAsTheCloseButtonDoes: Bool {
+        guard let method = class_getInstanceMethod(AVPictureInPictureController.self, closeSelector),
+              method_getNumberOfArguments(method) == 3,
+              let argument = method_copyArgumentType(method, 2) else { return false }
+        defer { free(argument) }
+        let type = String(cString: argument)
+        return type == "B" || type == "c"
+    }
+
+    private func close(_ controller: AVPictureInPictureController) {
+        guard Self.canCloseAsTheCloseButtonDoes else {
+            log.notice("Picture in Picture: no × close on this macOS - stopping the public way")
+            controller.stopPictureInPicture()
+            return
+        }
+        typealias Close = @convention(c) (AnyObject, Selector, ObjCBool) -> Void
+        let close = unsafeBitCast(controller.method(for: Self.closeSelector), to: Close.self)
+        log.info("Closing Picture in Picture as its × does")
+        close(controller, Self.closeSelector, false)
     }
 
     /// Drop the controller without any callbacks - session teardown.

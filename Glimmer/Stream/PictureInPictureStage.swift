@@ -55,18 +55,19 @@ final class PictureInPictureStage {
     /// waits for this - AVKit has one controller and won't start mid-close.
     var isFree: Bool { !isClosing && !pictureInPicture.isInUse }
 
-    /// Close PiP at once, where it is. Its × can't be pressed from code (the
-    /// controls are drawn outside Shimmer's process) and the PiP window
-    /// ignores our frame and alpha, so its close animation can't be had; a
-    /// copy drawn with the source window looked wrong (2026-11-17). Stopping
-    /// PiP from code plays the "return to app" animation instead, flying the
-    /// picture back to the source layer - which sat elsewhere and was hidden at
-    /// once, so a black rectangle grew out of the PiP towards the middle of the
-    /// screen (recorded 2026-11-17). So the source goes exactly where the PiP
-    /// is (the return has nowhere to go) and leaves the screen only once AVKit
-    /// reports PiP gone. Call it while the stream still feeds the layer
-    /// (`StreamWindow.closePictureInPicture`): the return draws the layer, and
-    /// an ended stream's is empty - black, for a moment, where the PiP was.
+    /// Close PiP the way its × does: it shrinks and fades where it is
+    /// (`StreamPictureInPicture.reset`, which runs the × button's own AVKit
+    /// call; a copy of the animation drawn with the source window looked wrong,
+    /// 2026-11-17). Call it while the stream still feeds the layer
+    /// (`StreamWindow.closePictureInPicture`), so the picture fades out live.
+    ///
+    /// On a macOS without the × call, PiP stops the public way, which flies
+    /// the picture back to the source layer - a black rectangle grew out of
+    /// the PiP towards wherever the source sat (recorded 2026-11-17). Only
+    /// then, the source is first put exactly where the PiP is: the return has
+    /// nowhere to go, and PiP just closes. (Not otherwise: resizing the source
+    /// shrinks the picture inside the PiP, and the × animation would fade a
+    /// black window.)
     func close(by window: StreamWindow) {
         guard owner === window else { return }
         owner = nil
@@ -75,7 +76,9 @@ final class PictureInPictureStage {
             return
         }
         isClosing = true
-        if let panel = fitter.panel { source.place(at: panel.frame) }
+        if !StreamPictureInPicture.canCloseAsTheCloseButtonDoes, let panel = fitter.panel {
+            source.place(at: panel.frame)
+        }
         pictureInPicture.reset()
         awaitClosed(attempt: 0)
     }

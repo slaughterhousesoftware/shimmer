@@ -173,6 +173,13 @@ struct PictureInPictureTests {
         #expect(PiPKeepAlive.interval <= 0.05)
     }
 
+    /// Closing PiP from code plays the × button's own animation through a
+    /// private AVKit call. If a macOS update drops or changes it, PiP closes
+    /// at once instead - and this test says so.
+    @MainActor @Test func theCloseButtonsOwnCloseIsAvailableOnThisMacOS() {
+        #expect(StreamPictureInPicture.canCloseAsTheCloseButtonDoes)
+    }
+
     @Test func defaultPiPChordCarriesNoCommandModifier() {
         // No Cmd, so it is intercepted before the sys-keys gate and fires
         // regardless of the "use ⌘ shortcuts inside the game" toggle.
