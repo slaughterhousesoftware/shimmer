@@ -249,6 +249,39 @@ public final class StreamPictureInPicture: NSObject {
         return type == "B" || type == "c"
     }
 
+    // MARK: - No pause button
+
+    /// AVKit's private `controlsStyle`, as macOS 27.0 draws each value
+    /// (screenshots of the PiP window with the pointer over it, 2026-11-17):
+    /// 0 - the default, a pause button in the middle; 1 - a microphone mute
+    /// button (video calls); 2 - no transport at all, only × and "return to
+    /// app", which both work as before. Set before or during PiP; it stays
+    /// across starts.
+    private static let controlsStyleSelector = NSSelectorFromString("setControlsStyle:")
+    private static let controlsStyleWithoutTransport = 2
+
+    /// Whether this macOS still has that setter, taking one integer. Private
+    /// API: without it the pause button shows, and pausing stays refused
+    /// (`pictureInPictureController(_:setPlaying:)`).
+    static var canHidePlaybackControls: Bool {
+        guard let method = class_getInstanceMethod(AVPictureInPictureController.self, controlsStyleSelector),
+              method_getNumberOfArguments(method) == 3,
+              let argument = method_copyArgumentType(method, 2) else { return false }
+        defer { free(argument) }
+        return String(cString: argument) == "q"
+    }
+
+    /// A live game has nothing to pause: take the button away.
+    private func hidePlaybackControls(of controller: AVPictureInPictureController) {
+        guard Self.canHidePlaybackControls else {
+            log.notice("Picture in Picture: no controls style on this macOS - the pause button stays")
+            return
+        }
+        typealias SetStyle = @convention(c) (AnyObject, Selector, Int) -> Void
+        let setStyle = unsafeBitCast(controller.method(for: Self.controlsStyleSelector), to: SetStyle.self)
+        setStyle(controller, Self.controlsStyleSelector, Self.controlsStyleWithoutTransport)
+    }
+
     private func close(_ controller: AVPictureInPictureController) {
         guard Self.canCloseAsTheCloseButtonDoes else {
             log.notice("Picture in Picture: no × close on this macOS - stopping the public way")
@@ -285,6 +318,7 @@ public final class StreamPictureInPicture: NSObject {
         ctl.delegate = self
         // A live stream has no timeline to scrub - hide the skip affordances.
         ctl.requiresLinearPlayback = true
+        hidePlaybackControls(of: ctl)
         contentSource = source
         controller = ctl
         layer = newLayer
@@ -386,13 +420,12 @@ extension StreamPictureInPicture: AVPictureInPictureControllerDelegate {
 // MARK: - AVPictureInPictureSampleBufferPlaybackDelegate
 
 extension StreamPictureInPicture: AVPictureInPictureSampleBufferPlaybackDelegate {
-    /// Pause is REFUSED. macOS draws the PiP transport in its own agent
-    /// process - it is not in our view tree, so the button cannot be hidden -
-    /// but a live game has nothing to pause: the host keeps playing, so
-    /// "pausing" only freezes the mirror and then jumps on resume. Instead of
-    /// honouring it we stay playing and immediately tell AVKit so, which snaps
-    /// the button back. Verified by probing the panel: NSApp.windows holds
-    /// only `PIPPanel`, whose tree is the display layer and nothing else.
+    /// Pause is REFUSED. The pause button is hidden (`hidePlaybackControls`),
+    /// but that is private API, and a pause can come from elsewhere (the
+    /// system's media controls). A live game has nothing to pause: the host
+    /// keeps playing, so "pausing" only freezes the mirror and then jumps on
+    /// resume. Instead of honouring it we stay playing and immediately tell
+    /// AVKit so, which snaps the button back.
     public nonisolated func pictureInPictureController(
         _ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool
     ) {

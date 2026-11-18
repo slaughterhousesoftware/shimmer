@@ -180,6 +180,13 @@ struct PictureInPictureTests {
         #expect(StreamPictureInPicture.canCloseAsTheCloseButtonDoes)
     }
 
+    /// The PiP window's pause button is hidden through a private AVKit
+    /// setting. If a macOS update drops it the button comes back (pausing is
+    /// still refused) - and this test says so.
+    @MainActor @Test func thePauseButtonCanBeHiddenOnThisMacOS() {
+        #expect(StreamPictureInPicture.canHidePlaybackControls)
+    }
+
     @Test func defaultPiPChordCarriesNoCommandModifier() {
         // No Cmd, so it is intercepted before the sys-keys gate and fires
         // regardless of the "use ⌘ shortcuts inside the game" toggle.
