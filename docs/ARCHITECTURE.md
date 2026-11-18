@@ -1,17 +1,29 @@
 # Architecture
 
-Glimmer is a SwiftUI launcher plus a pure-Swift streaming engine, in one
-process. No external player, no linked C streaming library - the
-GameStream/Sunshine transport is implemented in Swift under
-`Glimmer/Stream/Native/` (ported from `moonlight-common-c`, GPLv3; see
-[CREDITS.md](../CREDITS.md)). The only C that crosses the bridging header is
-Opus (audio decode) and OpenSSL (identity / pairing / network crypto), plus a
-few inline shims in `CHelpers.h`.
+Shimmer is a SwiftUI launcher that lives in the menu bar plus two streaming
+engines, in one process:
+
+- **Sunshine / GameStream PCs** - a pure-Swift engine under
+  `Glimmer/Stream/Native/` (ported from `moonlight-common-c`, GPLv3; see
+  [CREDITS.md](../CREDITS.md)). No linked C streaming library on this path.
+- **PS5 Remote Play** - `PlayStationBackend` (`Glimmer/PlayStation/`) over
+  chiaki-ng's `libchiaki`, a C library built as a static archive from the
+  `third_party/chiaki-ng` submodule with Shimmer's patches
+  (`third_party/chiaki-ng-patches/`, applied by `scripts/build-libchiaki.sh`).
+
+Both sit behind one protocol, `StreamingBackend`, and feed the same decoder,
+pacer, audio path, window and input forwarder. The other C that crosses the
+bridging header is Opus (audio decode) and OpenSSL (identity / pairing / network
+crypto), plus a few inline shims in `CHelpers.h`.
+
+The source tree, targets and log subsystem still carry the upstream project's
+name, Glimmer; the app is Shimmer.
 
 ## Overview
 
-The user picks a host in the SwiftUI launcher, clicks Stream, and a borderless
-NSWindow takes over the screen. Decoded H.264 / HEVC / AV1 (8- or 10-bit, SDR or
+The user picks a machine - in the window, or from the menu bar's menu - clicks
+Stream, and a stream window opens (or the stream opens straight into Picture in
+Picture). Decoded H.264 / HEVC / AV1 (8- or 10-bit, SDR or
 HDR10) is paced by a display-link-driven `FramePacer` onto an
 `AVSampleBufferDisplayLayer` for the OS to paint. Mouse / keyboard / gamepad
 input is forwarded to the host through the `StreamingBackend` input methods
@@ -33,7 +45,8 @@ Top-level pieces:
 | `AppModel`            | `@MainActor` `@Observable`                                 | `Glimmer/AppModel.swift` (+ extensions)                 |
 | `StreamSession`       | `actor`                                                    | `Glimmer/Stream/StreamSession.swift` (+ extensions)     |
 | `StreamingBackend`    | protocol (the engine boundary)                             | `Glimmer/Stream/StreamingBackend.swift`                 |
-| `NativeBackend`       | `final class`, sole backend conformer                      | `Glimmer/Stream/NativeBackend.swift` + `Stream/Native/` |
+| `NativeBackend`       | `final class`, the Sunshine backend                        | `Glimmer/Stream/NativeBackend.swift` + `Stream/Native/` |
+| `PlayStationBackend`  | `final class`, the PS5 backend (libchiaki)                 | `Glimmer/PlayStation/PlayStationBackend.swift`          |
 | `StreamBridgeContext` | `final class`, `@unchecked Sendable`                       | `Glimmer/Stream/StreamBridgeContext.swift`              |
 | `NetworkClient`       | `actor` over `ControlTransport` (hand-rolled OpenSSL mTLS) | `Glimmer/Stream/Network.swift`                          |
 | `PairingClient`       | `actor`                                                    | `Glimmer/Stream/Pairing.swift`                          |
@@ -58,8 +71,9 @@ one protocol for lifecycle / telemetry / input uplink, plus sink protocols for
 the inbound direction (`VideoSink`, `AudioSink`, `ConnectionEvents`), plus
 Glimmer-owned value types (`BackendServerInfo`, `BackendStreamConfig`,
 `DecodeUnit`, `DecodeBuffer`, `OpusConfig`, `HdrMetadata`, `GamepadAnalog`) so
-nothing outside the engine sees wire-level types. `NativeBackend` is the sole
-conformer.
+nothing outside the engine sees wire-level types. `NativeBackend` (Sunshine) and
+`PlayStationBackend` (PS5) are the two conformers; `AppModel.makeStreamingBackend`
+picks by host.
 
 The method set deliberately mirrors the GameStream protocol surface - the
 outbound input methods map 1:1 to the `LiSend*` family the protocol defines, and
@@ -118,74 +132,134 @@ UI lights up live.
 
 ## Stream session lifecycle
 
-`StreamSession.start(server:config:appID:...)` returns an
-`AsyncStream<StreamEvent>` that drives the launcher's UI state. The phases:
+A `StreamSession` is one-shot: one per stream, built by
+`AppModel.launchSession`. `start(server:config:appID:...)` returns an
+`AsyncStream<StreamEvent>` that drives the UI. The phases (Sunshine; a PS5
+skips 1-3):
 
-1. **Verify pairing** - `NetworkClient.fetchServerInfo()` (over HTTPS if a host
-   cert is already pinned, plain HTTP otherwise). If `pairStatus != .paired`,
-   throw - the launcher's pair sheet runs first, not us.
-2. **Launch or cancel+launch** - `launchWithBusyRecovery()` always renegotiates:
-   if the host's `currentgame` is 0 we send `/launch`, otherwise `/cancel` +
-   poll-until-idle + `/launch`. The previous "auto-resume if it's our app" path
-   was removed because it preserved the host's previous stream configuration
-   (resolution, FPS, HDR mode) across machines - a resume from a laptop after
-   starting on a desktop would carry over the desktop's 4K@240 settings. See
-   `launchWithBusyRecovery()` for the polling detail (the host's per-stream Undo
-   command has to finish before our next `/launch` runs, or display-resolution
-   lands on whichever of Do/Undo wrote last).
+0. **PS5 only, before the session exists** - `AppModel.readyPlayStation`: probe
+   the console, look for it at a new address if it doesn't answer, and wake it
+   from rest mode (wake packet re-sent every 6 s, 40 s in all). This is part of
+   the stream attempt: the row reads "Waking…", Cancel / End Stream / a switch
+   cancel it (`streamPreflightTask`), and a console that stays in rest mode
+   fails as "didn't wake" without going on to connect.
+1. **Verify pairing** - refused outright without a pinned certificate
+   (`hasPinnedCertificate`); then `NetworkClient.fetchServerInfo()` over the
+   pinned TLS channel. `pairStatus != .paired` throws.
+2. **Launch, resume, or cancel + launch** - `launchPlan(hintCurrentGame:appID:)`:
+   idle → `/launch`; our own app already running → `/resume` (Sunshine takes
+   the new mode from the request); another app → `/cancel`, poll until idle,
+   `/launch` (the takeover the launcher confirmed). Bounded by
+   `launchWithDeadline`. The `LaunchResponse` records `resumed`.
 3. **Build `BackendStreamConfig`** - width / height / fps / bitrate / codec
-   bitmask / colorspace / colorRange / encryptionFlags. The remote-input AES
-   key + IV are copied in from the launch response.
-4. **Build window + decoder + input on the main actor** - `StreamWindow`,
-   `VideoDecoder`, `InputForwarder` are all `@MainActor`. The decoder is
-   attached to the window's `AVSampleBufferDisplayLayer` before the connection
-   starts so the first decoded frame has somewhere to land.
-5. **Build `StreamBridgeContext`** - holds weak references to session, decoder,
-   audio decoder, input forwarder, plus the `AsyncStream.Continuation`.
-   `Unmanaged.passRetained` keeps the bridge alive for the connection lifetime;
-   `StreamBridgeContext.current` is a weak static for context-less callback
-   paths.
-6. **Build the event stream before `startConnection`** - the backend fires
-   `stageStarting` / `stageComplete` synchronously while `startConnection` runs.
-   The continuation has to exist before the call or those early events are
-   dropped. (Regression fixed.)
-7. **`backend.startConnection(server:config:)`** - blocks while the native
-   engine runs the RTSP + control + media bring-up described above; throws on
-   failure.
-8. **Install timers** - four on the main run loop: the stats-overlay refresh,
-   the 1 Hz frame watchdog, the present-path watchdog, and the present-metric
-   sampler (`StreamSession+Watchdog.swift`, `+PresentMetric.swift`). The frame
-   watchdog (`frameWatchdogTimeout` = 10s, matching upstream moonlight's
-   `FIRST_FRAME_TIMEOUT_SEC`) tears the session down if decode stops, because
-   the protocol's own dead-peer detection can take longer to declare a dead
-   connection. The watchdogs are suppression- and gating-aware: a hidden window
-   legitimately stops presenting, so they read the decode gate too (see
-   `VideoDecoder` decode gating).
+   bitmask / colorspace / colorRange / encryptionFlags, plus the remote-input
+   AES key + IV from the launch response.
+4. **Build window + decoder + input on the main actor** - attached to the
+   window's `AVSampleBufferDisplayLayer` before the connection starts.
+5. **Build `StreamBridgeContext`** and **the event stream**, before the
+   connect: the backend fires stage events while it connects.
+6. **`backend.startConnectionAsync`** - awaited, never blocking the actor;
+   throws on failure.
+7. **Install timers** - stats overlay, the 1 Hz frame watchdog, the
+   present-path watchdog, the present-metric sampler, the sleep/wake observers.
 
-Teardown (`stop()`) is re-entrant by design - any two of {quit hotkey,
-`connectionTerminated` callback, `AsyncStream.onTermination`, `startConnection`
-error path} can fire back-to-back. The `isStreaming` + `stopInProgress` flag
-pair both have to flip before further callers fall through.
+### Stopping while starting
 
-Teardown order is load-bearing:
+`start()` owns everything it builds until it returns. A `stop()` that arrives
+meanwhile does not tear down between `start()`'s awaits: it latches
+`stopRequested`, interrupts the connect, and waits (`stop(cause:)`); `start()`
+reads the latch after each await, tears down what it has built
+(`performStop`), and throws `.cancelled` - or a failed-connect error if the PC,
+not the user, caused the stop (`errorForStopDuringStart`). Before this, a stop
+that landed between two awaits was followed by a completed connect: a live
+stream every later `stop()` refused at its guard.
 
-1. Invalidate the four main-run-loop timers (stats overlay, frame watchdog,
-   present watchdog, present metric) and hide the overlay.
-2. `backend.stopConnection()` - synchronous; drains the engine's receive /
-   control threads. After this returns, no further backend callbacks can fire.
-3. `network.cancel()` - tell the host the session is over so its `currentgame`
-   clears.
+AppModel also cancels the task running `start()` (`streamStartTask`), which
+aborts an in-flight control request instead of waiting out its socket timeout.
+
+### Failures
+
+Errors keep their cause up to the launcher. `StreamError` carries
+`.connectFailed(ConnectFailure)` for a Sunshine connect that failed after the
+PC had answered (which leg: stream port, control channel, a refused RTSP step,
+a PC that went quiet), `.playStation(PlayStationFailure)` for a PS5 refusal (in
+use, registration rejected, wrong account, passcode, didn't wake, on but not
+answering), and `.cancelled`. `StreamFailureCopy` is the one table that turns
+any of them into the sentence shown - on the machine's page under its Stream
+row, and in the menu bar's menu. A cancelled start shows nothing.
+
+A connect that fails after `/launch` sends `/cancel` only to undo an app this
+attempt itself launched (`shouldCancelHostSession`): never after `/resume`, and
+never from a reconnect attempt - `/cancel` quits the game.
+
+### Mid-stream
+
+- **Host terminate / dead peer** - `handleHostTerminate`: a recoverable code,
+  our own dead-peer cutoff (10 s without an ACK), or an ENet DISCONNECT on a
+  stream that had been live starts a reconnect episode in place
+  (`StreamSession+Reconnect.swift`): frozen frame, "Reconnecting…" banner,
+  bounded attempts. A PS5 session has nothing to relaunch and ends.
+- **Frame watchdog** (10 s without a decoded frame) - `watchdogTimeoutAction`:
+  control link still ACKed → hold (the PC paused video); control link quiet
+  too → reconnect; never a first frame, or a PS5 → end.
+- **Present watchdog** (`StreamSession+Watchdog.swift`, `+PresentTrip.swift`) -
+  recovers a present path that stops while decode is healthy. Suppressed while
+  nothing can be seen. A silent display link only counts when frames are
+  queued behind it (`linkDeadTripped`).
+- **Sleep / wake** - `StreamSession+Wake.swift` probes the link on wake and
+  reconnects if it is stale.
+
+### Teardown
+
+`performStop` is the one teardown; `stop(cause:)` is its entry point from
+outside `start()`. Re-entrant by design (`isStreaming` + `stopInProgress`).
+Order is load-bearing:
+
+1. Invalidate the main-run-loop timers and hide the overlay. Release every key,
+   button and modifier the host holds and rest the pads
+   (`InputForwarder.releaseEverythingBeforeDisconnect`) while the connection
+   can still carry it.
+2. `backend.stopConnection()` - the input batcher sends what it holds, the ENet
+   channel sends DISCONNECT so the host ends the session at once, receive /
+   control threads stop.
+3. `/cancel` only when the stream is meant to quit the app ("Quit the game
+   when the stream ends"); otherwise the app stays up on the PC for `/resume`.
 4. MainActor teardowns: `input.detach()`, `videoDecoder.teardown()`,
    `window.close()`.
-5. `audioDecoder.shutdown()` (AVAudioEngine drain).
-6. Clear `StreamBridgeContext.current`, release the bridge's
-   `Unmanaged.passRetained` +1, then `finish()` the event stream.
-7. Release the `beginActivity` power assertion.
+5. `audioDecoder.shutdown()`.
+6. Clear `StreamBridgeContext.current`, release the bridge's retain, `finish()`
+   the event stream (which is how AppModel learns the stream is over).
+7. Release the power assertions.
 
-The bridge holds weak refs to every subsystem, so a callback firing against a
-torn-down subsystem just no-ops - but "no UAF" isn't "well-behaved", and the
-order above keeps the engine's receive threads from racing AVAudioEngine /
-AVSampleBufferDisplayLayer teardowns.
+AppModel has one cleanup site too (`cleanupAfterStream`), run when `start()`
+throws or the event loop drains, and it ignores sessions that are no longer the
+current one (`currentStreamToken`).
+
+## PlayStation (PS5 Remote Play)
+
+`PlayStationBackend` wraps one `ChiakiSession`. Registration
+(`PlayStationRegistration`) stores the console's keys in
+`~/Library/Application Support/Shimmer/PlayStation/consoles.json` (mode 0600;
+an unreadable file is moved aside, never saved over). Discovery and wake are in
+`PlayStationDiscovery`.
+
+- **Connect** - up to six attempts: the console holds a just-ended session for
+  a few seconds ("in use"), and a just-woken console refuses briefly. A session
+  that fails on Takion 20 retries on 12. QUIT reasons map to
+  `PlayStationFailure` (`failure(for:)`); patch 0012 adds the two refusal
+  reasons libchiaki folded into "unknown".
+- **Threads** - libchiaki calls back on its own threads; `lock` guards the
+  backend's state. Calls that send on the ctrl channel (join, leave, go to
+  rest, stop) go through `withSession`, outside `lock`: the ctrl thread
+  delivers events while holding its own mutex, and those handlers take `lock`.
+  A use count keeps teardown from freeing the session under such a call.
+- **Presentation** - by default frames go straight to the layer
+  (`VideoDecoder.presentsDirect`); "Smooth" uses the frame pacer.
+- **Controllers** - every pad merges into player 1 unless the console seats it
+  as player 2-4 (`PS5.extraPlayers`). Player 1's pad leads the merge. DualSense
+  haptics arrive as audio and play through `DualSenseAudioHaptics` (USB) or the
+  Bluetooth path; adaptive triggers and the light bar go through `DualSenseHID`.
+- **Microphone** - `PS5Microphone`.
 
 ## Video pipeline
 
@@ -311,7 +385,9 @@ physical key-down / key-up emits one keyboard event - no per-event modifier
 reset, no "release before press" coalescing. NKRO works because AppKit delivers
 each transition as its own `NSEvent` and the responder chain hands each to
 `keyDown(with:)` / `keyUp(with:)` independently. Stuck modifiers are released
-only in `detach()`.
+when the window loses focus, when Picture in Picture starts, and as a stream ends
+(before the connection closes). Modifier keys are tracked per physical key,
+left and right apart (`ModifierKeyTracker`).
 
 The Cmd key reports as `VK_LWIN` / `VK_RWIN`. By default
 (`captureSysKeys == false`) the InputForwarder drops Cmd-bearing keyDown and
@@ -350,67 +426,51 @@ flooding the log with -2s.
 
 ## Window model
 
-`StreamWindow` (`Glimmer/Stream/StreamWindow.swift`). One borderless
-`KeyableWindow` per session. `KeyableWindow` is a thin `NSWindow` subclass that
-returns true for `canBecomeKeyWindow` + `canBecomeMainWindow` - borderless
-windows default to false, which silently breaks `makeKeyAndOrderFront` and the
-responder chain.
-
-**Window level.** `.normal`. We tried shielding-window level
-(`CGShieldingWindowLevel()`) - AppKit marks it as key, the responder points at
-our view, but `sendEvent:` silently drops keyDown/keyUp. Menu bar suppression
-happens via `NSApp.presentationOptions = [.hideMenuBar, .hideDock]` instead.
-(When `coversNotch == true` we temporarily raise level to
-`NSWindow.Level(rawValue: CGWindowLevelForKey(.mainMenuWindow) + 1)` so the
-window paints over the menu-bar zone and notch reserve; it drops back to
-`.normal` on `didResignKey` so other apps surface above us when the user
-Cmd-Tabs away.)
+`StreamWindow` (`Glimmer/Stream/StreamWindow.swift` + extensions). One titled
+`NSWindow` per session; full screen is macOS's own (green button / ⌃⌘F into a
+Space, `StreamWindow+FullScreen.swift`), remembered between streams
+(`StreamFullScreenMemory`). There are no key/activation observers: the window
+stays where it is when another app is clicked.
 
 **Display layer as root.** `AVSampleBufferDisplayLayer` is installed as the
 content view's root layer (`view.layer = layer` BEFORE
 `view.wantsLayer = true`), not a sublayer of a default backing layer.
 Compositing through an intermediate sRGB layer flattens EDR back to SDR before
-the panel sees it.
+the panel sees it. The stats overlay is a sublayer of the display layer.
 
-**Stats overlay.** A `StatsOverlayLayer` is attached as a sublayer of the
-display layer (not a sibling - root-layer status is the precondition). The OS
-composites the sRGB text against the HDR content correctly.
+**Present suppression.** `publishPresentSuppression` is the single place that
+decides whether anything can be seen: hidden or miniaturized with no Picture in
+Picture, PiP paused, or every display asleep → suppressed. The decoder then
+keeps only the newest frame and, after 2 s, stops decoding (the host can't
+pause; receive, FEC and audio continue); coming back does one keyframe resync.
 
-**Dual-path fullscreen - the `coversNotch` toggle.** Two paths picked per
-session config:
+**Picture in Picture.** Owned by the app, not by a stream
+(`PictureInPictureStage`): ONE `AVPictureInPictureController` on ONE layer
+(`PiPSource`, an invisible window of its own that the decoder mirrors frames
+into), reused by every stream. A stream window claims the stage when it enters
+PiP and releases it when it closes. Never build a second controller on that
+layer or drop the controller while the layer lives - AVKit ties the layer to
+its controller without retaining it (a crash, 2026-11-16). Closing uses the
+PiP window's own × animation via a private AVKit call, with a public-API
+fallback (`StreamPictureInPicture`). `PiPPanelFitter` keeps the picture whole
+inside Apple's PiP window.
 
-- **`coversNotch == true`** (default): borderless covering window at
-  `.mainMenu + 1` level,
-  `collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]`.
-  NO Space-based fullscreen. The window owns the full physical panel including
-  the notch reserve on notched MacBooks. Bitstreams at the panel's true native
-  resolution render 1:1.
-- **`coversNotch == false`**: `toggleFullScreen(nil)` for Space-based
-  fullscreen. AppKit handles the Space creation and reserves the menu-bar /
-  notch area as safe inset. Same path SDL's
-  `SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES=1` uses.
-
-The `coversNotch == true` path is the default because borderless +
-`.hideMenuBar` engages display HDR mode without needing a Space (NSScreen's
-`maximumExtendedDynamicRangeColorComponentValue` lifts above 1.0 for any
-layer-host that owns the panel - Space ownership isn't the gating condition we
-thought it was).
-
-**Backgrounding.** On `didResignKey`, the window is `orderOut`'d entirely and
-the cursor is unhidden. The stream session keeps running - the decode pipeline
-and display layer are independent of window visibility (with presentation
-suppressed and decode gated while hidden; see Video pipeline). On the launcher
-side, the `Back to stream` affordance calls `StreamSession.resumeWindow()` to
-bring it back. We deliberately do NOT auto-reorder-front on
-`NSApp.didBecomeActive` - that fired on every app activation (clicking the
-launcher, Dock-clicking) and yanked the user back into the stream whenever they
-tried to change a setting.
+**Switch PC.** Never in place: the playing stream closes (its window or its
+PiP) and the next opens the same way (`AppModel.switchHost`,
+`startPendingHostSwitch`).
 
 **`NSWindow.sharingType`** = `.readOnly`. The stream window can be captured by
 ScreenCaptureKit, `screencapture(1)` and recording / conferencing apps. glimmer
 used `.none`; Shimmer allows capture because Picture in Picture mirrors this
 window's layer and stopped when a recording started. See `SECURITY.md` →
 Runtime hardening.
+
+## Agent control
+
+`AgentControl` (`Glimmer/AgentControl.swift`) publishes the app's state to
+`~/Library/Application Support/Shimmer/agent-state.json` and takes a small
+allowlist of commands as JSON files dropped in `agent-commands/` (mode 0700);
+`scripts/shimmerctl` is the CLI over both. See [CLI.md](CLI.md).
 
 ## Crossing isolation - receive threads ↔ Swift actors
 
@@ -486,11 +546,14 @@ details and the pinning lifecycle live in [SECURITY.md](SECURITY.md).
 
 ## Build pipeline
 
-There is no separate native library and no submodule: the entire streaming
-engine compiles as part of the app target. The only external link dependencies
-are Homebrew `openssl@3` and `opus`; `make dist` copies their dylibs into
-`Contents/Frameworks` (rewired to `@rpath`), so the shipped app is
-self-contained and needs nothing installed to run.
+The Sunshine engine compiles as part of the app target. The PS5 path links
+`libchiaki`, built by `scripts/build-libchiaki.sh` from the
+`third_party/chiaki-ng` submodule with the patches in
+`third_party/chiaki-ng-patches/` applied to copies (the submodule stays
+pristine). The other external link dependencies are Homebrew `openssl@3` and
+`opus`; `make dist` copies their dylibs into `Contents/Frameworks` (rewired to
+`@rpath`), so the shipped app is self-contained and needs nothing installed to
+run.
 
 ### `Glimmer/StreamLib.xcconfig`
 
