@@ -58,9 +58,22 @@ struct ControllerEntry: Identifiable {
     let kind: String
     let battery: (percent: Int, charging: Bool?)?
 
-    var status: String {
-        guard let battery else { return "Connected" }
-        return battery.charging == true ? "Charging · \(battery.percent)%" : "Connected · \(battery.percent)% battery"
+    /// The status line as System Settings writes it: "Connected", then
+    /// " – ", the battery glyph and "Battery 85%" when the pad reports one.
+    var batteryText: String? { battery.map { "Battery \($0.percent)%" } }
+    var batterySymbol: String? { battery.map { Self.batterySymbol(percent: $0.percent, charging: $0.charging) } }
+    var accessibilityStatus: String { ["Connected", batteryText].compactMap { $0 }.joined(separator: ", ") }
+
+    /// SF Symbols' battery in its five steps, or with a bolt while charging.
+    static func batterySymbol(percent: Int, charging: Bool?) -> String {
+        if charging == true { return "battery.100percent.bolt" }
+        switch percent {
+        case ..<13: return "battery.0percent"
+        case ..<38: return "battery.25percent"
+        case ..<63: return "battery.50percent"
+        case ..<88: return "battery.75percent"
+        default: return "battery.100percent"
+        }
     }
 
     /// GameController reads no battery for a DualSense while the raw-HID
@@ -108,39 +121,44 @@ private struct ControllerList: View {
     var body: some View {
         let entries = entries
         if entries.isEmpty {
-            ControllerRow(kind: "generic", name: "No controller connected", status: nil)
+            ControllerRow(kind: "generic", name: "No controller connected", entry: nil)
         } else {
             ForEach(entries) { entry in
-                ControllerRow(kind: entry.kind, name: entry.name, status: entry.status)
+                ControllerRow(kind: entry.kind, name: entry.name, entry: entry)
             }
         }
     }
 }
 
-/// A pad as System Settings lists it: the whole pad, its name over a green
-/// dot and its state, and a button to that pane. Laid out like a machine's
-/// Stream row.
+/// A pad as System Settings lists it: the whole pad, its name over
+/// "Connected – [battery] Battery 85%", and a button to that pane. Laid out
+/// like a machine's Stream row.
 private struct ControllerRow: View {
     let kind: String
     let name: String
-    let status: String?
+    let entry: ControllerEntry?
 
     var body: some View {
         HStack(spacing: RowIcon.gap) {
             RowIcon(asset: ControllerArt.assetName(kind: kind), side: 30, column: 34)
-                .foregroundStyle(status == nil ? .tertiary : .primary)
+                .foregroundStyle(entry == nil ? .tertiary : .primary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).lineLimit(1)
-                if let status {
-                    HStack(spacing: 5) {
-                        Circle().fill(Color.green).frame(width: 6, height: 6)
-                            .accessibilityHidden(true)
-                        Text(status)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                if let entry {
+                    HStack(spacing: 4) {
+                        Text("Connected")
+                        if let batteryText = entry.batteryText, let symbol = entry.batterySymbol {
+                            Text("–")
+                            Image(systemName: symbol)
+                            Text(batteryText)
+                        }
                     }
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(entry.accessibilityStatus)
                 }
             }
             .accessibilityElement(children: .combine)

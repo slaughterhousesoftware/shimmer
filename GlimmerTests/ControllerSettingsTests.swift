@@ -234,14 +234,32 @@ struct ControllerListTests {
         #expect(ControllerArt.assetName(kind: "anything") == "ControllerArt-generic")
     }
 
+    /// As System Settings writes it: "Connected – [battery] Battery 85%".
     @Test func statusLine() {
-        #expect(ControllerEntry(id: 0, name: "Pad", kind: "ps5", battery: (85, false)).status
-                == "Connected · 85% battery")
-        #expect(ControllerEntry(id: 0, name: "Pad", kind: "ps5", battery: (40, true)).status
-                == "Charging · 40%")
-        #expect(ControllerEntry(id: 0, name: "Pad", kind: "xbox", battery: (70, nil)).status
-                == "Connected · 70% battery")
-        #expect(ControllerEntry(id: 0, name: "Pad", kind: "generic", battery: nil).status == "Connected")
+        let pad = ControllerEntry(id: 0, name: "Pad", kind: "ps5", battery: (85, false))
+        #expect(pad.batteryText == "Battery 85%")
+        #expect(pad.accessibilityStatus == "Connected, Battery 85%")
+        #expect(ControllerEntry(id: 0, name: "Pad", kind: "xbox", battery: (40, true)).batteryText == "Battery 40%")
+        let bare = ControllerEntry(id: 0, name: "Pad", kind: "generic", battery: nil)
+        #expect(bare.batteryText == nil)
+        #expect(bare.batterySymbol == nil)
+        #expect(bare.accessibilityStatus == "Connected")
+    }
+
+    /// The battery glyph shows the charge in SF Symbols' five steps, and a
+    /// bolt while charging.
+    @Test func batteryGlyph() {
+        #expect(ControllerEntry.batterySymbol(percent: 5, charging: false) == "battery.0percent")
+        #expect(ControllerEntry.batterySymbol(percent: 30, charging: nil) == "battery.25percent")
+        #expect(ControllerEntry.batterySymbol(percent: 50, charging: false) == "battery.50percent")
+        #expect(ControllerEntry.batterySymbol(percent: 70, charging: false) == "battery.75percent")
+        #expect(ControllerEntry.batterySymbol(percent: 95, charging: false) == "battery.100percent")
+        #expect(ControllerEntry.batterySymbol(percent: 40, charging: true) == "battery.100percent.bolt")
+        for percent in [0, 25, 50, 75, 100] {
+            let name = ControllerEntry.batterySymbol(percent: percent, charging: false)
+            #expect(NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil, "\(name)")
+        }
+        #expect(NSImage(systemSymbolName: "battery.100percent.bolt", accessibilityDescription: nil) != nil)
     }
 
     @Test func opensSystemSettingsGameControllers() {
