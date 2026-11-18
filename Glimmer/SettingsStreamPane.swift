@@ -117,8 +117,7 @@ struct StreamWindowPane: View {
                                  set: { model.gameModeDuringStreams = $0 })) {
                 Text("Game Mode while streaming")
                 Text(hasXcode
-                     ? "Halves a Bluetooth controller’s input lag (7.5 ms instead of 15) in full screen, "
-                        + "a window and Picture in Picture."
+                     ? "Bluetooth controller input arrives twice as fast."
                      : "Without Xcode, macOS only turns Game Mode on in full screen.")
             }
             .disabled(!hasXcode)
@@ -129,8 +128,7 @@ struct StreamWindowPane: View {
             }
             Toggle(isOn: Binding(get: { awdl.enabled }, set: { awdl.setEnabled($0) })) {
                 Text("Reduce lag spikes on Wi-Fi")
-                Text("Pauses AirDrop, AirPlay and Sidecar while you play - they share the Wi-Fi radio. "
-                    + "macOS asks for your password the first time. Not needed on Ethernet.")
+                Text("Stops AirDrop, AirPlay and Sidecar from interrupting Wi-Fi.")
             }
             .disabled(awdl.installing)
             if let error = awdl.lastError, !awdl.enabled {
@@ -141,7 +139,7 @@ struct StreamWindowPane: View {
             // the occasional blip instead.
             Toggle(isOn: $model.preferLowAudioLatency) {
                 Text("Prefer low audio latency")
-                Text("Less audio buffering. Unstable connections may sound less smooth.")
+                Text("Less audio delay, but may crackle on a bad connection.")
             }
         } header: {
             FormSectionHeader("Performance")

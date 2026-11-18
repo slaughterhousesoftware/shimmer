@@ -54,7 +54,7 @@ struct AppPane: View {
                 } else {
                     Toggle(isOn: $launchAtLogin) {
                         Text("Be ready at login")
-                        Text("Starts quietly in the menu bar when you sign in.")
+                        Text("Opens in the menu bar when you log in.")
                     }
                     .onChange(of: launchAtLogin) { _, on in
                         scheduleLoginItemRegistration(launchAtLogin: on)
@@ -78,7 +78,7 @@ struct AppPane: View {
                     }
                 } label: {
                     Text("Coding agents")
-                    Text("Let Claude Code or another agent check and fix Shimmer.")
+                    Text("Lets AI coding tools diagnose problems.")
                 }
             } header: {
                 FormSectionHeader("Help")
