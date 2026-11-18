@@ -5,6 +5,7 @@
 //  streams both follow it, and a PS5's earlier choices carry over to it.
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Glimmer
@@ -222,16 +223,15 @@ struct PCControllerFeedbackTests {
 }
 
 /// The Controller tab lists every connected pad the way System Settings'
-/// Game Controllers does: a brand tile, the name, its state; a click opens
-/// that pane.
+/// Game Controllers does: the whole pad as Steam draws it, the name, its
+/// state, and a button that opens that pane.
 struct ControllerListTests {
-    @Test func brandTiles() {
-        #expect(ControllerTile.style(kind: "ps5").symbol == "playstation.logo")
-        #expect(ControllerTile.style(kind: "ps4").symbol == "playstation.logo")
-        #expect(ControllerTile.style(kind: "xbox").symbol == "xbox.logo")
-        #expect(ControllerTile.style(kind: "switchpro").rgb == 0xE60012)
-        #expect(ControllerTile.style(kind: "8bitdo_pro").symbol == "gamecontroller.fill")
-        #expect(ControllerTile.style(kind: "anything").symbol == "gamecontroller.fill")
+    @Test func everyPadKindHasFullArt() {
+        for kind in MenuBarBatteryGlyph.kinds {
+            #expect(ControllerArt.assetName(kind: kind) == "ControllerArt-\(kind)")
+            #expect(NSImage(named: ControllerArt.assetName(kind: kind)) != nil, "no art for \(kind)")
+        }
+        #expect(ControllerArt.assetName(kind: "anything") == "ControllerArt-generic")
     }
 
     @Test func statusLine() {

@@ -2,7 +2,7 @@
 //  SettingsPCsShortcutsPanes.swift
 //
 //  The Controller tab: the connected pads, listed as System Settings' Game
-//  Controllers lists them (a click opens that pane), and the settings for
+//  Controllers lists them (each with a button to that pane), and the settings for
 //  what a game may do to them - one set for every machine, PS5 and PC alike.
 //
 
@@ -13,8 +13,8 @@ import SwiftUI
 // MARK: - Controller tab
 
 /// The Controller tab: the connected pads on top, listed as System
-/// Settings' Game Controllers lists them (a click opens that pane, for a
-/// pad's own settings), then what games may do to them.
+/// Settings' Game Controllers lists them (each with a button to that pane,
+/// for a pad's own settings), then what games may do to them.
 struct ControllerTabPage: View {
     /// System Settings' Game Controllers pane - its extension allows the
     /// x-apple.systempreferences scheme. There is no public link to one
@@ -93,7 +93,7 @@ struct ControllerEntry: Identifiable {
 }
 
 /// The connected pads, one row each; none: one row saying so. Every row
-/// opens System Settings' Game Controllers.
+/// has a button that opens System Settings' Game Controllers.
 private struct ControllerList: View {
     @Environment(AppModel.self) private var model
 
@@ -117,71 +117,49 @@ private struct ControllerList: View {
     }
 }
 
-/// A pad as System Settings lists it: its brand tile, its name over a green
-/// dot and its state, a chevron. Laid out like a machine's Stream row.
+/// A pad as System Settings lists it: the whole pad, its name over a green
+/// dot and its state, and a button to that pane. Laid out like a machine's
+/// Stream row.
 private struct ControllerRow: View {
     let kind: String
     let name: String
     let status: String?
 
     var body: some View {
-        Button {
-            NSWorkspace.shared.open(ControllerTabPage.systemSettingsURL)
-        } label: {
-            HStack(spacing: RowIcon.gap) {
-                ControllerTile(kind: kind)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name).lineLimit(1)
-                    if let status {
-                        HStack(spacing: 5) {
-                            Circle().fill(Color.green).frame(width: 6, height: 6)
-                                .accessibilityHidden(true)
-                            Text(status)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
+        HStack(spacing: RowIcon.gap) {
+            RowIcon(asset: ControllerArt.assetName(kind: kind), side: 30, column: 34)
+                .foregroundStyle(status == nil ? .tertiary : .primary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).lineLimit(1)
+                if let status {
+                    HStack(spacing: 5) {
+                        Circle().fill(Color.green).frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                        Text(status)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
-                .layoutPriority(1)
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.tertiary)
             }
-            .padding(.vertical, 2)
-            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: 8)
+            Button("Controller Settings…") {
+                NSWorkspace.shared.open(ControllerTabPage.systemSettingsURL)
+            }
+            .fixedSize()
+            .help("Open Game Controllers in System Settings")
         }
-        .buttonStyle(.plain)
-        .help("Open Game Controllers in System Settings")
-        .accessibilityLabel([name, status].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityHint("Opens Game Controllers in System Settings")
+        .padding(.vertical, 2)
     }
 }
 
-/// A pad's brand tile, as System Settings draws it: a rounded square in the
-/// brand's colour with its logo in white.
-struct ControllerTile: View {
-    let kind: String
-
-    static func style(kind: String) -> (symbol: String, rgb: UInt32) {
-        switch kind {
-        case "ps5", "ps4": return ("playstation.logo", 0x0070D1)
-        case "xbox": return ("xbox.logo", 0x107C10)
-        case "switchpro", "gamecube": return ("gamecontroller.fill", 0xE60012)
-        default: return ("gamecontroller.fill", 0x8E8E93)
-        }
-    }
-
-    var body: some View {
-        let style = Self.style(kind: kind)
-        RoundedRectangle(cornerRadius: 6.5, style: .continuous)
-            .fill(Color(red: Double((style.rgb >> 16) & 255) / 255, green: Double((style.rgb >> 8) & 255) / 255,
-                        blue: Double(style.rgb & 255) / 255))
-            .frame(width: RowIcon.column, height: RowIcon.column)
-            .overlay {
-                RowIcon(symbol: style.symbol, side: 17, column: 21)
-                    .foregroundStyle(.white)
-            }
+/// A pad's whole outline, as Steam's Big Picture draws it: Steam's own
+/// glyphs (scripts/assets/steam-controller_<kind>.svg), one per kind, kept
+/// as vectors so they stay sharp at any size.
+enum ControllerArt {
+    static func assetName(kind: String) -> String {
+        "ControllerArt-\(MenuBarBatteryGlyph.kinds.contains(kind) ? kind : "generic")"
     }
 }
