@@ -327,3 +327,46 @@ struct MenuBarSpinnerTests {
         }
     }
 }
+
+/// The Servers rows: Settings' avatars, in colour only for the one in use,
+/// and a highlight that leaves a row when the pointer does.
+@MainActor
+struct MenuServerRowTests {
+    private func playStation() -> Glimmer.Host {
+        Glimmer.Host(id: "ps5-row-test", name: "PS5", customName: nil, localAddress: nil, manualAddress: nil,
+             apps: [.playStationHome], lastConnected: nil, serverCertPEM: nil, appVersion: nil,
+             gfeVersion: nil, macAddress: nil)
+    }
+
+    /// The colour just inside the disc's left rim, as sRGB 0-255.
+    private func rim(_ image: NSImage) -> (r: Int, g: Int, b: Int) {
+        let rep = NSBitmapImageRep(cgImage: image.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
+        let colour = rep.colorAt(x: rep.pixelsWide / 10, y: rep.pixelsHigh / 2)!.usingColorSpace(.sRGB)!
+        return (Int(colour.redComponent * 255), Int(colour.greenComponent * 255), Int(colour.blueComponent * 255))
+    }
+
+    @Test func theServerInUseIsInItsColourTheOthersGrey() {
+        let light = NSAppearance(named: .aqua)!
+        let current = MenuHostMark.image(for: playStation(), look: .current, appearance: light)
+        let off = MenuHostMark.image(for: playStation(), look: .off, appearance: light)
+        #expect(current.size == NSSize(width: 26, height: 26))
+        #expect(off.size == NSSize(width: 26, height: 26))
+        // PlayStation blue, 0x0070D1.
+        let blue = rim(current)
+        #expect(blue.b > 180 && blue.r < 40)
+        // Grey: no hue.
+        let grey = rim(off)
+        #expect(abs(grey.r - grey.b) < 12 && abs(grey.g - grey.b) < 12)
+        #expect(current.accessibilityDescription == "PlayStation")
+    }
+
+    @Test func aRowsHighlightGoesWhenThePointerMovesOn() {
+        let row = MenuServerRow(title: "PS5", marks: (NSImage(), NSImage())) {}
+        let selection = row.subviews.compactMap { $0 as? NSVisualEffectView }.first
+        #expect(selection?.isHidden == true)
+        row.isHovered = true
+        #expect(selection?.isHidden == false)
+        row.isHovered = false
+        #expect(selection?.isHidden == true)
+    }
+}

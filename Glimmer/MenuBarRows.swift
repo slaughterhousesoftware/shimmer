@@ -1,14 +1,15 @@
 //
 //  MenuBarRows.swift
 //
-//  The two rows of the menu bar's menu that copy the Sound menu (macOS 27):
-//  its volume slider - a quiet speaker, the slider, a loud speaker, nothing
-//  else - and its output list's round marks, here one per server (Kevin,
-//  2026-11-18: "just copy this"). Stock AppKit only: an NSSlider in a menu
-//  item's view, and plain menu items with a drawn image.
+//  The menu bar menu's custom rows: the Sound menu's volume slider, copied
+//  (a quiet speaker, the slider, a loud speaker, nothing else - Kevin,
+//  2026-11-18: "just copy this"), and the Servers list - each machine's
+//  Settings avatar on a round disc, in colour for the one in use, as
+//  Control Center's Focus and Sound lists mark the one that's on.
 //
 
 import AppKit
+import SwiftUI
 
 /// The stream volume, 0 (silent) to full. A custom row, the way the Sound menu
 /// carries its own slider; a menu has no slider item of its own.
@@ -55,83 +56,105 @@ final class MenuVolumeSlider: NSView {
     @objc private func moved() { onChange(slider.doubleValue) }
 }
 
-/// A server's round mark for its menu row, like the Sound menu's outputs: the
-/// system's logo (PlayStation, Tux, Windows, Apple) on a grey disc, or white
-/// on the accent colour for the one in use. Drawn when the menu draws, so it
-/// follows light and dark.
+/// A server's round mark for its menu row - the Settings sidebar's avatar
+/// (HostAvatar: the PlayStation blue, Bazzite's gradient, a distro's colour),
+/// drawn the way Control Center's lists (Focus, Sound, Wi-Fi) draw a row's
+/// disc: in colour for the one that's on, grey with a dark mark for the rest.
+/// Rendered from HostAvatar.disc itself, so the marks are sized and centred
+/// exactly as in Settings.
 @MainActor
 enum MenuHostMark {
     static let diameter: CGFloat = 26
-    /// The logo's box inside the disc, before each mark's own scale.
-    static let markBox: CGFloat = 15
 
-    static func kind(of host: Host) -> HostSystemKind {
-        if host.isPlayStation { return .playStation }
-        return HostSystemKind.cached(hostID: host.id)
-            ?? HostSystemKind.resolve(isPlayStation: false, ttl: nil, serverName: host.name)
-    }
+    enum Look: String { case current, off, offHighlighted }
 
-    /// The mark and its scale - HostSystemLogo's, so the four read one size.
-    static func mark(for kind: HostSystemKind) -> (image: NSImage?, scale: CGFloat) {
-        let symbol = NSImage.SymbolConfiguration(pointSize: markBox, weight: .regular)
-        switch kind {
-        case .playStation:
-            return (NSImage(systemSymbolName: "playstation.logo", accessibilityDescription: nil)?
-                .withSymbolConfiguration(symbol), 0.92)
-        case .mac:
-            return (NSImage(systemSymbolName: "apple.logo", accessibilityDescription: nil)?
-                .withSymbolConfiguration(symbol), 0.78)
-        case .windows: return (NSImage(named: "HostLogo-windows"), 0.74)
-        case .linux: return (NSImage(named: "HostLogo-linux"), 0.9)
-        }
-    }
+    private static var cache: [String: NSImage] = [:]
 
-    static func image(for host: Host, current: Bool) -> NSImage {
-        let kind = kind(of: host)
-        let (mark, scale) = mark(for: kind)
-        let image = NSImage(size: NSSize(width: diameter, height: diameter), flipped: false) { rect in
-            (current ? NSColor.controlAccentColor : NSColor.tertiarySystemFill).setFill()
-            NSBezierPath(ovalIn: rect).fill()
-            guard let mark, mark.size.width > 0, mark.size.height > 0 else { return true }
-            let box = markBox * scale
-            let fit = min(box / mark.size.width, box / mark.size.height)
-            let size = NSSize(width: mark.size.width * fit, height: mark.size.height * fit)
-            let target = NSRect(x: (rect.width - size.width) / 2, y: (rect.height - size.height) / 2,
-                                width: size.width, height: size.height)
-            let ink = current ? NSColor.white : NSColor.labelColor.withAlphaComponent(0.72)
-            let tinted = NSImage(size: size, flipped: false) { inner in
-                mark.draw(in: inner)
-                ink.set()
-                inner.fill(using: .sourceAtop)
-                return true
+    static func image(for host: Host, look: Look, appearance: NSAppearance) -> NSImage {
+        let mark = HostAvatar.mark(for: host)
+        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let scale = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
+        let key = "\(mark)|\(look.rawValue)|\(dark)|\(scale)"
+        if let cached = cache[key] { return cached }
+
+        let disc: AnyView
+        switch look {
+        case .current:
+            disc = AnyView(HostAvatar.disc(mark, size: diameter))
+        case .off:
+            // The system's grey fill and text colour, resolved for the
+            // menu's appearance (the picture is drawn once, not live).
+            var fill = NSColor.gray, ink = NSColor.black
+            appearance.performAsCurrentDrawingAppearance {
+                fill = NSColor.tertiarySystemFill.usingColorSpace(.sRGB) ?? .gray
+                ink = NSColor.labelColor.usingColorSpace(.sRGB) ?? .black
             }
-            tinted.draw(in: target)
-            return true
+            disc = AnyView(HostAvatar.disc(mark, size: diameter, fill: AnyShapeStyle(Color(nsColor: fill)),
+                                           ink: Color(nsColor: ink)))
+        case .offHighlighted:
+            // On the menu's blue highlight: white, as a template image turns.
+            disc = AnyView(HostAvatar.disc(mark, size: diameter, fill: AnyShapeStyle(Color.white.opacity(0.22)),
+                                           ink: .white))
         }
-        image.accessibilityDescription = HostSystemLogo.name(of: kind)
+        let renderer = ImageRenderer(content: disc.frame(width: diameter, height: diameter))
+        renderer.scale = scale
+        let image = renderer.nsImage ?? NSImage(size: NSSize(width: diameter, height: diameter))
+        image.accessibilityDescription = HostAvatar.name(of: mark)
+        cache[key] = image
         return image
     }
 }
 
-/// A server in the Servers list, drawn and behaving like a Sound menu output
-/// (measured on macOS 27): its round mark, its name, a soft grey rounded
-/// highlight under the pointer instead of the accent-blue bar, and a click
-/// that acts without closing the menu.
+/// A server in the Servers list: its round mark and its name, highlighted the
+/// way every other row of the menu is (the menu's own blue selection, the
+/// name in white), and a click that switches without closing the menu, as
+/// the Sound menu's outputs do. The controller says when it's highlighted
+/// (`isHovered`, from NSMenuDelegate's willHighlight): a custom row isn't
+/// redrawn by the menu when the highlight moves on, which left the grey
+/// band behind on the last row the pointer crossed.
 final class MenuServerRow: NSView {
     private let title: String
-    private let mark: NSImage
+    private let marks: (normal: NSImage, highlighted: NSImage)
     private let onPick: () -> Void
+    private let selection = NSVisualEffectView()
+    private let content = Content()
 
     static let height: CGFloat = 32
 
-    init(title: String, mark: NSImage, onPick: @escaping () -> Void) {
+    var isHovered = false {
+        didSet {
+            guard isHovered != oldValue else { return }
+            selection.isHidden = !isHovered
+            content.needsDisplay = true
+        }
+    }
+
+    init(title: String, marks: (normal: NSImage, highlighted: NSImage), onPick: @escaping () -> Void) {
         self.title = title
-        self.mark = mark
+        self.marks = marks
         self.onPick = onPick
         super.init(frame: .zero)
         // The menu sizes itself to its widest row; the view then stretches.
         setFrameSize(intrinsicContentSize)
         autoresizingMask = [.width]
+
+        // The menu's own selection material - the blue (accent) band the
+        // plain rows above and below get, 5 pt in from each side.
+        selection.material = .selection
+        selection.state = .active
+        selection.isEmphasized = true
+        selection.blendingMode = .behindWindow
+        selection.maskImage = Self.selectionMask
+        selection.isHidden = true
+        selection.frame = bounds.insetBy(dx: 5, dy: 0)
+        selection.autoresizingMask = [.width, .height]
+        addSubview(selection)
+
+        content.row = self
+        content.frame = bounds
+        content.autoresizingMask = [.width, .height]
+        addSubview(content)
+
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(title)
@@ -139,29 +162,56 @@ final class MenuServerRow: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// The selection's corners, measured off a plain row's highlight on
+    /// macOS 27 (6 pt).
+    private static let selectionMask: NSImage = {
+        let radius: CGFloat = 6
+        let side = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
+    }()
+
     /// Wide enough for the name, so the menu sizes itself around it.
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 16 + MenuHostMark.diameter + 8 + titleSize.width + 24, height: Self.height)
+        NSSize(width: 16 + MenuHostMark.diameter + 8 + titleSize(highlighted: false).width + 24, height: Self.height)
     }
 
-    private var titleAttributes: [NSAttributedString.Key: Any] {
-        [.font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.labelColor]
+    fileprivate func titleAttributes(highlighted: Bool) -> [NSAttributedString.Key: Any] {
+        [.font: NSFont.menuFont(ofSize: 0),
+         .foregroundColor: highlighted ? NSColor.selectedMenuItemTextColor : NSColor.labelColor]
     }
 
-    private var titleSize: NSSize { (title as NSString).size(withAttributes: titleAttributes) }
+    fileprivate func titleSize(highlighted: Bool) -> NSSize {
+        (title as NSString).size(withAttributes: titleAttributes(highlighted: highlighted))
+    }
 
-    override func draw(_ dirtyRect: NSRect) {
-        // The Sound menu's hover: a grey capsule-cornered band 5 pt in from
-        // each edge; the text and the disc keep their colours.
-        if enclosingMenuItem?.isHighlighted == true {
-            NSColor.quaternaryLabelColor.setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 5, dy: 0), xRadius: 8, yRadius: 8).fill()
+    /// The disc and the name, above the selection band.
+    private final class Content: NSView {
+        weak var row: MenuServerRow?
+
+        override func draw(_ dirtyRect: NSRect) {
+            guard let row else { return }
+            let lit = row.isHovered
+            let d = MenuHostMark.diameter
+            (lit ? row.marks.highlighted : row.marks.normal)
+                .draw(in: NSRect(x: 16, y: ((bounds.height - d) / 2).rounded(), width: d, height: d))
+            let size = row.titleSize(highlighted: lit)
+            (row.title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
+                                         withAttributes: row.titleAttributes(highlighted: lit))
         }
-        let d = MenuHostMark.diameter
-        mark.draw(in: NSRect(x: 16, y: (bounds.height - d) / 2, width: d, height: d))
-        let size = titleSize
-        (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
-                                 withAttributes: titleAttributes)
+
+        // The row takes the clicks.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        frame.contains(point) ? self : nil
     }
 
     override func mouseUp(with event: NSEvent) {

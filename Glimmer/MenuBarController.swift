@@ -306,8 +306,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         menuIsOpen = false
+        hoveredRow = nil
         applyLabel()
     }
+
+    /// The Servers rows draw their own highlight, and the menu doesn't
+    /// redraw a custom row when the highlight leaves it - so the controller
+    /// tells each row, for the pointer and the arrow keys alike.
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        let row = item?.view as? MenuServerRow
+        guard row !== hoveredRow else { return }
+        hoveredRow?.isHovered = false
+        row?.isHovered = true
+        hoveredRow = row
+    }
+
+    private weak var hoveredRow: MenuServerRow?
 
     private var menuIsOpen = false
 
@@ -326,6 +340,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func populate(_ menu: NSMenu) {
         menu.removeAllItems()
+        hoveredRow = nil
 
         // The header: the PC's name over its live status, inert.
         let title = model.selectedHost?.displayName ?? "Shimmer"
@@ -394,11 +409,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
         }
 
-        // The servers, listed the way the Sound menu lists its outputs: a
-        // round mark per machine (PlayStation, Tux, Windows, Apple), the one in
-        // use filled with the accent colour. Picking another switches to it - a
-        // stream in progress closes and reopens there (AppModel.switchHost).
-        // This replaced a "Switch PC" submenu.
+        // The servers, listed the way Control Center lists Focus modes and
+        // sound outputs: a round mark per machine - its Settings avatar, in
+        // colour for the one in use, grey for the rest. Picking another
+        // switches to it - a stream in progress closes and reopens there
+        // (AppModel.switchHost). This replaced a "Switch PC" submenu.
         if model.hosts.count > 1 {
             menu.addItem(.separator())
             menu.addItem(.sectionHeader(title: "Servers"))
@@ -407,13 +422,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let current = model.pendingHostSwitch?.hostID
                 ?? (model.isStreaming ? model.activeStreamHostID : model.selectedHost?.id)
             for host in model.hosts {
-                // A custom row, as the Sound menu's are: a grey hover, and a
-                // click that keeps the menu open (MenuServerRow). The item's
-                // own action is for the keyboard (arrow to it, Return).
+                // A custom row, for a click that keeps the menu open, as the
+                // Sound menu's outputs do (MenuServerRow). The item's own
+                // action is for the keyboard (arrow to it, Return).
                 let row = action(host.displayName, #selector(switchHost))
                 row.representedObject = host.id
-                row.view = MenuServerRow(title: host.displayName,
-                                         mark: MenuHostMark.image(for: host, current: host.id == current)) {
+                let appearance = menu.effectiveAppearance
+                let normal = MenuHostMark.image(for: host, look: host.id == current ? .current : .off,
+                                                appearance: appearance)
+                let lit = host.id == current ? normal
+                    : MenuHostMark.image(for: host, look: .offHighlighted, appearance: appearance)
+                row.view = MenuServerRow(title: host.displayName, marks: (normal, lit)) {
                     [weak self] in self?.pickServer(host.id)
                 }
                 menu.addItem(row)

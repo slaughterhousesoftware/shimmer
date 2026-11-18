@@ -109,6 +109,14 @@ struct HostAvatar: View {
         return Self.mark(isPlayStation: host.isPlayStation, serverName: host.name, kind: kind)
     }
 
+    /// A saved machine's mark, read once (no observation) - for AppKit
+    /// drawing, such as the menu bar menu's Servers rows.
+    static func mark(for host: Host) -> Mark {
+        let kind = HostSystemKind.cached(hostID: host.id)
+            ?? HostSystemKind.resolve(isPlayStation: host.isPlayStation, ttl: nil, serverName: host.name)
+        return mark(isPlayStation: host.isPlayStation, serverName: host.name, kind: kind)
+    }
+
     var body: some View {
         Self.disc(mark, size: size)
         .frame(width: size, height: size)
@@ -155,19 +163,21 @@ struct HostAvatar: View {
     /// not by the artwork's frame: an SF Symbol's frame carries padding, and
     /// the ink's box is what the eye reads, so it lands exactly on the
     /// disc's centre.
-    static func disc(_ mark: Mark, size: CGFloat) -> some View {
+    /// `fill` and `ink` replace the platform's colours - the menu bar's
+    /// Servers rows draw the machines not in use in grey, as an off Focus is.
+    static func disc(_ mark: Mark, size: CGFloat, fill: AnyShapeStyle? = nil, ink: Color? = nil) -> some View {
         let glyph = Glyph(mark)
         let box = glyph.inkBox
-        let ink = glyphFrame(aspect: glyph.aspect * box.width / box.height, size: size, optical: glyph.optical)
-        let frame = CGSize(width: ink.width / box.width, height: ink.height / box.height)
+        let inkSize = glyphFrame(aspect: glyph.aspect * box.width / box.height, size: size, optical: glyph.optical)
+        let frame = CGSize(width: inkSize.width / box.width, height: inkSize.height / box.height)
         return Circle()
-            .fill(glyph.fill)
+            .fill(fill ?? glyph.fill)
             .overlay {
                 glyph.image
                     .resizable()
                     .scaledToFit()
                     .frame(width: frame.width, height: frame.height)
-                    .foregroundStyle(glyph.ink)
+                    .foregroundStyle(ink ?? glyph.ink)
                     .offset(x: (0.5 - box.midX) * frame.width,
                             y: (0.5 - box.midY) * frame.height)
             }
@@ -265,7 +275,7 @@ struct HostAvatar: View {
     private var badge: CGFloat { size * 7 / 36 }
     private var badgeOffset: CGFloat { size * 12.7 / 36 }
 
-    private static func name(of mark: Mark) -> String {
+    static func name(of mark: Mark) -> String {
         switch mark {
         case .playStation: "PlayStation"
         case .icon(let icon): icon.title
