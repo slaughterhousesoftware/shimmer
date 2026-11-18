@@ -43,6 +43,15 @@ public actor StreamSession {
     // Subsystems. VideoDecoder/StreamWindow/InputForwarder are MainActor-bound,
     // so they're lazily created on the main actor in start().
     var videoDecoder: VideoDecoder?
+
+    /// The menu bar's stats line: the network round trip and the bitrate the
+    /// stream runs at. Read-only gauges - nothing here resets the overlay's
+    /// or the telemetry's counting windows.
+    func menuNumbers() -> (rttMs: Double?, mbps: Double?) {
+        guard let decoder = videoDecoder else { return (nil, nil) }
+        let kbps = decoder.negotiatedBitrateKbps
+        return (decoder.telemetryEstimatedRtt()?.rttMs, kbps > 0 ? Double(kbps) / 1000 : nil)
+    }
     let audioDecoder = AudioDecoder()
     var window: StreamWindow?
 

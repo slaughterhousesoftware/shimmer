@@ -378,13 +378,28 @@ final class MenuServerRow: MenuRowView {
         }
     }
 
-    static let height: CGFloat = 32
+    /// The second line under the name, as the AirPods' batteries sit under
+    /// theirs: the server streaming now shows the stream's numbers there
+    /// (MenuServerRow.statsLine), refreshed while the menu is open.
+    var detail: NSAttributedString? {
+        didSet {
+            redrawContent()
+            setAccessibilityValue(detail?.string)
+        }
+    }
 
-    init(title: String, mark: NSImage, hasDisclosure: Bool = false, onPick: @escaping () -> Void) {
+    static let height: CGFloat = 32
+    /// With a second line - the AirPods row's height.
+    static let twoLineHeight: CGFloat = 42
+
+    /// `twoLines`: the row keeps room for a `detail` line (its height is
+    /// fixed when it's made; the line's text can change after).
+    init(title: String, mark: NSImage, hasDisclosure: Bool = false, twoLines: Bool = false,
+         onPick: @escaping () -> Void) {
         self.title = title
         self.mark = mark
         self.hasDisclosure = hasDisclosure
-        super.init(height: Self.height, accessibilityTitle: title, onPick: onPick)
+        super.init(height: twoLines ? Self.twoLineHeight : Self.height, accessibilityTitle: title, onPick: onPick)
         if hasDisclosure { setAccessibilityExpanded(false) }
         sizeToContent()
     }
@@ -394,7 +409,9 @@ final class MenuServerRow: MenuRowView {
     /// Wide enough for the name, so the menu sizes itself around it.
     override var intrinsicContentSize: NSSize {
         let text = (title as NSString).size(withAttributes: Self.titleAttributes).width
-        return NSSize(width: 16 + MenuHostMark.diameter + 8 + text + (hasDisclosure ? 44 : 24), height: Self.height)
+        let line = detail.map { $0.size().width } ?? 0
+        return NSSize(width: 16 + MenuHostMark.diameter + 8 + max(text, line) + (hasDisclosure ? 44 : 24),
+                      height: frame.height)
     }
 
     private static let chevron: NSImage? = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)?
@@ -405,8 +422,16 @@ final class MenuServerRow: MenuRowView {
         let d = MenuHostMark.diameter
         mark.draw(in: NSRect(x: 16, y: ((bounds.height - d) / 2).rounded(), width: d, height: d))
         let size = (title as NSString).size(withAttributes: Self.titleAttributes)
-        (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
-                                 withAttributes: Self.titleAttributes)
+        if let detail, bounds.height >= Self.twoLineHeight {
+            // The name over its line, the pair centred on the row.
+            let lineHeight = detail.size().height, gap: CGFloat = 1
+            let top = ((bounds.height + size.height + gap + lineHeight) / 2).rounded()
+            (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: top - size.height), withAttributes: Self.titleAttributes)
+            detail.draw(at: NSPoint(x: 16 + d + 8, y: top - size.height - gap - lineHeight))
+        } else {
+            (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
+                                     withAttributes: Self.titleAttributes)
+        }
         guard hasDisclosure, let chevron = Self.chevron else { return }
         // The Sound menu's chevron: one glyph, turned about its centre -
         // right when closed, down when open (clockwise, as it opens).
@@ -420,6 +445,31 @@ final class MenuServerRow: MenuRowView {
         turn.concat()
         chevron.draw(in: NSRect(x: -s.width / 2, y: -s.height / 2, width: s.width, height: s.height))
         NSGraphicsContext.restoreGraphicsState()
+    }
+}
+
+extension MenuServerRow {
+    /// The AirPods' battery line, for a stream: a small glyph, its number;
+    /// a small glyph, its number - in the secondary grey.
+    static func statsLine(_ items: [(symbol: String, text: String)]) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: 11)
+        let colour = NSColor.secondaryLabelColor
+        let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium).applying(.init(paletteColors: [colour]))
+        let line = NSMutableAttributedString()
+        for (i, item) in items.enumerated() {
+            if i > 0 { line.append(NSAttributedString(string: "   ", attributes: [.font: font])) }
+            if let image = NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(config) {
+                let attachment = NSTextAttachment()
+                attachment.image = image
+                attachment.bounds = NSRect(x: 0, y: ((font.capHeight - image.size.height) / 2).rounded(),
+                                           width: image.size.width, height: image.size.height)
+                line.append(NSAttributedString(attachment: attachment))
+                line.append(NSAttributedString(string: " ", attributes: [.font: font]))
+            }
+            line.append(NSAttributedString(string: item.text, attributes: [.font: font, .foregroundColor: colour]))
+        }
+        return line
     }
 }
 

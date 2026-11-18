@@ -305,6 +305,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         Diag.info("menu bar menu opened", "MenuBar")
         menuIsOpen = true
         populate(menu)
+        startStatsRefresh()
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -313,6 +314,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         expandedHostID = nil
         serversList?.stopAnimating()
         serversList = nil
+        statsTimer?.invalidate()
+        statsTimer = nil
         applyLabel()
     }
 
@@ -324,6 +327,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// in place (MenuDisclosureList); kept to toggle it and to carry its
     /// motion across a rebuild of the open menu.
     private weak var serversList: MenuDisclosureList?
+
+    /// The streaming server's row, its stats line refreshed once a second
+    /// while the menu is open; the last numbers, so a reopen starts full.
+    private weak var statsRow: MenuServerRow?
+    private var statsTimer: Timer?
+    private var lastStreamNumbers: (rttMs: Double?, mbps: Double?) = (nil, nil)
 
     /// The Servers rows draw their own highlight, and the menu doesn't
     /// redraw a custom row when the highlight leaves it - so the controller
@@ -359,13 +368,26 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         hoveredRow = nil
 
-        // The header: the PC's name over its live status, inert.
-        let title = model.selectedHost?.displayName ?? "Shimmer"
-        let status = model.selectedHost == nil ? "No PC paired" : model.selectedHostStatusLine
-        menu.addItem(hosted(MenuHeaderRow(title: title, status: status)))
-        menu.addItem(.separator())
+        // The top: a Now Playing card for the stream - the app, where, and
+        // its controls (MenuNowPlayingCard; Kevin's pick of five mock-ups).
+        let card = NSMenuItem()
+        card.view = nowPlayingCard()
+        menu.addItem(card)
 
+        // Stream audio, right under the card as the Sound menu's slider sits
+        // under its title - the stream's own level, not the Mac's (quiet
+        // speaker, slider, loud speaker; no number, no mute). Shown whether
+        // or not a stream is live: the level persists for the next one.
+        let volume = NSMenuItem()
+        volume.view = MenuVolumeSlider(level: model.streamVolume) { [weak model] level in
+            model?.setStreamVolume(level)
+        }
+        menu.addItem(volume)
+
+        // A stream's error, under the card's own controls rather than
+        // between the card and its slider.
         if let error = model.nativeStreamError {
+            menu.addItem(.separator())
             menu.addItem(hosted(
                 Text(error)
                     .font(.system(size: 12))
@@ -375,55 +397,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                     .padding(.vertical, 4)
             ))
             menu.addItem(action("Dismiss", #selector(dismissWarning)))
-            menu.addItem(.separator())
-        }
-
-        // A PC wake under way (the spinner is up): the way out of it, first.
-        if let host = model.selectedHost,
-           LunaPower.shared.actionInFlight[host.id] == "on" || model.powerWaitHostID == host.id {
-            menu.addItem(action("Stop Waking \(host.displayName)", #selector(stopWaking)))
-            menu.addItem(.separator())
-        }
-
-        if model.selectedHost != nil {
-            if model.isStreaming {
-                // The rows follow where the stream is: in PiP the way back is
-                // "Exit Picture in Picture"; with the window hidden it is "Back
-                // to X" plus Picture in Picture; with the window in front only
-                // Picture in Picture. A PS5 has no mouse, so no mouse row.
-                if let title = model.liveStreamRowTitle {
-                    let inPiP = model.nativeStreamPictureInPicture
-                    menu.addItem(action(title, #selector(resumeStream),
-                                        image: inPiP ? Self.symbol("pip.exit")
-                                            : glyph(model.heroTargetApp)
-                                                ?? Self.symbol("arrow.up.left.and.arrow.down.right")))
-                }
-                if !model.nativeStreamPictureInPicture {
-                    menu.addItem(action("Picture in Picture", #selector(enterPictureInPicture),
-                                        image: Self.symbol("pip.enter")))
-                }
-                if !model.activeStreamIsPlayStation { menu.addItem(mouseInputRow()) }
-                // End the stream, not Shimmer. A disconnect: the game stays up
-                // on the PC unless Settings › "Quit the game on the PC" is on,
-                // and "Back to X" is not offered again because the session is
-                // gone - the hero row relaunches / resumes it.
-                menu.addItem(action("End Stream", #selector(endStream),
-                                    image: Self.symbol("stop.circle")))
-            } else if model.streamCheckHostID != nil {
-                // Still asking the PC what it runs, before the connect: the
-                // stream is on its way, so the way out, not a second start.
-                menu.addItem(action("End Stream", #selector(endStream),
-                                    image: Self.symbol("stop.circle")))
-            } else {
-                // Named AND iconed off the app this actually launches - the one
-                // you streamed here last, not a fixed "Desktop". If the PC still
-                // has it up from an earlier disconnect, this resumes it.
-                menu.addItem(action(model.heroActionLabel, #selector(streamHero),
-                                    image: glyph(model.heroTargetApp) ?? Self.symbol("play.fill")))
-                menu.addItem(action("\(model.heroActionLabel) in Picture in Picture", #selector(streamHeroInPiP),
-                                    image: Self.symbol("pip.enter")))
-                if !model.activeStreamIsPlayStation { menu.addItem(mouseInputRow()) }
-            }
         }
 
         // The servers, listed the way Control Center lists Focus modes and
@@ -431,7 +404,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // colour for the one in use, grey for the rest. Picking another
         // switches to it - a stream in progress closes and reopens there
         // (AppModel.switchHost). This replaced a "Switch PC" submenu.
-        if model.hosts.count > 1 {
+        // Listed for a single server too: its row carries the stream's
+        // stats and opens its settings.
+        if !model.hosts.isEmpty {
             menu.addItem(.separator())
             menu.addItem(.sectionHeader(title: "Servers"))
             // The one in use: where a switch is headed, else what streams,
@@ -450,9 +425,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 // the AirPods in use in the Sound menu.
                 let inUse = host.id == current && host.id == model.selectedHost?.id
                 if inUse { inUseIndex = index }
-                rows.append(MenuServerRow(title: host.displayName, mark: mark, hasDisclosure: inUse) {
-                    [weak self] in self?.pickServer(host.id)
-                })
+                // The one streaming now shows the stream's numbers under its
+                // name, as the AirPods show their batteries.
+                let streamingHere = model.isStreaming && host.id == model.activeStreamHostID
+                let row = MenuServerRow(title: host.displayName, mark: mark, hasDisclosure: inUse,
+                                        twoLines: streamingHere) { [weak self] in self?.pickServer(host.id) }
+                if streamingHere {
+                    statsRow = row
+                    row.detail = statsLine(rttMs: lastStreamNumbers.rttMs, mbps: lastStreamNumbers.mbps)
+                }
+                rows.append(row)
             }
             let settings = inUseIndex.map { (under: $0, view: streamSettingsWell(for: model.hosts[$0]) as NSView) }
             let expanded = inUseIndex.map { model.hosts[$0].id == expandedHostID } ?? false
@@ -462,19 +444,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             item.view = list
             menu.addItem(item)
         }
-
-        // Stream audio - the stream's own level, not the Mac's: the Sound
-        // menu's slider, copied (quiet speaker, slider, loud speaker; no
-        // number, no mute - silent is the slider at the left). Shown whether
-        // or not a stream is live: the level persists, so it can be set
-        // before the next stream too.
-        menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: "Stream Audio"))
-        let volume = NSMenuItem()
-        volume.view = MenuVolumeSlider(level: model.streamVolume) { [weak model] level in
-            model?.setStreamVolume(level)
-        }
-        menu.addItem(volume)
 
         // Controller battery is shown by the menu-bar icon itself (the battery
         // glyph on the status item), not repeated as a "N% battery" row here.
@@ -496,6 +465,99 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // No "Check for Updates…" here, by request. Sparkle still checks on
         // its own at launch, and the command stays in the app menu.
         menu.addItem(action("Quit Shimmer", #selector(quit), key: "q"))
+    }
+
+    // MARK: - The Now Playing card
+
+    private func nowPlayingCard() -> MenuNowPlayingCard {
+        typealias Control = MenuNowPlayingCard.Control
+        guard let host = model.selectedHost else {
+            return MenuNowPlayingCard(tile: MenuAppTile.image(.shimmer), title: "Shimmer", subtitle: "No PC paired",
+                                      controls: [])
+        }
+        // A button's click: the menu closes, then the command runs - as a
+        // plain item's does, so activation and focus behave the same.
+        func run(_ selector: Selector) -> () -> Void {
+            { [weak self] in
+                guard let self else { return }
+                self.menu.cancelTracking()
+                DispatchQueue.main.async { NSApp.sendAction(selector, to: self, from: nil) }
+            }
+        }
+        let streamHost = model.isStreaming ? (model.hosts.first { $0.id == model.activeStreamHostID } ?? host) : host
+        let app = model.heroTargetApp
+        let title = streamHost.isPlayStation ? "PlayStation 5" : (app?.name ?? model.defaultAppName)
+        let tile = MenuAppTile.image(streamHost.isPlayStation ? .playStation : .app(app))
+        let stop = Control(symbol: "stop.fill", label: "End Stream", action: run(#selector(endStream)))
+
+        if model.isStreaming {
+            let subtitle: String
+            if case .streaming = model.streamPhase {
+                subtitle = "Streaming from \(streamHost.displayName)"
+            } else {
+                subtitle = model.hostStatusLine(for: streamHost.id)
+            }
+            // In PiP the button takes it back to the window; otherwise into PiP.
+            let pip = model.nativeStreamPictureInPicture
+                ? Control(symbol: "pip.exit", label: "Exit Picture in Picture", action: run(#selector(resumeStream)))
+                : Control(symbol: "pip.enter", label: "Picture in Picture", action: run(#selector(enterPictureInPicture)))
+            // The card itself is the way back to a stream out of sight.
+            let back = model.liveStreamRowTitle != nil ? run(#selector(resumeStream)) : nil
+            return MenuNowPlayingCard(tile: tile, title: title, subtitle: subtitle, controls: [pip, stop], onOpen: back)
+        }
+        if model.streamCheckHostID != nil {
+            // Asking the PC what it runs, before the connect: the way out.
+            return MenuNowPlayingCard(tile: tile, title: title, subtitle: "Connecting to \(host.displayName)…",
+                                      controls: [stop])
+        }
+        if LunaPower.shared.actionInFlight[host.id] == "on" || model.powerWaitHostID == host.id {
+            let cancel = Control(symbol: "stop.fill", label: "Stop Waking \(host.displayName)",
+                                 action: run(#selector(stopWaking)))
+            return MenuNowPlayingCard(tile: tile, title: title, subtitle: "Waking \(host.displayName)…",
+                                      controls: [cancel])
+        }
+        let status = model.selectedHostStatusLine
+        let subtitle = status == "Online" ? host.displayName : "\(host.displayName) · \(status)"
+        let label = host.isPlayStation ? "Stream PlayStation 5" : model.heroActionLabel
+        return MenuNowPlayingCard(tile: tile, title: title, subtitle: subtitle, controls: [
+            Control(symbol: "pip.enter", label: "\(label) in Picture in Picture", action: run(#selector(streamHeroInPiP))),
+            Control(symbol: "play.fill", label: label, prominent: true, action: run(#selector(streamHero))),
+        ])
+    }
+
+    /// The streaming server's second line: the stream's size and rate, the
+    /// network's round trip and the bitrate, each with its glyph.
+    private func statsLine(rttMs: Double?, mbps: Double?) -> NSAttributedString {
+        var items: [(symbol: String, text: String)] = []
+        if let shorthand = model.activeStreamShorthand { items.append(("display", shorthand)) }
+        if let rttMs { items.append(("timer", "\(max(1, Int(rttMs.rounded()))) ms")) }
+        if let mbps { items.append(("speedometer", "\(Int(mbps.rounded())) Mbps")) }
+        if items.isEmpty, let id = model.activeStreamHostID {
+            return MenuServerRow.statsLine([("antenna.radiowaves.left.and.right", model.hostStatusLine(for: id))])
+        }
+        return MenuServerRow.statsLine(items)
+    }
+
+    private func startStatsRefresh() {
+        statsTimer?.invalidate()
+        statsTimer = nil
+        guard model.isStreaming else { return }
+        refreshStats()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshStats() }
+        }
+        // The menu's run loop mode while it's open.
+        RunLoop.main.add(timer, forMode: .common)
+        statsTimer = timer
+    }
+
+    private func refreshStats() {
+        Task { [weak self] in
+            guard let self else { return }
+            let numbers = await self.model.liveStreamNumbers()
+            self.lastStreamNumbers = numbers
+            self.statsRow?.detail = self.statsLine(rttMs: numbers.rttMs, mbps: numbers.mbps)
+        }
     }
 
     // MARK: - Actions
@@ -622,17 +684,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if model.isStreaming, model.activeStreamHostID == host.id {
             groups.append(.init(title: nil, view: MenuNoteRow("Changes apply to the next stream.")))
         }
+        // The mouse, live (a PlayStation has none): the menu's old
+        // "Disable Mouse" row, moved here with the card taking the top.
+        if !host.isPlayStation {
+            let model = model
+            groups.append(.init(title: "Mouse", view: MenuSegmentRow(labels: ["On", "Off"],
+                                                                     selected: model.mouseInputDisabled ? 1 : 0,
+                                                                     accessibilityTitle: "Mouse input") {
+                model.mouseInputDisabled = $0 == 1
+            }))
+        }
         return MenuDisclosureWell(groups: groups)
     }
-
-    /// A verb that flips with the state. Listed idle too: the choice persists,
-    /// so it can be set before the next stream as well as during one.
-    private func mouseInputRow() -> NSMenuItem {
-        action(model.mouseInputDisabled ? "Enable Mouse" : "Disable Mouse",
-               #selector(toggleMouseInput), image: Self.symbol("computermouse"))
-    }
-
-    @objc private func toggleMouseInput() { model.mouseInputDisabled.toggle() }
 
     @objc private func showSettingsPage() {
         model.settingsTab = .computers
@@ -697,27 +760,5 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             image.size = NSSize(width: image.size.width * height / image.size.height, height: height)
         }
         return image
-    }
-}
-
-// MARK: - Hosted rows
-
-/// The PC's name in the menu's own 13pt over its status in the 11pt small
-/// size, secondary - Tailscale's header, as measured off it at 2x for
-/// ergodriven-tempo-mac's MenuHeaderRow: regular weight (the size and the
-/// colour do the work), no extra spacing, cap top 9pt below the panel's edge.
-struct MenuHeaderRow: View {
-    let title: String
-    let status: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(.system(size: 13))
-            Text(status).font(.system(size: 11)).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.top, 1)
-        .padding(.bottom, 2)
     }
 }

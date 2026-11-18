@@ -552,3 +552,66 @@ struct MenuDisclosureListTests {
         #expect(rebuilt.frame.height == 216)
     }
 }
+
+/// The menu's top: the Now Playing card (design/menu-bar/top-3.png).
+@MainActor
+struct MenuNowPlayingCardTests {
+    private func card(_ controls: [MenuNowPlayingCard.Control], onOpen: (() -> Void)? = nil) -> MenuNowPlayingCard {
+        MenuNowPlayingCard(tile: MenuAppTile.image(.app(nil)), title: "Steam Big Picture", subtitle: "bazzite",
+                           controls: controls, onOpen: onOpen)
+    }
+
+    private func buttons(_ card: MenuNowPlayingCard) -> [MenuRoundButton] {
+        card.subviews.compactMap { $0 as? MenuRoundButton }.sorted { $0.frame.minX < $1.frame.minX }
+    }
+
+    @Test func theControlsSitRightTheLastOneRightmost() {
+        let c = card([.init(symbol: "pip.enter", label: "PiP") {}, .init(symbol: "play.fill", label: "Stream", prominent: true) {}])
+        let b = buttons(c)
+        #expect(c.frame.height == 72 && c.frame.width >= 307)
+        #expect(b.map { $0.accessibilityLabel() } == ["PiP", "Stream"])
+        // 30 pt buttons 38 pt apart, the right one 26 pt in from the card's
+        // edge (the card is 12 pt in from the row's).
+        #expect(b.allSatisfy { $0.frame.size == NSSize(width: 30, height: 30) })
+        #expect(b[1].frame.midX - b[0].frame.midX == 38)
+        #expect(abs(b[1].frame.midX - (c.bounds.maxX - 12 - 26)) <= 1)
+    }
+
+    @Test func aButtonsClickRunsItsAction() {
+        var ran = 0
+        let c = card([.init(symbol: "stop.fill", label: "End Stream") { ran += 1 }])
+        #expect(buttons(c)[0].accessibilityPerformPress())
+        #expect(ran == 1)
+    }
+
+    @Test func theCardItselfIsAButtonOnlyWithSomewhereToGo() {
+        #expect(card([]).accessibilityRole() == .group)
+        var opened = false
+        let open = card([], onOpen: { opened = true })
+        #expect(open.accessibilityRole() == .button)
+        #expect(open.accessibilityPerformPress() && opened)
+    }
+
+    @Test func tilesAreTheirSizeWithTheMarkCentred() {
+        for kind: MenuAppTile.Kind in [.playStation, .app(nil)] {
+            let image = MenuAppTile.image(kind)
+            #expect(image.size == NSSize(width: 42, height: 42))
+        }
+    }
+}
+
+/// The streaming server's row: two lines, the stream's numbers under its name.
+@MainActor
+struct MenuServerStatsRowTests {
+    @Test func theStreamingServerGetsASecondLine() {
+        let row = MenuServerRow(title: "bazzite", mark: NSImage(size: NSSize(width: 26, height: 26)), twoLines: true) {}
+        #expect(row.frame.height == 42)
+        row.detail = MenuServerRow.statsLine([("display", "1440p120 HDR"), ("timer", "8 ms"), ("speedometer", "45 Mbps")])
+        // Glyphs are attachments; the words read in order.
+        let words = row.detail?.string.replacingOccurrences(of: "\u{FFFC}", with: "")
+            .split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+        #expect(words == "1440p120 HDR 8 ms 45 Mbps")
+        let plain = MenuServerRow(title: "PS5", mark: NSImage(size: NSSize(width: 26, height: 26))) {}
+        #expect(plain.frame.height == 32)
+    }
+}

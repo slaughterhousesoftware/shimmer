@@ -59,6 +59,13 @@ extension AppModel {
         return "Back to \(heroTargetApp?.name ?? defaultAppName)"
     }
 
+    /// The live stream's network round trip and bitrate, for the menu bar's
+    /// stats line; nils when there's no stream or no reading yet.
+    func liveStreamNumbers() async -> (rttMs: Double?, mbps: Double?) {
+        guard let session = nativeSession else { return (nil, nil) }
+        return await session.menuNumbers()
+    }
+
     /// The live stream (or, idle, the selected host) is a PlayStation: no app
     /// library and no mouse.
     var activeStreamIsPlayStation: Bool {
