@@ -201,6 +201,12 @@ public final class StreamWindow {
     /// session uses it to switch the InputForwarder to the window pointer model.
     public var onDisplayModeChanged: (@MainActor (StreamDisplayMode) -> Void)?
 
+    /// The full-screen transition under way is Shimmer's own (Picture in
+    /// Picture leaving or re-entering), not the user's choice to remember.
+    var fullScreenTransitionIsOurs = false
+    /// What waits for the window to leave its Space (StreamWindow+FullScreen).
+    var afterFullScreenExit: (@MainActor () -> Void)?
+
     /// Monotonic stamp for the capture hint's auto-hide, so a re-capture
     /// inside the hint's ~4s life can't be cut short by the previous show's
     /// timer. See StreamWindow+PointerAffordances.swift.

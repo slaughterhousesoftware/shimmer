@@ -415,6 +415,12 @@ final class AppModel {
 
     /// Pop the running stream out into Picture in Picture (menu bar entry
     /// point). No-op when nothing is streaming.
+    public func toggleStreamFullScreen() {
+        Task { [weak self] in
+            await self?.nativeSession?.toggleFullScreen()
+        }
+    }
+
     public func enterPictureInPicture() {
         Task { [weak self] in
             await self?.nativeSession?.enterPictureInPicture()

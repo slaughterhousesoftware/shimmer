@@ -89,6 +89,7 @@ extension StreamWindow {
         window.makeKeyAndOrderFront(nil)
         reengageForeground()
         reassertActivation(attempt: 0)
+        enterRememberedFullScreen()
     }
 
     /// Something asked for the stream window (the menu bar's "Back to"):

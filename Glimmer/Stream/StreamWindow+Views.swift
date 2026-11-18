@@ -59,6 +59,12 @@ final class StreamWindowDelegate: NSObject, NSWindowDelegate {
         return false
     }
 
+    /// AppKit gave up on entering or leaving full screen: no did-notification
+    /// follows, so whatever waited on one must not wait forever.
+    var onFullScreenTransitionFailed: (() -> Void)?
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) { onFullScreenTransitionFailed?() }
+    func windowDidFailToExitFullScreen(_ window: NSWindow) { onFullScreenTransitionFailed?() }
+
     func window(_ window: NSWindow, willUseFullScreenContentSize proposedSize: NSSize) -> NSSize {
         guard coversNotch, let screen = window.screen ?? NSScreen.main else { return proposedSize }
         // `screen.safeAreaInsets.top` is the notch height in points on

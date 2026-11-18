@@ -59,6 +59,8 @@ final class AgentControl: NSObject {
         case showStream = "show-stream"
         /// As the menu bar's End Stream.
         case endStream = "end-stream"
+        /// The stream window into or out of full screen, as the green button.
+        case fullScreen = "full-screen"
         /// params: setting (a `hiddenSettings` name), value = on | off.
         case set
     }
@@ -244,6 +246,13 @@ final class AgentControl: NSObject {
             NSApp.activate()
             model.resumeStreamWindow()
             finish(id: id, name: name, result: "ok")
+        case .fullScreen:
+            guard let model, model.isStreaming else {
+                finish(id: id, name: name, result: "nothing is streaming")
+                return
+            }
+            model.toggleStreamFullScreen()
+            finish(id: id, name: name, result: "ok")
         case .endStream:
             guard let model, model.isStreaming else {
                 finish(id: id, name: name, result: "nothing is streaming")
@@ -396,6 +405,8 @@ final class AgentControl: NSObject {
                                         "manual_address": $0.manualAddress ?? ""] },
             "stream": ["phase": phase,
                        "picture_in_picture": model.nativeStreamPictureInPicture,
+                       "full_screen": NSApp.windows.contains { $0 is KeyableWindow && $0.styleMask.contains(.fullScreen) },
+                       "opens_full_screen": StreamFullScreenMemory.opensFullScreen(),
                        "error": model.nativeStreamError ?? ""],
             "controller": ["connected": model.controllerConnected,
                            "kind": model.menuBarControllerKind ?? "",

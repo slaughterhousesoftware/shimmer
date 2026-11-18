@@ -61,6 +61,8 @@ extension StreamWindow {
         awaitingFirstFrameFadeIn = true
         window.makeKeyAndOrderFront(nil)
         installWindowedLifecycleObservers()
+        // The way the user left the last stream (StreamWindow+FullScreen).
+        enterRememberedFullScreen()
         let size = window.contentRect(forFrameRect: window.frame).size
         log.info(
             "Stream window windowed - content \(size.width, privacy: .public)×\(size.height, privacy: .public) pt")
@@ -200,6 +202,7 @@ extension StreamWindow {
     func installWindowedLifecycleObservers() {
         let nc = NotificationCenter.default
         installDisplayObservers(nc: nc)
+        installFullScreenObservers(nc: nc)
         keyObservers.append(nc.addObserver(
             forName: NSWindow.didMiniaturizeNotification, object: window, queue: .main
         ) { [weak self] _ in

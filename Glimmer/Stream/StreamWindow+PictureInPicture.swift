@@ -72,6 +72,12 @@ extension StreamWindow {
             log.notice("Picture in Picture requested before the first frame - ignored")
             return
         }
+        // A window can't be hidden inside its full-screen Space: step out
+        // first (not the user's choice - the return goes back in), then pop.
+        if isFullScreen, !isBackgrounded {
+            leaveFullScreen { [weak self] in self?.enterPictureInPicture() }
+            return
+        }
         // Switching PCs in PiP: the previous stream's PiP is still up, holding
         // its last frame - take it over in place instead of starting another.
         if adoptHeldPictureInPicture() { return }
@@ -263,7 +269,10 @@ extension StreamWindow {
         // the user to a desktop to show it (measured 2026-11-16 - the
         // "jumps to my other screen" return). An accessory app's window
         // joins the full-screen Space where the user is.
-        let overFullScreen = displayMode == .window && MenuBarController.frontmostAppIsFullScreen()
+        // Not when the stream goes back into full screen itself: it takes its
+        // own Space then, and an auxiliary window could not.
+        let overFullScreen = displayMode == .window && !StreamFullScreenMemory.opensFullScreen()
+            && MenuBarController.frontmostAppIsFullScreen()
         if !overFullScreen { Self.becomeRegularApp() }
         pipReturnInFlight = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
@@ -405,7 +414,11 @@ extension StreamWindow {
         reengageForeground()
         PiPTrace.log("presentReturnedWindow: presented", window)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            MainActor.assumeIsolated { self?.pipReturnInFlight = false }
+            MainActor.assumeIsolated {
+                self?.pipReturnInFlight = false
+                // Back into full screen if that's how the user had it.
+                self?.enterRememberedFullScreen()
+            }
         }
     }
 

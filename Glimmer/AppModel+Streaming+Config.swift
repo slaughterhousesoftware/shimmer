@@ -212,7 +212,7 @@ extension AppModel {
         // the session always takes the borderless cover (see
         // effectiveStreamCoversNotch for the issue this closes).
         cfg.coversNotch = effectiveStreamCoversNotch
-        cfg.displayMode = effectiveDisplayMode
+        cfg.displayMode = .window
         let codecPref = HostCodecPreference.load(for: host.id)
         var formats = codecPref.apply(to: .probedSupported)
         // Don't advertise 10-bit profiles when we're not asking for HDR. The

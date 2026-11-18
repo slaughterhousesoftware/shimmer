@@ -156,6 +156,18 @@ public final class InputForwarder {
     /// consumed, never forwarded to the host.
     public var onPiPHotkey: (@MainActor () -> Void)?
 
+    /// ⌃⌘F / Globe-F in the stream: the session toggles the window's full
+    /// screen. Intercepted like quit/stats so it works with the pointer
+    /// grabbed (the title bar's green button is out of reach then).
+    public var onFullScreenHotkey: (@MainActor () -> Void)?
+
+    /// The Mac's full-screen key: ⌃⌘F, or Globe-F, and nothing else held.
+    nonisolated static func isFullScreenChord(characters: String?, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard characters?.lowercased() == "f" else { return false }
+        let mods = modifiers.intersection([.control, .command, .option, .shift, .function])
+        return mods == [.control, .command] || mods == [.function]
+    }
+
     /// Provider for the Picture-in-Picture chord. See `quitHotkeyProvider` for
     /// why this is a closure rather than a stored chord value.
     public var pipHotkeyProvider: (@MainActor () -> HotkeyChord) = { .defaultPiP }

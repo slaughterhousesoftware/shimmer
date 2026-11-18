@@ -271,9 +271,7 @@ extension AppModel {
 
     /// The mode a session actually gets: the window choice under Custom, full
     /// screen under the panel-native presets (StreamDisplayMode.effective).
-    var effectiveDisplayMode: StreamDisplayMode {
-        StreamDisplayMode.effective(chosen: streamDisplayMode, preset: qualityPreset)
-    }
+    var effectiveDisplayMode: StreamDisplayMode { .window }
 
     /// Arm the menu-bar charm's battery refresh. Called once, from
     /// `startLiveRefresh()` - which is itself a once-per-launch call (it

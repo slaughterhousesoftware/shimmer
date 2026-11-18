@@ -53,6 +53,15 @@ extension InputForwarder: StreamInputViewDelegate {
             return true
         }
 
+        // Full-screen chord (⌃⌘F / Globe-F): the Mac's own, so it toggles the
+        // window rather than reaching the host - consumed like quit/stats.
+        if !event.isARepeat, onFullScreenHotkey != nil,
+           Self.isFullScreenChord(characters: event.charactersIgnoringModifiers, modifiers: mods) {
+            log.info("Full-screen chord - toggling the stream window's full screen")
+            onFullScreenHotkey?()
+            return true
+        }
+
         // Telemetry-bookmark chord (signal 4 - "that felt bad"). CLIENT-ONLY:
         // consumed here and NEVER forwarded to the host, exactly like the
         // quit/stats intercepts above (and the exit-chord interception this

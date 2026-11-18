@@ -301,6 +301,9 @@ extension StreamSession {
         setup.1.onPiPHotkey = { [weak win = setup.0] in
             win?.enterPictureInPicture()
         }
+        setup.1.onFullScreenHotkey = { [weak win = setup.0] in
+            win?.toggleFullScreenByUser()
+        }
         // Bookmark chord (signal 4 - "that felt bad"). Client-only: the chord
         // is consumed in the input path; this just records the marker into the
         // telemetry. `telemetryExporter` is nil unless telemetry is opt-in ON

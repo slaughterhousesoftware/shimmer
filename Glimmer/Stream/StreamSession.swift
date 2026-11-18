@@ -90,6 +90,13 @@ public actor StreamSession {
     /// Pop the running stream out into the system Picture in Picture window
     /// (menu bar / launcher entry point; the in-stream hotkey reaches the
     /// window directly). No-op when not streaming or PiP is already up.
+    /// Full screen in or out, as the user's own choice (the agent's
+    /// `full-screen` command; in the stream ⌃⌘F reaches the window directly).
+    public func toggleFullScreen() async {
+        let win = self.window
+        await MainActor.run { win?.toggleFullScreenByUser() }
+    }
+
     public func enterPictureInPicture() async {
         let win = self.window
         await MainActor.run {

@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0E9ABE44A0336ECEE6D426FC /* StreamWindow+FullScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6AFAA6FEE298E82981E43E7 /* StreamWindow+FullScreen.swift */; };
+		1A3254E6A5D8C9C0B22E555F /* StreamFullScreenMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9727865743B938F1BD927F96 /* StreamFullScreenMemory.swift */; };
+		AAAE3210E97670F02FEC7761 /* StreamFullScreenMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 466158A6033CE682720F82A2 /* StreamFullScreenMemoryTests.swift */; };
 		DDC1CDE70E491714681E04B3 /* PlayStationExtraPlayersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801F05F69A957BD0FBE80966 /* PlayStationExtraPlayersTests.swift */; };
 		C11055896EFA8E092F2C79CB /* DualSensePadSignatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 189A3F19521EA4749F16B793 /* DualSensePadSignatureTests.swift */; };
 		190FFC794092E4334C51C525 /* StreamCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E3DB8EC3703202A18B56EE /* StreamCard.swift */; };
@@ -386,6 +389,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B6AFAA6FEE298E82981E43E7 /* StreamWindow+FullScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Stream/StreamWindow+FullScreen.swift"; sourceTree = "<group>"; };
+		9727865743B938F1BD927F96 /* StreamFullScreenMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/StreamFullScreenMemory.swift; sourceTree = "<group>"; };
+		466158A6033CE682720F82A2 /* StreamFullScreenMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamFullScreenMemoryTests.swift; sourceTree = "<group>"; };
 		801F05F69A957BD0FBE80966 /* PlayStationExtraPlayersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStationExtraPlayersTests.swift; sourceTree = "<group>"; };
 		189A3F19521EA4749F16B793 /* DualSensePadSignatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualSensePadSignatureTests.swift; sourceTree = "<group>"; };
 		79E3DB8EC3703202A18B56EE /* StreamCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamCard.swift; sourceTree = "<group>"; };
@@ -822,6 +828,8 @@
 		A10000031 /* Glimmer */ = {
 			isa = PBXGroup;
 			children = (
+				B6AFAA6FEE298E82981E43E7 /* StreamWindow+FullScreen.swift */,
+				9727865743B938F1BD927F96 /* StreamFullScreenMemory.swift */,
 				79E3DB8EC3703202A18B56EE /* StreamCard.swift */,
 				E1BBB626631BE86AA4DB79F5 /* PiPPanelFitter.swift */,
 				94408D713B1FE163D04B1F2E /* PiPSource.swift */,
@@ -1107,6 +1115,7 @@
 		D2000016 /* GlimmerTests */ = {
 			isa = PBXGroup;
 			children = (
+				466158A6033CE682720F82A2 /* StreamFullScreenMemoryTests.swift */,
 				801F05F69A957BD0FBE80966 /* PlayStationExtraPlayersTests.swift */,
 				189A3F19521EA4749F16B793 /* DualSensePadSignatureTests.swift */,
 				81C7FCF9C52ECB7AF3E2C1D4 /* UnfairLockTests.swift */,
@@ -1310,6 +1319,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0E9ABE44A0336ECEE6D426FC /* StreamWindow+FullScreen.swift in Sources */,
+				1A3254E6A5D8C9C0B22E555F /* StreamFullScreenMemory.swift in Sources */,
 				190FFC794092E4334C51C525 /* StreamCard.swift in Sources */,
 				2E496D812D9F09AA3280EBEF /* PiPPanelFitter.swift in Sources */,
 				A8154BB6086F8BA46726C747 /* PiPSource.swift in Sources */,
@@ -1587,6 +1598,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AAAE3210E97670F02FEC7761 /* StreamFullScreenMemoryTests.swift in Sources */,
 				DDC1CDE70E491714681E04B3 /* PlayStationExtraPlayersTests.swift in Sources */,
 				C11055896EFA8E092F2C79CB /* DualSensePadSignatureTests.swift in Sources */,
 				2944CF1FAAD8CAE494E680FF /* UnfairLockTests.swift in Sources */,

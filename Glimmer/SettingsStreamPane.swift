@@ -105,16 +105,6 @@ struct StreamWindowPane: View {
     var body: some View {
         @Bindable var model = model
         Section {
-            SettingsRow("Show the stream") {
-                SettingsSegmentedControl(selection: $model.streamDisplayMode, options: StreamDisplayMode.allCases.map {
-                    .init(value: $0, title: $0.displayName, symbol: $0.settingsSymbol)
-                })
-            }
-        } header: {
-            FormSectionHeader("Stream")
-        }
-
-        Section {
             // One switch for Game Mode wherever the stream is. Holding it in a
             // window and Picture in Picture takes Xcode's gamepolicyctl
             // (GameModeBoost); without Xcode macOS still turns it on in full
@@ -157,12 +147,3 @@ struct StreamWindowPane: View {
     }
 }
 
-extension StreamDisplayMode {
-    /// The segment's glyph on General's "Show the stream" row.
-    var settingsSymbol: String {
-        switch self {
-        case .fullScreen: return "arrow.up.left.and.arrow.down.right"
-        case .window: return "macwindow"
-        }
-    }
-}
