@@ -370,62 +370,66 @@ struct MenuServerRowTests {
         #expect(abs(grey.r - grey.b) < 12 && grey.a < 40)
     }
 
-    @Test(arguments: [MenuHostMark.Look.current, .off])
-    func thePlayStationMarkIsCentredSidewaysAndLiftedALittle(look: MenuHostMark.Look) {
-        let rep = bitmap(MenuHostMark.image(for: playStation(), look: look, appearance: NSAppearance(named: .aqua)!))
-        let disc = rgb(rep, rep.pixelsWide / 10, rep.pixelsHigh / 2)
-        var minX = Int.max, maxX = -1, minY = Int.max, maxY = -1
-        for y in 0..<rep.pixelsHigh {
-            for x in 0..<rep.pixelsWide {
-                let p = rgb(rep, x, y)
-                // Half-strength ink or more, the way the mark is measured.
-                // (Off, the disc is 8% black and the ink 50%: by alpha.)
-                let inked = look == .off ? p.a > 80
-                    : p.a > 200 && abs(p.r - disc.r) + abs(p.g - disc.g) + abs(p.b - disc.b) > 120
-                guard inked else { continue }
-                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
-            }
-        }
-        // In points, y down.
-        let centre = Double(rep.pixelsWide) / 2
-        let boxX = (Double(minX + maxX + 1) / 2 - centre) / 2, boxY = (Double(minY + maxY + 1) / 2 - centre) / 2
-        // Sideways: on the centre, to the pixel.
-        #expect(abs(boxX) <= 0.25)
-        // Up by its weight's offset, 6.5% of its ~12 pt height (~0.8 pt).
-        #expect(boxY < -0.4 && boxY > -1.3)
-        // About half the disc across (Focus: 13 pt in 26).
-        let width = Double(maxX - minX + 1) / 2
-        #expect(width > 11 && width < 17)
-    }
-
     private func bazzite() -> Glimmer.Host {
         Glimmer.Host(id: "bazzite-row-test", name: "bazzite", customName: nil, localAddress: nil,
                      manualAddress: nil, apps: [], lastConnected: nil, serverCertPEM: nil, appVersion: nil,
                      gfeVersion: nil, macAddress: nil)
     }
 
-    /// Bazzite's logo is a disc with its mark: in use it is that logo as it
-    /// is; off, the same mark at the same size and place, in grey.
-    @Test func bazziteKeepsItsOwnLogo() {
-        let light = NSAppearance(named: .aqua)!
-        let current = bitmap(MenuHostMark.image(for: bazzite(), look: .current, appearance: light))
-        // The logo's gradient, blue at the top left to purple.
-        let rim = rgb(current, current.pixelsWide / 4, current.pixelsHigh * 3 / 4)
-        #expect(rim.b > 150 && rim.g < 100)
+    /// Bazzite in use: its blue-to-purple disc, as in Settings.
+    @Test func bazziteInUseIsOnItsGradient() {
+        let current = bitmap(MenuHostMark.image(for: bazzite(), look: .current, appearance: NSAppearance(named: .aqua)!))
+        let topLeft = rgb(current, current.pixelsWide / 4, current.pixelsHigh / 4)
+        let bottomRight = rgb(current, current.pixelsWide * 3 / 4, current.pixelsHigh * 3 / 4)
+        #expect(topLeft.b > 150 && topLeft.r < 60)
+        #expect(bottomRight.r > topLeft.r + 40)
+    }
 
-        let off = bitmap(MenuHostMark.image(for: bazzite(), look: .off, appearance: light))
+    /// The ink box of a mark on its disc, in points from the disc's centre
+    /// (y down), and its width and height in points.
+    private func inkBox(_ rep: NSBitmapImageRep, look: MenuHostMark.Look) -> (x: Double, y: Double, w: Double, h: Double) {
         var minX = Int.max, maxX = -1, minY = Int.max, maxY = -1
-        for y in 0..<off.pixelsHigh {
-            for x in 0..<off.pixelsWide where rgb(off, x, y).a > 80 {
+        for y in 0..<rep.pixelsHigh {
+            for x in 0..<rep.pixelsWide {
+                let p = rgb(rep, x, y)
+                // Off, the disc is 8% black and the ink 50%: by alpha. In
+                // use, the white mark on the disc's colour.
+                let inked = look == .off ? p.a > 80 : p.a > 200 && min(p.r, p.g, p.b) > 160
+                guard inked else { continue }
                 minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
             }
         }
-        // The press kit's mark: 68% of the disc (342 of 500), on its centre.
-        let width = Double(maxX - minX + 1) / 2
-        #expect(width > 16.5 && width < 19)
-        let centre = Double(off.pixelsWide) / 2
-        #expect(abs(Double(minX + maxX + 1) / 2 - centre) <= 1)
-        #expect(abs(Double(minY + maxY + 1) / 2 - centre) <= 1)
+        let centre = Double(rep.pixelsWide) / 2
+        return ((Double(minX + maxX + 1) / 2 - centre) / 2, (Double(minY + maxY + 1) / 2 - centre) / 2,
+                Double(maxX - minX + 1) / 2, Double(maxY - minY + 1) / 2)
+    }
+
+    /// Every mark sits by its ink box exactly on the disc's centre - no
+    /// optical lift (Kevin judges centring literally) - in every look.
+    @Test(arguments: [MenuHostMark.Look.current, .off])
+    func marksSitOnTheDiscsCentre(look: MenuHostMark.Look) {
+        let light = NSAppearance(named: .aqua)!
+        for host in [playStation(), bazzite()] {
+            let box = inkBox(bitmap(MenuHostMark.image(for: host, look: look, appearance: light)), look: look)
+            #expect(abs(box.x) <= 0.25, "\(host.name) \(look) x \(box.x)")
+            #expect(abs(box.y) <= 0.25, "\(host.name) \(look) y \(box.y)")
+        }
+    }
+
+    /// The sidebar's rule: the same optical area for every mark, so a wide
+    /// PlayStation logo and a square Bazzite mark carry the same weight -
+    /// and the same size whether the machine is in use or not.
+    @Test func marksAreTheSameSizeInUseAndOff() {
+        let light = NSAppearance(named: .aqua)!
+        var sides: [Double] = []
+        for host in [playStation(), bazzite()] {
+            let on = inkBox(bitmap(MenuHostMark.image(for: host, look: .current, appearance: light)), look: .current)
+            let off = inkBox(bitmap(MenuHostMark.image(for: host, look: .off, appearance: light)), look: .off)
+            #expect(abs(on.w - off.w) <= 0.5 && abs(on.h - off.h) <= 0.5, "\(host.name) \(on) \(off)")
+            sides.append((on.w * on.h).squareRoot())
+        }
+        // Geometric means within 15% of each other (the ink nudge is ±10%).
+        #expect(abs(sides[0] - sides[1]) / sides[0] < 0.15, "\(sides)")
     }
 
     @Test func aRowsHighlightGoesWhenThePointerMovesOn() {

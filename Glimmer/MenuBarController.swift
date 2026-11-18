@@ -118,8 +118,10 @@ extension AppModel {
 
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
-    /// Width the hosted rows lay out at; the standard items pad out to match.
-    private static let menuWidth: CGFloat = 250
+    /// The menu's width, and the width the hosted rows lay out at: the
+    /// Focus menu's (307 pt, measured on macOS 27 at 2x). A longer row
+    /// still widens it.
+    private static let menuWidth: CGFloat = 307
 
     private let model: AppModel
     private let item: NSStatusItem
@@ -132,6 +134,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
+        menu.minimumWidth = Self.menuWidth
         item.menu = menu
         observeLabel()
         observeFullScreenApps()
