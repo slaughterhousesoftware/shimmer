@@ -63,6 +63,15 @@ struct HardeningTests {
                                         reachedLiveState: false, canReconnectInPlace: true) == .stop)
     }
 
+    /// A PS5 session has no control-channel health to ask after a wake; it
+    /// used to be ended on every wake. Video that is arriving again says the
+    /// link came through the sleep.
+    @Test func videoArrivingAfterAWakeKeepsAPs5Stream() {
+        #expect(StreamSession.wakeProbeSaysAlive(receiveIdleMs: 12, budgetMs: 750))
+        #expect(!StreamSession.wakeProbeSaysAlive(receiveIdleMs: 900, budgetMs: 750))
+        #expect(!StreamSession.wakeProbeSaysAlive(receiveIdleMs: .infinity, budgetMs: 750))
+    }
+
     /// An unreadable consoles file is kept, not saved over: the next
     /// registration used to write a one-console list on top of it, and every
     /// other console's registration key went with it.

@@ -101,6 +101,12 @@ extension StreamSession {
         }
     }
 
+    /// For a backend with no control-channel health: a frame received within
+    /// the probe's budget arrived after the wake.
+    nonisolated static func wakeProbeSaysAlive(receiveIdleMs: Double, budgetMs: UInt64) -> Bool {
+        receiveIdleMs.isFinite && receiveIdleMs < Double(budgetMs)
+    }
+
     /// Probe verdict: if the link is still silent past the budget (no fresh ACK
     /// since the wake re-anchor), the post-wake pipe is stale - terminate through
     /// the existing reconnect path. Re-check the lifecycle flags first (an episode
@@ -114,6 +120,16 @@ extension StreamSession {
         // that as a stale link too (reconnect is recoverable) rather than silently
         // giving up the probe.
         guard let health = backend.enetHealth() else {
+            // No control-channel health to ask (a PS5 session). Treated as
+            // stale outright, every wake ended a PS5 stream - also after a
+            // few seconds of sleep the link had come through. Ask the video
+            // instead: frames received since the wake mean the link is alive.
+            let receiveIdleMs = (videoDecoder?.secondsSinceLastReceivedFrame() ?? .infinity) * 1000
+            if Self.wakeProbeSaysAlive(receiveIdleMs: receiveIdleMs, budgetMs: budgetMs) {
+                Diag.notice("Wake probe: video is arriving again - the link survived the sleep.", "Stream")
+                return
+            }
+            Diag.notice("Wake probe: no video since the wake - the link is stale.", "Stream")
             await handleHostTerminate(code: Self.deadPeerTerminationCode)
             return
         }
