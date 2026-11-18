@@ -8,13 +8,14 @@
 //  There is no API for this. NSMenu has no inline disclosure, and
 //  ControlCenter.app's binary suggests its menus aren't NSMenus at all but
 //  SwiftUI in custom panels (it names SoundMenuExtraView, ModuleWindow, an
-//  NSPanel subclass, and FlatDisclosureGroupStyle). macOS 27's public
-//  NSStatusItemExpandedInterfaceDelegate would let Shimmer show a panel of
-//  its own instead; staying an NSMenu keeps the system's menu behaviour.
-//  NSMenu does follow a custom item view's frame while it is open, though
-//  ("Changes to the view's frame during tracking are reflected immediately
-//  in the menu", NSMenuItem.h), so the whole list is one item's view, sized
-//  on every display frame by the springs below.
+//  NSPanel subclass, and FlatDisclosureGroupStyle). So the whole list is
+//  one view, sized on every display frame by the springs below, and
+//  whatever shows the menu follows its height: on macOS 27 the menu's own
+//  panel (MenuBarPanel), where a frame costs 0.3 ms and the motion holds
+//  120 Hz; before that an NSMenu, which does follow a custom item view's
+//  frame while it is open ("Changes to the view's frame during tracking
+//  are reflected immediately in the menu", NSMenuItem.h) but pays a window
+//  resize for it every frame.
 //
 //  The motion, measured frame by frame off a 60 fps recording of the Sound
 //  menu on macOS 27 (Kevin's MacBook, 2026-11-18; three opens and three
@@ -66,6 +67,9 @@ final class MenuDisclosureList: NSView {
     private var motion = Motion()
     private var link: CADisplayLink?
     private var lastTick: CFTimeInterval?
+    /// The animation in flight, for the log: the display link's gaps and
+    /// what each frame cost here (the layout it sets off included), in ms.
+    private var pacing: (gaps: [Double], work: [Double]) = ([], [])
 
     override var isFlipped: Bool { true }
 
@@ -81,6 +85,9 @@ final class MenuDisclosureList: NSView {
         let width = max(rows.map(\.frame.width).max() ?? 0, well?.view.frame.width ?? 0)
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: 0))
         autoresizingMask = [.width]
+        // The band is its full height from the first frame; the list's own
+        // height uncovers it.
+        clipsToBounds = true
         if let earlier, earlier.anchor == anchor {
             // Wherever the old one was - it animates on from there.
             motion = earlier.motion
@@ -92,9 +99,6 @@ final class MenuDisclosureList: NSView {
         if let w = self.well { addSubview(w) }
         rows.forEach(addSubview)
         if let anchor, let row = rows[anchor] as? MenuServerRow { row.setAccessibilityExpanded(isExpanded) }
-        // Last in the list, the band ends on the menu's own separator below:
-        // its bottom hairline would double it.
-        (self.well as? MenuDisclosureWell)?.showsBottomEdge = (anchor ?? rows.count) < rows.count - 1
         layoutForMotion()
     }
 
@@ -136,6 +140,24 @@ final class MenuDisclosureList: NSView {
         link?.invalidate()
         link = nil
         lastTick = nil
+        logPacing()
+    }
+
+    /// One line per animation: whether every frame came one refresh after
+    /// the last. (In an NSMenu on a 120 Hz screen they don't - the menu's
+    /// window resize costs most of a frame; see MenuBarPanel.)
+    private func logPacing() {
+        let (gaps, work) = pacing
+        pacing = ([], [])
+        guard gaps.count > 8 else { return }
+        let refresh = 1000 / Double(max(window?.screen?.maximumFramesPerSecond ?? 60, 1))
+        let sortedGaps = gaps.sorted(), sortedWork = work.sorted()
+        let late = gaps.filter { $0 > refresh * 1.5 }.count
+        let summary = String(format: "%d frames at %.0f Hz, %d late; gap median %.1f ms, worst %.1f; "
+                             + "work median %.2f ms, worst %.2f", gaps.count, 1000 / refresh, late,
+                             sortedGaps[sortedGaps.count / 2], sortedGaps.last ?? 0,
+                             sortedWork[sortedWork.count / 2], sortedWork.last ?? 0)
+        Diag.info("disclosure: \(summary)", "MenuBar")
     }
 
     private func startAnimating() {
@@ -151,9 +173,12 @@ final class MenuDisclosureList: NSView {
         let now = link.timestamp
         // The first frame after a click moves by one frame's worth.
         let dt = lastTick.map { min(max(now - $0, 0), 1.0 / 30) } ?? (link.targetTimestamp - now)
+        if let lastTick { pacing.gaps.append((now - lastTick) * 1000) }
         lastTick = now
+        let began = CACurrentMediaTime()
         advance(by: max(dt, 0))
         updateHoverFromPointer()
+        pacing.work.append((CACurrentMediaTime() - began) * 1000)
         if !isAnimating { stopAnimating() }
     }
 
@@ -165,7 +190,9 @@ final class MenuDisclosureList: NSView {
     // MARK: Layout
 
     private var baseHeight: CGFloat { rows.reduce(0) { $0 + $1.frame.height } }
-    private var wellHeight: CGFloat { well?.frame.height ?? 0 }
+    /// What opening adds to the list: the band and the plain glass above
+    /// and below it.
+    private var openExtent: CGFloat { well.map { $0.frame.height + MenuDisclosureWell.gap * 2 } ?? 0 }
 
     private func pixelAligned(_ value: CGFloat) -> CGFloat {
         let scale = window?.backingScaleFactor ?? 2
@@ -182,15 +209,16 @@ final class MenuDisclosureList: NSView {
             y += row.frame.height
             if i == anchor, let well {
                 // The band holds still under its row and fades; the rows
-                // after it slide by the band's height times the spring.
-                well.frame = NSRect(x: 0, y: y, width: bounds.width, height: well.frame.height)
+                // after it slide by its extent times the spring.
+                well.frame = NSRect(x: 0, y: y + MenuDisclosureWell.gap, width: bounds.width,
+                                    height: well.frame.height)
                 well.alphaValue = min(max(content, 0), 1)
                 well.isHidden = !isExpanded && content <= 0.0005
-                y += pixelAligned(well.frame.height * content)
+                y += pixelAligned(openExtent * content)
             }
         }
         if let anchor, let row = rows[anchor] as? MenuServerRow { row.disclosureProgress = content }
-        let height = pixelAligned(baseHeight + wellHeight * CGFloat(max(motion.height, 0)))
+        let height = pixelAligned(baseHeight + openExtent * CGFloat(max(motion.height, 0)))
         if frame.height != height { setFrameSize(NSSize(width: frame.width, height: height)) }
     }
 
@@ -234,47 +262,57 @@ final class MenuDisclosureList: NSView {
     func clearHover() { rows.forEach { $0.isHovered = false } }
 }
 
-/// The band a server opens under it: the Sound menu's AirPods band, measured
-/// at 2x off Kevin's recording (2026-11-18) - full width, ~4.5% darker than
-/// the menu, a 1 pt line at its top and bottom, and between its groups a
-/// line 4.5 pt in from each side (the dark-mode fill isn't measured: a guess
-/// at the same recess). Each group is a header in Control Center's type
+/// The band a server opens under it: the Sound menu's AirPods band,
+/// measured at native 2x on Kevin's MacBook (2026-11-18, dark; the menu bar
+/// pop-up and Control Center's Sound panel lay it out alike). The menu's
+/// full width, with 5 pt of plain glass between it and the rows above and
+/// below (MenuDisclosureList leaves those). Its tint is MenuTintView's: in
+/// the dark it adds light (+21 of 255) rather than darkening, with no line
+/// at its top or bottom; between its groups a 1 pt line 5 pt in from each
+/// side. Each group is a header in Control Center's type
 /// (MenuSectionHeaderRow: 12 pt semibold, secondary grey) over its control.
-/// The spacing is the band's: the first header's baseline 25.25 pt below the
-/// top, a later one's 20.5 pt below its divider; 7.25 pt from a baseline to
-/// its rows; a divider 5.25 pt under a group's last row; the band's bottom
-/// 5 pt under its last.
+/// The spacing is the band's, all on the half-point grid: the first
+/// header's baseline 26.5 pt below the top; 7 pt from a baseline to its
+/// rows; a divider's top 4.5 pt under a group's last row, and the next
+/// header's baseline 21.5 pt under that; the band's bottom 5.5 pt under its
+/// last row. (The light fill, ~4.5% darker, is off Kevin's earlier 60 fps
+/// recording, not a native capture.)
 final class MenuDisclosureWell: NSView {
     struct Group {
         var title: String?
         var view: NSView
     }
 
-    private var dividers: [CGFloat] = []
-
-    /// The line under the band, where rows follow it.
-    var showsBottomEdge = true { didSet { needsDisplay = true } }
+    /// Plain glass above and below the band.
+    static let gap: CGFloat = 5
 
     override var isFlipped: Bool { true }
 
     init(groups: [Group]) {
         super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 0))
         autoresizingMask = [.width]
+        let fill = MenuTintView(frame: bounds)
+        fill.tint = .band
+        fill.autoresizingMask = [.width, .height]
+        addSubview(fill)
         let baseline = MenuSectionHeaderRow.baseline
         var y: CGFloat = 0
         for (i, group) in groups.enumerated() {
             if let title = group.title {
-                let headerTop: CGFloat
+                let titleBaseline: CGFloat
                 if i == 0 {
-                    headerTop = 25.25 - baseline
+                    titleBaseline = 26.5
                 } else {
-                    y += 5.25
-                    dividers.append(y)
-                    headerTop = y + 20.5 - baseline
+                    y += 4.5
+                    let divider = MenuTintView(frame: NSRect(x: 5, y: y, width: frame.width - 10, height: 1))
+                    divider.tint = .bandDivider
+                    divider.autoresizingMask = [.width]
+                    addSubview(divider)
+                    titleBaseline = y + 21.5
                 }
                 // The header's row runs on to where its control starts.
-                let header = MenuSectionHeaderRow(title, height: baseline + 7.25)
-                header.frame = NSRect(x: 0, y: headerTop, width: frame.width, height: baseline + 7.25)
+                let header = MenuSectionHeaderRow(title, height: baseline + 7)
+                header.frame = NSRect(x: 0, y: titleBaseline - baseline, width: frame.width, height: baseline + 7)
                 header.autoresizingMask = [.width]
                 addSubview(header)
                 y = header.frame.maxY
@@ -284,27 +322,8 @@ final class MenuDisclosureWell: NSView {
             addSubview(group.view)
             y += group.view.frame.height
         }
-        setFrameSize(NSSize(width: frame.width, height: y + 5))
+        setFrameSize(NSSize(width: frame.width, height: y + 5.5))
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
-
-    /// Darkens what the menu's glass shows, as the system's band does.
-    override var allowsVibrancy: Bool { true }
-
-    private static let fill = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor.black.withAlphaComponent(0.12) : NSColor.black.withAlphaComponent(0.045)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        Self.fill.setFill()
-        bounds.fill()
-        NSColor.separatorColor.setFill()
-        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
-        if showsBottomEdge { NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill() }
-        for y in dividers {
-            NSRect(x: 4.5, y: y - 0.5, width: bounds.width - 9, height: 1).fill()
-        }
-    }
 }

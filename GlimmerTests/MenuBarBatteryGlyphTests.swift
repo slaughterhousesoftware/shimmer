@@ -487,16 +487,18 @@ struct MenuDisclosureListTests {
         for _ in 0..<Int((seconds * 120).rounded()) { list.advance(by: 1.0 / 120) }
     }
 
-    @Test func collapsedItIsTheRowsExpandedTheBandJoinsUnderItsRow() {
+    // A 120 pt band opens the list by 130: 5 pt of plain glass above the
+    // band and 5 below, as the Sound menu leaves around the AirPods' band.
+    @Test func collapsedItIsTheRowsExpandedTheBandOpensUnderItsRowWithGlassAround() {
         let r = rows(3), w = well()
         let closed = MenuDisclosureList(rows: r, well: (under: 1, view: w), expanded: false)
         #expect(closed.frame.height == 96)
         #expect(w.isHidden)
         let r2 = rows(3), w2 = well()
         let open = MenuDisclosureList(rows: r2, well: (under: 1, view: w2), expanded: true)
-        #expect(open.frame.height == 216)
-        #expect(!w2.isHidden && w2.frame.minY == 64)
-        #expect(r2[2].frame.minY == 184)
+        #expect(open.frame.height == 226)
+        #expect(!w2.isHidden && w2.frame.minY == 69 && w2.frame.height == 120)
+        #expect(r2[2].frame.minY == 194)
         #expect((r2[1] as? MenuServerRow)?.disclosureProgress == 1)
     }
 
@@ -505,13 +507,13 @@ struct MenuDisclosureListTests {
         let list = MenuDisclosureList(rows: r, well: (under: 1, view: w), expanded: false)
         list.setExpanded(true)
         run(list, for: 0.1)
-        let rowsDone = (r[2].frame.minY - 64) / 120
-        let heightDone = (list.frame.height - 96) / 120
+        let rowsDone = (r[2].frame.minY - 64) / 130
+        let heightDone = (list.frame.height - 96) / 130
         #expect(rowsDone > 0.3 && heightDone > 0 && heightDone < rowsDone)
         // The band fades in with the rows, where it will stay.
-        #expect(abs(Double(w.alphaValue) - Double(min(rowsDone, 1))) < 0.05 && w.frame.minY == 64)
+        #expect(abs(Double(w.alphaValue) - Double(min(rowsDone, 1))) < 0.05 && w.frame.minY == 69)
         run(list, for: 2)
-        #expect(list.frame.height == 216 && r[2].frame.minY == 184 && w.alphaValue == 1 && !list.isAnimating)
+        #expect(list.frame.height == 226 && r[2].frame.minY == 194 && w.alphaValue == 1 && !list.isAnimating)
     }
 
     @Test func collapsingTheRowsSlideOverTheFadingBand() {
@@ -519,8 +521,8 @@ struct MenuDisclosureListTests {
         let list = MenuDisclosureList(rows: r, well: (under: 1, view: w), expanded: true)
         list.setExpanded(false)
         run(list, for: 0.1)
-        let rowsLeft = (r[2].frame.minY - 64) / 120
-        let heightLeft = (list.frame.height - 96) / 120
+        let rowsLeft = (r[2].frame.minY - 64) / 130
+        let heightLeft = (list.frame.height - 96) / 130
         #expect(rowsLeft < heightLeft)
         #expect(w.alphaValue > 0 && w.alphaValue < 1)
         // Closing, the band takes no clicks.
@@ -537,7 +539,7 @@ struct MenuDisclosureListTests {
         list.setExpanded(true)
         run(list, for: 0.1)
         let chevron = (r[1] as? MenuServerRow)?.disclosureProgress ?? 0
-        #expect(abs(chevron - (r[2].frame.minY - 64) / 120) < 0.02)
+        #expect(abs(chevron - (r[2].frame.minY - 64) / 130) < 0.02)
     }
 
     @Test func aRebuildMidFlightCarriesTheMotionOn() {
@@ -549,7 +551,23 @@ struct MenuDisclosureListTests {
         #expect(rebuilt.frame.height == list.frame.height)
         #expect(rebuilt.isAnimating)
         run(rebuilt, for: 2)
-        #expect(rebuilt.frame.height == 216)
+        #expect(rebuilt.frame.height == 226)
+    }
+
+    /// The band's own spacing, as measured off the Sound menu: a header's
+    /// baseline 26.5 pt down (21.5 under a divider), 7 pt on to its rows, a
+    /// divider 4.5 pt under them, 5.5 pt of band under the last.
+    @Test func theBandSpacesItsGroupsAsTheSoundMenuDoes() {
+        func control() -> NSView { NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 30)) }
+        let first = control(), second = control()
+        let band = MenuDisclosureWell(groups: [.init(title: "Resolution", view: first), .init(title: "HDR", view: second)])
+        #expect(first.frame.minY == 33.5)
+        let divider = band.subviews.compactMap { $0 as? MenuTintView }.first { $0.tint == .bandDivider }
+        #expect(divider?.frame == NSRect(x: 5, y: 68, width: band.frame.width - 10, height: 1))
+        #expect(second.frame.minY == 68 + 21.5 + 7)
+        #expect(band.frame.height == second.frame.maxY + 5.5)
+        let headers = band.subviews.compactMap { $0 as? MenuSectionHeaderRow }
+        #expect(headers.map { $0.frame.minY + MenuSectionHeaderRow.baseline } == [26.5, 89.5])
     }
 }
 
@@ -612,10 +630,10 @@ struct MenuServerStatsRowTests {
         #expect(row.accessibilityValue() as? String == "1440p120 HDR, 8 ms, 45 Mbps")
     }
 
-    @Test func theGlyphsAreCutToTenPointsOfInk() {
+    @Test func theGlyphsAreCutToTheAirPodsInkHeight() {
         for symbol in ["play.rectangle.fill", "clock.fill", "cellularbars"] {
             let glyph = MenuStatGlyph.image(symbol)
-            #expect(glyph?.size.height == 10)
+            #expect(glyph?.size.height == 9.5)
             #expect((glyph?.size.width ?? 0) > 6 && (glyph?.size.width ?? 99) < 16)
         }
     }

@@ -321,6 +321,9 @@ def main():
     setting.add_argument("setting", choices=["recording", "stats", "keep-awake",
                                              "cmd-keys", "mouse-input"])
     setting.add_argument("value", choices=["on", "off"])
+    menu = commands.add_parser("menu", help="Open or close the menu bar menu, or the server in use's "
+                               "stream settings in it, without the pointer or the keyboard")
+    menu.add_argument("action", choices=["open", "close", "settings"])
     stream = commands.add_parser("test-stream", help="Launch the real client, stream its saved default app, then quit")
     stream.add_argument("--host", required=True, help="Saved host name or address match")
     stream.add_argument("--seconds", type=int, choices=range(3, 61), default=12, metavar="3-60")
@@ -342,6 +345,10 @@ def main():
         result = {"result": state.get("last_command", {}).get("result"),
                   "settings": state.get("settings", {})}
         code = 0 if result["result"] and result["result"].startswith(args.setting) else 1
+    elif args.command == "menu":
+        state = send(args.app, "menu", action=args.action)
+        result = {"result": state.get("last_command", {}).get("result")}
+        code = 0 if result["result"] in ("ok", "settings open", "settings closed") else 1
     elif args.command == "logs":
         result, code = {"entries": log_entries(args.last)}, 0
     else:

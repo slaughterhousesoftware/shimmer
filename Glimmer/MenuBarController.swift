@@ -119,23 +119,35 @@ extension AppModel {
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     /// The menu's width, and the width the hosted rows lay out at: the
-    /// Focus menu's (307 pt, measured on macOS 27 at 2x). A longer row
-    /// still widens it.
-    private static let menuWidth: CGFloat = 307
+    /// Sound menu's (308 pt, measured on macOS 27 at native 2x). A longer
+    /// row still widens it.
+    private static let menuWidth: CGFloat = 308
 
     private let model: AppModel
     private let item: NSStatusItem
     private let menu = NSMenu()
+
+    /// The app's one controller, for `shimmerctl menu` (AgentControl).
+    private(set) static weak var current: MenuBarController?
 
     init(model: AppModel) {
         self.model = model
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.isVisible = false
         super.init()
+        Self.current = self
         menu.delegate = self
         menu.autoenablesItems = false
         menu.minimumWidth = Self.menuWidth
-        item.menu = menu
+        // macOS 27: the menu is shown as Control Center shows its own - a
+        // panel through the status item's expanded-interface session
+        // (MenuBarPanel); the NSMenu only builds the rows. Earlier: the
+        // NSMenu itself.
+        if #available(macOS 27.0, *) {
+            item.expandedInterfaceDelegate = self
+        } else {
+            item.menu = menu
+        }
         observeLabel()
         observeFullScreenApps()
     }
@@ -338,9 +350,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// redraw a custom row when the highlight leaves it - so the controller
     /// tells each row, for the pointer and the arrow keys alike.
     func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        highlight(item?.view)
+    }
+
+    /// The row under the pointer or the keyboard, from the NSMenu or the panel.
+    private func highlight(_ view: NSView?) {
         // The Servers list moves its own band among its rows.
-        if !(item?.view is MenuDisclosureList) { serversList?.clearHover() }
-        let row = item?.view as? MenuRowView
+        if !(view is MenuDisclosureList) { serversList?.clearHover() }
+        let row = view as? MenuRowView
         guard row !== hoveredRow else { return }
         hoveredRow?.isHovered = false
         row?.isHovered = true
@@ -360,6 +377,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.populate(self.menu)
+                if #available(macOS 27.0, *), let panel = self.panel as? MenuBarPanel, panel.isVisible {
+                    panel.reload(items: self.detachedItemViews(), minimumWidth: Self.menuWidth)
+                }
             }
         }
     }
@@ -484,7 +504,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         func run(_ selector: Selector) -> () -> Void {
             { [weak self] in
                 guard let self else { return }
-                self.menu.cancelTracking()
+                self.closeMenu()
                 DispatchQueue.main.async { NSApp.sendAction(selector, to: self, from: nil) }
             }
         }
@@ -713,6 +733,82 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func quit() { NSApp.terminate(nil) }
 
+    // MARK: - The panel (macOS 27)
+
+    /// The panel the menu shows in on macOS 27 (MenuBarPanel), made on
+    /// first open.
+    private var panel: NSPanel?
+
+    /// The built menu's rows, taken off their items for the panel: an
+    /// item keeps setting its view's frame (to the origin) while it holds it.
+    private func detachedItemViews() -> [NSView] {
+        menu.items.compactMap { item in
+            let view = item.view
+            item.view = nil
+            return view
+        }
+    }
+
+    /// Closes the menu, wherever it's showing.
+    private func closeMenu() {
+        if #available(macOS 27.0, *) {
+            if let session = item.expandedInterfaceSession {
+                session.cancel()
+                return
+            }
+            // Opened by `shimmerctl menu`, with no session.
+            if let panel = panel as? MenuBarPanel, panel.isVisible {
+                panel.dismiss(animated: true)
+                menuDidClose(menu)
+                return
+            }
+        }
+        menu.cancelTracking()
+    }
+
+    /// `shimmerctl menu`: the menu opened or closed, or the server in
+    /// use's settings opened or closed in it - with no pointer, and without
+    /// taking the keyboard from whoever is at the Mac. For looking at the
+    /// menu, or recording it, from another machine.
+    func agentMenu(_ action: String) -> String {
+        switch action {
+        case "open":
+            guard !menuIsOpen else { return "already open" }
+            guard item.isVisible, let button = item.button else { return "no menu bar item to open under" }
+            if #available(macOS 27.0, *) {
+                openPanel(under: button, takingKeyboard: false)
+            } else {
+                // An NSMenu tracks until it closes: after the answer.
+                DispatchQueue.main.async { button.performClick(nil) }
+            }
+            return "ok"
+        case "close":
+            guard menuIsOpen else { return "not open" }
+            closeMenu()
+            return "ok"
+        case "settings":
+            guard menuIsOpen, serversList != nil, let host = model.selectedHost else {
+                return "the menu is not open on a server"
+            }
+            pickServer(host.id)
+            return expandedHostID == host.id ? "settings open" : "settings closed"
+        default:
+            return "action must be open, close or settings"
+        }
+    }
+
+    /// A ⌘-shortcut while the panel has the keyboard: the item that carries
+    /// it closes the menu and runs, as in an NSMenu.
+    private func performKeyEquivalent(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+              let key = event.charactersIgnoringModifiers?.lowercased(),
+              let match = menu.items.first(where: { !$0.keyEquivalent.isEmpty && $0.keyEquivalent == key }),
+              let action = match.action else { return false }
+        closeMenu()
+        DispatchQueue.main.async { NSApp.sendAction(action, to: match.target, from: match) }
+        return true
+    }
+
     // MARK: - Item helpers
 
     /// A command row. Drawn by Shimmer (MenuActionRow) so its hover is the
@@ -728,7 +824,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         item.view = MenuActionRow(title: title, shortcut: shortcut) { [weak self, weak item] in
             // A plain item's click: the menu closes, then the action runs.
             guard let item else { return }
-            item.menu?.cancelTracking()
+            self?.closeMenu()
             DispatchQueue.main.async { NSApp.sendAction(selector, to: self, from: item) }
         }
         return item
@@ -780,5 +876,36 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             image.size = NSSize(width: image.size.width * height / image.size.height, height: height)
         }
         return image
+    }
+}
+
+// MARK: - The expanded-interface session (macOS 27)
+
+@available(macOS 27.0, *)
+extension MenuBarController: @MainActor NSStatusItemExpandedInterfaceDelegate {
+    func statusItem(_ statusItem: NSStatusItem, didBegin expandedInterfaceSession: NSStatusItemExpandedInterfaceSession) {
+        guard let button = statusItem.button else { expandedInterfaceSession.cancel(); return }
+        openPanel(under: button, takingKeyboard: true)
+    }
+
+    func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
+        Diag.info("menu bar menu closed (session ended, animated=\(animated))", "MenuBar")
+        (panel as? MenuBarPanel)?.dismiss(animated: animated)
+        menuDidClose(menu)
+    }
+
+    /// Builds the menu and shows it in the panel under the item.
+    fileprivate func openPanel(under button: NSStatusBarButton, takingKeyboard: Bool) {
+        let panel = (self.panel as? MenuBarPanel) ?? MenuBarPanel()
+        self.panel = panel
+        panel.onCancel = { [weak self] why in
+            Diag.info("menu bar menu closing: \(why)", "MenuBar")
+            self?.closeMenu()
+        }
+        panel.onKeyEquivalent = { [weak self] event in self?.performKeyEquivalent(event) ?? false }
+        panel.onHover = { [weak self] view in self?.highlight(view) }
+        menuWillOpen(menu)
+        panel.show(items: detachedItemViews(), minimumWidth: Self.menuWidth, under: button,
+                   takingKeyboard: takingKeyboard)
     }
 }

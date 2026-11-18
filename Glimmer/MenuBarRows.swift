@@ -225,6 +225,86 @@ enum MenuHostMark {
     }
 }
 
+/// A flat tint over the menu's glass, laid down the way Control Center
+/// lays its own: in the dark it adds a fixed amount of light to whatever
+/// the glass shows (a hovered row and the AirPods' opened band both read
+/// +21 of 255 on every backdrop measured - additive, not a white wash,
+/// which would add less over a lighter backdrop); in the light it darkens.
+class MenuTintView: NSView {
+    enum Tint {
+        /// A hovered row.
+        case hover
+        /// The band a server opens under it.
+        case band
+        /// A hairline inside the band.
+        case bandDivider
+        /// A segmented switcher's track, its selected segment (over the
+        /// track) and the hairline between two unselected ones.
+        case segmentTrack, segmentSelected, segmentDivider
+    }
+
+    var tint: Tint = .hover { didSet { needsDisplay = true } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let colour: NSColor
+        switch (tint, dark) {
+        case (.hover, true), (.band, true): colour = NSColor(white: 1, alpha: 21.0 / 255)
+        case (.bandDivider, true): colour = NSColor(white: 1, alpha: 20.0 / 255)
+        case (.hover, false): colour = NSColor(white: 0, alpha: 0.075)
+        case (.band, false): colour = NSColor(white: 0, alpha: 0.045)
+        case (.bandDivider, false): colour = NSColor(white: 0, alpha: 0.10)
+        case (.segmentTrack, true), (.segmentSelected, true): colour = NSColor(white: 1, alpha: 26.0 / 255)
+        case (.segmentDivider, true): colour = NSColor(white: 1, alpha: 0.2)
+        case (.segmentTrack, false): colour = NSColor(white: 0, alpha: 0.07)
+        case (.segmentSelected, false): colour = NSColor(white: 0, alpha: 0.14)
+        case (.segmentDivider, false): colour = NSColor(white: 0, alpha: 0.26)
+        }
+        layer?.backgroundColor = colour.cgColor
+        // Core Animation's additive blend, by its filter name.
+        layer?.compositingFilter = dark ? "plusL" : nil
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    // Never in the way of a click.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// A line of text with its baseline exactly where asked. NSString's
+/// draw(at:) places the line's box, and the baseline lands wherever the
+/// font's metrics and pixel snapping put it (a 12 pt header came out a
+/// point low); Control Center's spacing is measured baseline to baseline.
+enum MenuText {
+    /// `baseline`: the baseline's y in the current view; `flipped`: the view's.
+    static func draw(_ text: String, font: NSFont, colour: NSColor, x: CGFloat, baseline: CGFloat, flipped: Bool) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let string = NSAttributedString(string: text, attributes: [
+            .font: font, NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
+        ])
+        let line = CTLineCreateWithAttributedString(string)
+        context.saveGState()
+        colour.setFill()
+        context.textMatrix = flipped ? CGAffineTransform(scaleX: 1, y: -1) : .identity
+        context.textPosition = CGPoint(x: x, y: baseline)
+        CTLineDraw(line, context)
+        context.restoreGState()
+    }
+}
+
 /// A custom menu row with the hover of Apple's own menu bar menus (Focus,
 /// Sound, Wi-Fi): a soft grey band under the pointer, the text staying as it
 /// is - not the accent-blue bar AppKit gives a plain menu item, which no
@@ -253,14 +333,13 @@ class MenuRowView: NSView {
         }
     }
 
-    /// The hover band, drawn with vibrancy so it darkens whatever the
-    /// menu's glass shows through, as the system's own does.
-    private final class HoverFill: NSView {
-        override var allowsVibrancy: Bool { true }
-        override func draw(_ dirtyRect: NSRect) {
-            let radius: CGFloat = bounds.height >= 30 ? 10 : 7
-            MenuRowView.hoverColour.setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+    /// The hover band: the Sound menu's, measured at native 2x on the
+    /// MacBook (2026-11-18) - the row's full height, 5 pt in from each
+    /// side of the menu, corners 10 pt (7 pt on the short footer rows).
+    private final class HoverFill: MenuTintView {
+        override func layout() {
+            super.layout()
+            layer?.cornerRadius = bounds.height >= 30 ? 10 : 7
         }
     }
 
@@ -268,12 +347,8 @@ class MenuRowView: NSView {
     /// separators start, from either side of the row.
     static let contentInset: CGFloat = 14
 
-    /// The band's grey: ~8% over the menu, as measured (light); a light
-    /// band of the same weight in the dark.
-    static let hoverColour = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor.white.withAlphaComponent(0.10) : NSColor.black.withAlphaComponent(0.075)
-    }
+    /// How far the hover band stops short of the menu's sides.
+    static let hoverInset: CGFloat = 5
 
     init(height: CGFloat, accessibilityTitle: String, onPick: @escaping () -> Void) {
         self.onPick = onPick
@@ -281,7 +356,8 @@ class MenuRowView: NSView {
         autoresizingMask = [.width]
 
         hover.isHidden = true
-        hover.frame = bounds.insetBy(dx: 7, dy: 0)
+        hover.tint = .hover
+        hover.frame = bounds.insetBy(dx: Self.hoverInset, dy: 0)
         hover.autoresizingMask = [.width, .height]
         addSubview(hover)
 
@@ -384,13 +460,13 @@ final class MenuActionRow: MenuRowView {
 /// opens its stream settings under it, and the chevron turns from right to
 /// down with the rows (MenuDisclosureList sets `disclosureProgress`).
 ///
-/// Laid out as the Sound menu's AirPods row, measured at 2x off Kevin's
-/// recording (2026-11-18): a 32 pt row - two lines or one - the 26 pt disc
-/// 14 pt in, the name 8 pt after it; with a second line, the name's
-/// baseline 14.5 pt from the top and the line's 28.5 pt, the line in 11 pt
-/// secondary grey with a solid glyph before each value, its ink 10 pt tall
-/// and centred on the figures, 6 pt from glyph to figure and 10.5 pt from
-/// figure to the next glyph. The chevron's ink 18.5 pt in from the right.
+/// Laid out as the Sound menu's AirPods row, measured at native 2x on
+/// Kevin's MacBook (2026-11-18): a 32 pt row - two lines or one - the 26 pt
+/// disc 14 pt in, the name 8 pt after it; with a second line, the name's
+/// baseline 14 pt from the top and the line's 28 pt, the line in 11 pt
+/// secondary grey with a solid glyph before each value, its ink 9.5 pt tall
+/// and centred on the figures, 6.5 pt from glyph to figure and 10.5 pt from
+/// figure to the next glyph. The chevron's ink 18 pt in from the right.
 final class MenuServerRow: MenuRowView {
     /// One value on the second line: its glyph (an SF Symbol) and text.
     struct Stat: Equatable {
@@ -447,9 +523,7 @@ final class MenuServerRow: MenuRowView {
     // MARK: Drawing
 
     static let statFont = NSFont.systemFont(ofSize: 11)
-    private static var statAttributes: [NSAttributedString.Key: Any] {
-        [.font: statFont, .foregroundColor: NSColor.secondaryLabelColor]
-    }
+
 
     /// A text's ink, from its drawing origin: where the first glyph's ink
     /// starts and how wide it runs.
@@ -460,10 +534,10 @@ final class MenuServerRow: MenuRowView {
     }
 
     var statsWidth: CGFloat {
-        var x: CGFloat = 1
+        var x: CGFloat = 1.5
         for (i, stat) in stats.enumerated() {
             if i > 0 { x += 10.5 }
-            if let symbol = stat.symbol, let glyph = MenuStatGlyph.image(symbol) { x += glyph.size.width + 6 }
+            if let symbol = stat.symbol, let glyph = MenuStatGlyph.image(symbol) { x += glyph.size.width + 6.5 }
             x += Self.ink(of: stat.text).width
         }
         return x
@@ -478,10 +552,10 @@ final class MenuServerRow: MenuRowView {
             (title as NSString).draw(at: NSPoint(x: Self.textX, y: (bounds.height - size.height) / 2),
                                      withAttributes: Self.titleAttributes)
         } else {
-            // Baselines 14.5 and 28.5 pt down from the row's top.
-            (title as NSString).draw(at: NSPoint(x: Self.textX, y: bounds.maxY - 14.5 + font.descender),
-                                     withAttributes: Self.titleAttributes)
-            drawStats(baseline: bounds.maxY - 28.5)
+            // Baselines 14 and 28 pt down from the row's top.
+            MenuText.draw(title, font: font, colour: .labelColor, x: Self.textX, baseline: bounds.maxY - 14,
+                          flipped: false)
+            drawStats(baseline: bounds.maxY - 28)
         }
         if hasDisclosure { drawChevron(in: bounds) }
     }
@@ -491,57 +565,58 @@ final class MenuServerRow: MenuRowView {
         // The glyphs' ink centred on the figures' (their cap height's middle).
         let middle = baseline + font.capHeight / 2
         // The first glyph's ink under the name's first letter.
-        var x = Self.textX + 1
+        var x = Self.textX + 1.5
         for (i, stat) in stats.enumerated() {
             if i > 0 { x += 10.5 }
             if let symbol = stat.symbol, let glyph = MenuStatGlyph.image(symbol) {
                 let s = glyph.size
                 MenuStatGlyph.draw(glyph, in: NSRect(x: x, y: middle - s.height / 2, width: s.width, height: s.height),
                                    colour: .secondaryLabelColor)
-                x += s.width + 6
+                x += s.width + 6.5
             }
             let ink = Self.ink(of: stat.text)
-            (stat.text as NSString).draw(at: NSPoint(x: x - ink.left, y: baseline + font.descender),
-                                         withAttributes: Self.statAttributes)
+            MenuText.draw(stat.text, font: font, colour: .secondaryLabelColor, x: x - ink.left, baseline: baseline,
+                          flipped: false)
             x += ink.width
         }
     }
 
-    private static let chevron: NSImage? = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)?
-        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
-            .applying(.init(paletteColors: [.secondaryLabelColor])))
+    /// The chevron's ink alone, 10 pt tall (6 pt wide), as the Sound menu's.
+    private static let chevron = MenuStatGlyph.image("chevron.right", inkHeight: 10, weight: .medium)
 
     private func drawChevron(in bounds: NSRect) {
         guard let chevron = Self.chevron else { return }
-        // The Sound menu's chevron: one glyph, turned about its centre -
-        // right when closed, down when open (clockwise, as it opens). Its
-        // ink 18.5 pt in from the right and half a point below the row's
-        // middle, as measured.
+        // The Sound menu's chevron, measured at native 2x: one glyph turned
+        // a quarter (clockwise as it opens) about a point 21 pt in from the
+        // right on the row's middle, its ink centred half a point under
+        // that point - so closed it sits half a point low, and open half a
+        // point left.
         let s = chevron.size
-        let centre = NSPoint(x: bounds.maxX - 17.5 - s.width / 2,
-                             y: ((bounds.height - s.height) / 2).rounded() + s.height / 2 - 1)
         NSGraphicsContext.saveGraphicsState()
         let turn = NSAffineTransform()
-        turn.translateX(by: centre.x, yBy: centre.y)
+        turn.translateX(by: bounds.maxX - 21, yBy: bounds.midY)
         turn.rotate(byDegrees: -90 * disclosureProgress)
         turn.concat()
-        chevron.draw(in: NSRect(x: -s.width / 2, y: -s.height / 2, width: s.width, height: s.height))
+        MenuStatGlyph.draw(chevron, in: NSRect(x: -s.width / 2, y: -s.height / 2 - 0.5, width: s.width, height: s.height),
+                           colour: .secondaryLabelColor)
         NSGraphicsContext.restoreGraphicsState()
     }
 }
 
 /// The small solid glyphs of a server's second line, cut to their ink and
-/// sized to the AirPods' (10 pt tall), so every glyph sits exactly where
+/// sized to the AirPods' (9.5 pt tall), so every glyph sits exactly where
 /// the measurements put it whatever padding its symbol carries.
 @MainActor
 enum MenuStatGlyph {
-    static let inkHeight: CGFloat = 10
+    static let inkHeight: CGFloat = 9.5
     private static var cache: [String: NSImage] = [:]
 
-    static func image(_ symbol: String) -> NSImage? {
-        if let cached = cache[symbol] { return cached }
+    static func image(_ symbol: String, inkHeight: CGFloat = MenuStatGlyph.inkHeight,
+                      weight: NSFont.Weight = .regular) -> NSImage? {
+        let key = "\(symbol) \(inkHeight)"
+        if let cached = cache[key] { return cached }
         guard let source = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 80, weight: .regular)),
+                .withSymbolConfiguration(.init(pointSize: 80, weight: weight)),
               let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         let w = cg.width, h = cg.height
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
@@ -560,7 +635,7 @@ enum MenuStatGlyph {
                                                                    height: maxY - minY + 1)) else { return nil }
         let scale = inkHeight / CGFloat(cropped.height)
         let image = NSImage(cgImage: cropped, size: NSSize(width: CGFloat(cropped.width) * scale, height: inkHeight))
-        cache[symbol] = image
+        cache[key] = image
         return image
     }
 
@@ -581,8 +656,9 @@ enum MenuStatGlyph {
 }
 
 /// Control Center's separator: a 1 pt line in the separator grey, 10 pt of
-/// row with the line 5.75 pt down - measured off the Sound menu at 2x
-/// (2026-11-18), where NSMenu's own sits taller and 2 pt further in.
+/// row with the line 5 pt down (on the pixel grid at 2x) - measured off the
+/// Sound menu at native 2x (2026-11-18), where NSMenu's own sits taller and
+/// 2 pt further in.
 final class MenuSeparatorRow: NSView {
     private let inset: CGFloat
 
@@ -597,23 +673,24 @@ final class MenuSeparatorRow: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.separatorColor.setFill()
-        // 5.75 pt from the top, in this unflipped view.
-        NSRect(x: inset, y: bounds.height - 6.25, width: bounds.width - inset * 2, height: 1).fill()
+        // Its top 5 pt down, in this unflipped view.
+        NSRect(x: inset, y: bounds.height - 6, width: bounds.width - inset * 2, height: 1).fill()
     }
 }
 
 /// Control Center's section header ("Output" in the Sound menu): 12 pt
-/// semibold in the secondary grey, 14 pt in, its baseline 16.75 pt down a
-/// 23 pt row - measured at 2x (2026-11-18). NSMenu's own is 11 pt in the
-/// tertiary grey, 2 pt further in.
+/// semibold in the secondary grey, 14 pt in, its baseline 16.5 pt down a
+/// 23 pt row - measured at native 2x (2026-11-18). NSMenu's own is 11 pt in
+/// the tertiary grey, 2 pt further in.
 final class MenuSectionHeaderRow: NSView {
     private let title: String
 
-    static let attributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor,
-    ]
+    static let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
     static let height: CGFloat = 23
-    static let baseline: CGFloat = 16.75
+    /// The title's baseline, from the row's top: 21.5 pt under the
+    /// separator line's top and 9.5 pt above the first disc, as "Output"
+    /// sits.
+    static let baseline: CGFloat = 16.5
 
     init(_ title: String, height: CGFloat = MenuSectionHeaderRow.height) {
         self.title = title
@@ -629,48 +706,157 @@ final class MenuSectionHeaderRow: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        let font = Self.attributes[.font] as? NSFont ?? .systemFont(ofSize: 12)
-        // draw(at:) takes the top of the line box in a flipped view.
-        (title as NSString).draw(at: NSPoint(x: MenuRowView.contentInset, y: Self.baseline - font.ascender),
-                                 withAttributes: Self.attributes)
+        MenuText.draw(title, font: Self.font, colour: .secondaryLabelColor, x: MenuRowView.contentInset,
+                      baseline: Self.baseline, flipped: true)
     }
 }
 
-// MARK: - The server in use's stream settings (its chevron)
-
-/// A setting as a row of text segments - the stock segmented control, full
-/// width, lined up with the section titles. Text, not icons: a choice of
-/// resolutions has no honest pictures, so the Sound menu's iconned
-/// Listening Mode list doesn't carry over (Kevin picked this, 2026-11-18,
-/// from real mock-ups in design/menu-bar).
+/// A setting as a row of text segments, full width, lined up with the
+/// section titles. Text, not icons: a choice of resolutions has no honest
+/// pictures, so the Sound menu's iconned Listening Mode list doesn't carry
+/// over (Kevin picked this, 2026-11-18, from real mock-ups in
+/// design/menu-bar).
+///
+/// Drawn here, in the flat look he picked: the stock segmented control
+/// looked that way only inside an NSMenu, whose window is never the key
+/// one - in the menu's panel (MenuBarPanel, which takes the keyboard) it
+/// fills its selected segment with the accent colour. Measured off the
+/// stock control at native 2x: a 24 pt track with 6 pt corners, tinted one
+/// step over the band; the selected segment one step more; a short hairline
+/// between two segments neither of which is selected.
 final class MenuSegmentRow: NSView {
-    private let control: NSSegmentedControl
+    private let labels: [String]
     private let onChange: (Int) -> Void
+    private(set) var selected: Int?
+
+    private let track = MenuTintView()
+    private let pill = MenuTintView()
+    private var dividers: [MenuTintView] = []
+    private let text = Labels()
+    private var segments: [Segment] = []
+
+    private static let trackHeight: CGFloat = 24
+    private static let radius: CGFloat = 6
+    static let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
 
     init(labels: [String], selected: Int?, accessibilityTitle: String, onChange: @escaping (Int) -> Void) {
-        control = NSSegmentedControl(labels: labels, trackingMode: .selectOne, target: nil, action: nil)
+        self.labels = labels
+        self.selected = selected.flatMap { labels.indices.contains($0) ? $0 : nil }
         self.onChange = onChange
         super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 30))
         autoresizingMask = [.width]
-        control.selectedSegment = selected ?? -1
-        control.segmentDistribution = .fillEqually
-        control.target = self
-        control.action = #selector(changed)
-        control.setAccessibilityLabel(accessibilityTitle)
-        control.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(control)
-        NSLayoutConstraint.activate([
-            control.leadingAnchor.constraint(equalTo: leadingAnchor, constant: MenuRowView.contentInset),
-            control.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuRowView.contentInset),
-            control.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
+        track.tint = .segmentTrack
+        pill.tint = .segmentSelected
+        for view in [track, pill] {
+            view.layer?.cornerRadius = Self.radius
+            addSubview(view)
+        }
+        for _ in labels.dropFirst() {
+            let divider = MenuTintView()
+            divider.tint = .segmentDivider
+            dividers.append(divider)
+            addSubview(divider)
+        }
+        text.row = self
+        addSubview(text)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.radioGroup)
+        setAccessibilityLabel(accessibilityTitle)
+        segments = labels.indices.map { Segment(row: self, index: $0) }
+        setAccessibilityChildren(segments)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    @objc private func changed() {
-        guard control.selectedSegment >= 0 else { return }
-        onChange(control.selectedSegment)
+    override var isFlipped: Bool { true }
+
+    private var trackFrame: NSRect {
+        NSRect(x: MenuRowView.contentInset, y: ((bounds.height - Self.trackHeight) / 2).rounded(),
+               width: bounds.width - MenuRowView.contentInset * 2, height: Self.trackHeight)
+    }
+
+    fileprivate func segmentFrame(_ index: Int) -> NSRect {
+        let t = trackFrame, count = CGFloat(labels.count)
+        let left = (t.minX + t.width * CGFloat(index) / count).rounded()
+        let right = (t.minX + t.width * CGFloat(index + 1) / count).rounded()
+        return NSRect(x: left, y: t.minY, width: right - left, height: t.height)
+    }
+
+    override func layout() {
+        super.layout()
+        track.frame = trackFrame
+        text.frame = bounds
+        pill.isHidden = selected == nil
+        if let selected { pill.frame = segmentFrame(selected) }
+        for (i, divider) in dividers.enumerated() {
+            // Between segments i and i+1, unless one of them is selected.
+            divider.isHidden = selected == i || selected == i + 1
+            divider.frame = NSRect(x: segmentFrame(i).maxX - 0.5, y: trackFrame.midY - 7, width: 1, height: 14)
+        }
+        text.needsDisplay = true
+    }
+
+    private func select(_ index: Int) {
+        guard labels.indices.contains(index), index != selected else { return }
+        selected = index
+        needsLayout = true
+        onChange(index)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard trackFrame.contains(point) else { return }
+        if let index = labels.indices.first(where: { segmentFrame($0).contains(point) }) { select(index) }
+    }
+
+    /// The titles, over the tints.
+    private final class Labels: NSView {
+        weak var row: MenuSegmentRow?
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func draw(_ dirtyRect: NSRect) {
+            guard let row else { return }
+            let font = MenuSegmentRow.font
+            for (i, label) in row.labels.enumerated() {
+                let frame = row.segmentFrame(i)
+                let width = (label as NSString).size(withAttributes: [.font: font]).width
+                // The capitals centred on the track.
+                MenuText.draw(label, font: font, colour: .labelColor, x: (frame.midX - width / 2).rounded(),
+                              baseline: (frame.midY + font.capHeight / 2).rounded(), flipped: true)
+            }
+        }
+    }
+
+    /// One segment, for VoiceOver: a radio button in the row's group.
+    private final class Segment: NSAccessibilityElement {
+        private weak var row: MenuSegmentRow?
+        private let index: Int
+
+        init(row: MenuSegmentRow, index: Int) {
+            self.row = row
+            self.index = index
+            super.init()
+            setAccessibilityRole(.radioButton)
+            setAccessibilityLabel(row.labels[index])
+            setAccessibilityParent(row)
+        }
+
+        override func accessibilityValue() -> Any? { row?.selected == index ? 1 : 0 }
+
+        override func accessibilityFrame() -> NSRect {
+            guard let row, let window = row.window else { return .zero }
+            return window.convertToScreen(row.convert(row.segmentFrame(index), to: nil))
+        }
+
+        override func accessibilityPerformPress() -> Bool {
+            row?.select(index)
+            return row != nil
+        }
     }
 }
 

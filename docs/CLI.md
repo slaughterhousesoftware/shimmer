@@ -57,6 +57,18 @@ scripts/shimmerctl set mouse-input off # ignore the Mac's mouse (also in the men
 Each takes `on` or `off`, applies from the next stream (mouse-input at once), and shows in `state` under `settings`. Recording is off unless
 turned on; turn it off again when you're done.
 
+## The menu bar menu, without a pointer
+
+```sh
+scripts/shimmerctl menu open       # the menu, under its menu bar item
+scripts/shimmerctl menu settings   # open or close the server in use's stream settings in it
+scripts/shimmerctl menu close
+```
+
+For looking at the menu or recording it from another machine: nothing moves
+the pointer, and the menu doesn't take the keyboard from whoever is at the Mac
+(a click anywhere still closes it, as it does a menu).
+
 How it works: the app keeps `~/Library/Application Support/Shimmer/agent-state.json`
 current (owner-only, local, no network listener), and runs a fixed allowlist of
 harmless commands that shimmerctl drops as files into the owner-only

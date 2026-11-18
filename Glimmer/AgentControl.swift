@@ -63,6 +63,10 @@ final class AgentControl: NSObject {
         case fullScreen = "full-screen"
         /// params: setting (a `hiddenSettings` name), value = on | off.
         case set
+        /// params: action = open | close | settings (the server in use's
+        /// stream settings, opened or closed in the open menu). The menu
+        /// bar menu without a pointer or the keyboard.
+        case menu
     }
 
     /// The settings with no switch in the window, by the name `shimmerctl set`
@@ -257,6 +261,9 @@ final class AgentControl: NSObject {
             }
             model.endStream()
             finish(id: id, name: name, result: "ok")
+        case .menu:
+            let action = query.first { $0.name == "action" }?.value ?? ""
+            finish(id: id, name: name, result: MenuBarController.current?.agentMenu(action) ?? "no menu bar item")
         case .set:
             guard let model else { return }
             let setting = query.first { $0.name == "setting" }?.value ?? ""
