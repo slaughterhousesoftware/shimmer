@@ -55,6 +55,12 @@ enum Enet {
     /// that sends resends can time them.
     static let retransmitFloorMs: UInt32 = 30
 
+    /// What a bare ENet DISCONNECT from the host is reported as: Sunshine's
+    /// own "the server closed the session" termination code
+    /// (SERVER_TERMINATED_CLOSED), which the session treats as recoverable
+    /// after asking the PC what it is running now.
+    static let peerClosedSessionCode = Int32(bitPattern: 0x8003_0023)
+
     static let flagAcknowledge: UInt8 = 1 << 7
     static let flagUnsequenced: UInt8 = 1 << 6
     static let commandMask: UInt8 = 0x0F

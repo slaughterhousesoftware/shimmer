@@ -74,7 +74,11 @@ extension StreamSession {
         teardownWakeObservers()
 
         log.info("Stream session stopping (cause=\(cause.label, privacy: .public))")
-        Diag.notice("Stream session stopping (cause: \(cause.label))", "Stream")
+        // The control channel's resend count rides along: on a clean link it
+        // stays at or near zero, so a number here is a first hint of loss (or
+        // of a resend timer set too tight) without turning telemetry on.
+        Diag.notice("Stream session stopping (cause: \(cause.label)) - "
+            + "\(TelemetryCounters.shared.enetRetransmitTotal.value) control resends this session", "Stream")
 
         // SESSION RECEIPT (the one engine-side hook): capture the end-of-
         // session numbers BEFORE anything tears down - estimatedRtt() reads

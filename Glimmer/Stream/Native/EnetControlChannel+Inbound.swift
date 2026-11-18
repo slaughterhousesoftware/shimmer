@@ -100,11 +100,15 @@ extension EnetControlChannel {
             // The PC dropped the peer without a TERMINATION message. Left at
             // the flag alone, the control loop simply ended and the stream sat
             // frozen until the frame watchdog gave up ten seconds later. Say
-            // so now (once - a TERMINATION that came first already did), as
-            // the dead-peer cutoff would: on a live stream that reconnects.
+            // so now, once (a TERMINATION that came first already did).
+            // Reported as the PC closing the session - not as our own
+            // dead-peer cutoff: the PC did this, perhaps because another
+            // device took the session, so the session asks what the PC is
+            // running before it reconnects and takes it back
+            // (handleHostTerminate's probe, which a dead-peer code skips).
             // Mid-handshake nobody is listening yet and the handshake itself
             // fails on the flag.
-            if first { onTerminated?(-1) }
+            if first { onTerminated?(Enet.peerClosedSessionCode) }
             return false
         case Enet.cmdPing:
             // PING has no body; ACK if requested.

@@ -191,6 +191,15 @@ struct EnetInboundOrderTests {
         #expect(header & Enet.headerFlagSentTime == 0)
     }
 
+    /// A bare DISCONNECT is the PC's doing: it is reported with the code the
+    /// session probes the PC about, not the dead-peer code it reconnects on
+    /// without asking.
+    @Test func aBareDisconnectIsReportedAsThePcClosingTheSession() {
+        #expect(Enet.peerClosedSessionCode == StreamSession.recoverableTerminationCode)
+        #expect(Enet.peerClosedSessionCode != StreamSession.deadPeerTerminationCode)
+        #expect(StreamSession.recoverableTerminationCodes.contains(Enet.peerClosedSessionCode))
+    }
+
     /// One datagram carrying SEND_RELIABLE on `channel`.
     static func reliable(relSeq: UInt16, _ payload: [UInt8], channel: UInt8 = Enet.ctrlChannelGeneric) -> [UInt8] {
         var w = ByteWriter()
