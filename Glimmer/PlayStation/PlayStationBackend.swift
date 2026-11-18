@@ -1389,15 +1389,15 @@ final class PlayStationBackend: StreamingBackend, @unchecked Sendable {
 
     // MARK: More players
 
-    /// Pad 0 (else the first pad to send input) is player 1. Any other pad asks the console
-    /// to seat the next configured account as player 2-4; until it answers (or
-    /// if it refuses) that pad stays merged into player 1, as before.
     /// Is controller `num` in the active mask? (The keyboard pad never is; it
     /// is not a GameStream controller.)
     static func isAttached(_ num: UInt8, activeMask: UInt16) -> Bool {
         num == keyboardPadNumber || (num < 16 && activeMask & (1 << UInt16(num)) != 0)
     }
 
+    /// Pad 0 (else the first pad to send input) is player 1. Any other pad asks the console
+    /// to seat the next configured account as player 2-4; until it answers (or
+    /// if it refuses) that pad stays merged into player 1, as before.
     private func askForSeat(_ num: UInt8) {
         guard num != Self.keyboardPadNumber else { return }
         let request = lock.withLock { () -> (seat: UInt8, account: UInt64)? in
