@@ -33,3 +33,21 @@ enum StreamFullScreenMemory {
         !closing && !ours
     }
 }
+
+/// A full-screen transition under way.
+enum FullScreenTransition: Sendable { case entering, exiting }
+
+/// How a closing stream gets out of full screen. The window must never be
+/// ordered out while it is in a Space or on its way into one - that leaves an
+/// empty full-screen Space behind (a connect cancelled mid-animation did).
+enum FullScreenClose {
+    enum Step: Equatable { case fade, leaveThenFade, waitToEnterThenLeave, waitForExitThenFade }
+
+    static func step(inFullScreen: Bool, transition: FullScreenTransition?) -> Step {
+        switch transition {
+        case .entering: return .waitToEnterThenLeave
+        case .exiting: return .waitForExitThenFade
+        case nil: return inFullScreen ? .leaveThenFade : .fade
+        }
+    }
+}

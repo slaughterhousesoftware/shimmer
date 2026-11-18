@@ -19,6 +19,16 @@ extension StreamWindow {
     /// swept by `close()` before its own exit can be mistaken for the user's).
     func installFullScreenObservers(nc: NotificationCenter) {
         keyObservers.append(nc.addObserver(
+            forName: NSWindow.willEnterFullScreenNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fullScreenTransition = .entering }
+        })
+        keyObservers.append(nc.addObserver(
+            forName: NSWindow.willExitFullScreenNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fullScreenTransition = .exiting }
+        })
+        keyObservers.append(nc.addObserver(
             forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.fullScreenTransitionEnded(entered: true) }
@@ -31,12 +41,14 @@ extension StreamWindow {
         streamDelegate.onFullScreenTransitionFailed = { [weak self] in
             guard let self else { return }
             self.log.error("Full-screen transition failed")
+            self.fullScreenTransition = nil
             self.fullScreenTransitionIsOurs = false
             self.runAfterFullScreenExit()
         }
     }
 
     private func fullScreenTransitionEnded(entered: Bool) {
+        fullScreenTransition = nil
         guard !didClose else { return }
         let ours = fullScreenTransitionIsOurs
         fullScreenTransitionIsOurs = false
@@ -47,10 +59,10 @@ extension StreamWindow {
         Diag.info("Stream window \(entered ? "entered" : "left") full screen (\(ours ? "Shimmer" : "the user")) - "
             + "frame \(Int(frame.width))x\(Int(frame.height)) at y \(Int(frame.minY)), screen \(Int(screen.width))x\(Int(screen.height)), "
             + "safe top \(Int(window.screen?.safeAreaInsets.top ?? 0))", "Stream")
-        if !entered, runAfterFullScreenExit() { return }
         // A Space transition resets the responder chain: hand the input view
         // back its first-responder seat, as after the window first came up.
         onDidBecomeReadyForInput?()
+        if !entered { runAfterFullScreenExit() }
     }
 
     /// Run (and clear) what was waiting for the window to leave its Space.
@@ -67,6 +79,7 @@ extension StreamWindow {
     /// the observers above as the user's choice.
     func toggleFullScreenByUser() {
         guard !didClose, !isBackgrounded, window.collectionBehavior.contains(.fullScreenPrimary) else { return }
+        fullScreenTransition = isFullScreen ? .exiting : .entering
         window.toggleFullScreen(nil)
     }
 
@@ -81,6 +94,7 @@ extension StreamWindow {
             return
         }
         fullScreenTransitionIsOurs = true
+        fullScreenTransition = .entering
         window.toggleFullScreen(nil)
     }
 
@@ -91,6 +105,59 @@ extension StreamWindow {
         guard afterFullScreenExit == nil else { return }   // already on the way out
         afterFullScreenExit = then
         fullScreenTransitionIsOurs = true
+        fullScreenTransition = .exiting
         window.toggleFullScreen(nil)
+    }
+
+    // MARK: - Closing
+
+    /// Get out of full screen for a close, then `finish`: never order the
+    /// window out inside a Space or on its way into one (FullScreenClose).
+    /// The observers are close()'s own - the window's were swept already, so
+    /// nothing here is remembered as the user's choice. A 3 s backstop
+    /// finishes anyway if AppKit never reports back. Holds `self` strongly
+    /// until it finishes: the session lets go of the window as it closes,
+    /// and the exit and fade must still run.
+    func leaveFullScreenForClose(then finish: @escaping @MainActor () -> Void) {
+        let step = FullScreenClose.step(inFullScreen: isFullScreen, transition: fullScreenTransition)
+        guard step != .fade else { finish(); return }
+        log.info("Closing from full screen (\(String(describing: step), privacy: .public))")
+        var finished = false
+        let done: @MainActor (String) -> Void = { why in
+            guard !finished else { return }
+            finished = true
+            self.log.info("Closing from full screen: \(why, privacy: .public)")
+            self.removeCloseFullScreenObservers()
+            self.streamDelegate.onFullScreenTransitionFailed = nil
+            finish()
+        }
+        let nc = NotificationCenter.default
+        closeFullScreenObservers.append(nc.addObserver(
+            forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main
+        ) { _ in
+            // Next turn: AppKit ignores a toggle from inside its own
+            // did-enter callback.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self.log.info("Closing from full screen: arrived, leaving")
+                    self.window.toggleFullScreen(nil)
+                }
+            }
+        })
+        closeFullScreenObservers.append(nc.addObserver(
+            forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { done("left") }
+        })
+        streamDelegate.onFullScreenTransitionFailed = { done("transition failed") }
+        if step == .leaveThenFade { window.toggleFullScreen(nil) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            MainActor.assumeIsolated { done("timed out") }
+        }
+    }
+
+    private func removeCloseFullScreenObservers() {
+        for token in closeFullScreenObservers { NotificationCenter.default.removeObserver(token) }
+        closeFullScreenObservers.removeAll()
     }
 }

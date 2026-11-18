@@ -69,3 +69,26 @@ struct FullScreenChordTests {
         #expect(!InputForwarder.isFullScreenChord(characters: nil, modifiers: [.control, .command]))
     }
 }
+
+/// Closing a stream must never leave its window behind in a full-screen
+/// Space - even when the close lands mid-animation (a connect cancelled
+/// while the window is still going full screen).
+struct FullScreenCloseTests {
+    @Test func aWindowJustFades() {
+        #expect(FullScreenClose.step(inFullScreen: false, transition: nil) == .fade)
+    }
+
+    @Test func aSettledFullScreenLeavesFirst() {
+        #expect(FullScreenClose.step(inFullScreen: true, transition: nil) == .leaveThenFade)
+    }
+
+    @Test func midEntryWaitsToArriveThenLeaves() {
+        #expect(FullScreenClose.step(inFullScreen: false, transition: .entering) == .waitToEnterThenLeave)
+        #expect(FullScreenClose.step(inFullScreen: true, transition: .entering) == .waitToEnterThenLeave)
+    }
+
+    @Test func midExitWaitsForIt() {
+        #expect(FullScreenClose.step(inFullScreen: true, transition: .exiting) == .waitForExitThenFade)
+        #expect(FullScreenClose.step(inFullScreen: false, transition: .exiting) == .waitForExitThenFade)
+    }
+}

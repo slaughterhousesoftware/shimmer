@@ -402,7 +402,8 @@ final class AgentControl: NSObject {
                                         "manual_address": $0.manualAddress ?? ""] },
             "stream": ["phase": phase,
                        "picture_in_picture": model.nativeStreamPictureInPicture,
-                       "full_screen": NSApp.windows.contains { $0 is KeyableWindow && $0.styleMask.contains(.fullScreen) },
+                       "full_screen": NSApp.windows.contains {
+                           $0 is KeyableWindow && $0.isVisible && $0.styleMask.contains(.fullScreen) },
                        "opens_full_screen": StreamFullScreenMemory.opensFullScreen(),
                        "error": model.nativeStreamError ?? ""],
             "controller": ["connected": model.controllerConnected,

@@ -91,21 +91,19 @@ extension StreamWindow {
         // the next session's window can claim it (StreamWindow+Windowed).
         finishWindowedFrameAutosave()
 
-        // 3. Leave a full-screen Space. The observers are gone already, so
-        //    this exit is never remembered as the user choosing a window.
-        //    `toggleFullScreen` animates; the orderOut below still lands
-        //    because AppKit queues it after the Space animation.
-        if window.styleMask.contains(.fullScreen) {
-            window.toggleFullScreen(nil)
-        }
-
-        // 4. Drop first responder, fade out, orderOut. Fading instead of a
-        //    hard orderOut gives the user a 250ms acknowledgement that the
-        //    stream ended - without the fade the window snaps off and the
-        //    launcher snaps in, which reads as a crash. Apple's first-party
-        //    fullscreen surfaces (Apple TV's playback window, QuickTime's
-        //    presentation mode) all fade on exit.
+        // 3. Out of full screen first - waiting for an entry still animating
+        //    (a connect cancelled the moment the window came up) - and only
+        //    then fade and order out. The window's observers are gone, so this
+        //    exit is never remembered as the user choosing a window.
         window.makeFirstResponder(nil)
+        // Strong: the session drops the window as it closes (see the fade).
+        leaveFullScreenForClose { self.fadeOutAndFinishClose() }
+    }
+
+    /// 4. Fade out, orderOut. Fading instead of a hard orderOut gives the user
+    ///    a 250ms acknowledgement that the stream ended - without the fade the
+    ///    window snaps off and the launcher snaps in, which reads as a crash.
+    private func fadeOutAndFinishClose() {
         let win = window
 
         // Under Reduce Motion, snap instead of the 250ms opacity ramp - same

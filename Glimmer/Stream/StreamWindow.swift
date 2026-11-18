@@ -139,6 +139,11 @@ public final class StreamWindow {
     var fullScreenTransitionIsOurs = false
     /// What waits for the window to leave its Space (StreamWindow+FullScreen).
     var afterFullScreenExit: (@MainActor () -> Void)?
+    /// A full-screen transition under way (set when one is asked for and by
+    /// AppKit's will- notifications, cleared by the did- ones).
+    var fullScreenTransition: FullScreenTransition?
+    /// close()'s own enter/exit observers, while it walks out of a Space.
+    var closeFullScreenObservers: [NSObjectProtocol] = []
 
     /// Monotonic stamp for the capture hint's auto-hide, so a re-capture
     /// inside the hint's ~4s life can't be cut short by the previous show's
