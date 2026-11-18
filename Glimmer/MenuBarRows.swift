@@ -112,3 +112,65 @@ enum MenuHostMark {
         return image
     }
 }
+
+/// A server in the Servers list, drawn and behaving like a Sound menu output
+/// (measured on macOS 27): its round mark, its name, a soft grey rounded
+/// highlight under the pointer instead of the accent-blue bar, and a click
+/// that acts without closing the menu.
+final class MenuServerRow: NSView {
+    private let title: String
+    private let mark: NSImage
+    private let onPick: () -> Void
+
+    static let height: CGFloat = 32
+
+    init(title: String, mark: NSImage, onPick: @escaping () -> Void) {
+        self.title = title
+        self.mark = mark
+        self.onPick = onPick
+        super.init(frame: .zero)
+        // The menu sizes itself to its widest row; the view then stretches.
+        setFrameSize(intrinsicContentSize)
+        autoresizingMask = [.width]
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(title)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Wide enough for the name, so the menu sizes itself around it.
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 16 + MenuHostMark.diameter + 8 + titleSize.width + 24, height: Self.height)
+    }
+
+    private var titleAttributes: [NSAttributedString.Key: Any] {
+        [.font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.labelColor]
+    }
+
+    private var titleSize: NSSize { (title as NSString).size(withAttributes: titleAttributes) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // The Sound menu's hover: a grey capsule-cornered band 5 pt in from
+        // each edge; the text and the disc keep their colours.
+        if enclosingMenuItem?.isHighlighted == true {
+            NSColor.quaternaryLabelColor.setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 5, dy: 0), xRadius: 8, yRadius: 8).fill()
+        }
+        let d = MenuHostMark.diameter
+        mark.draw(in: NSRect(x: 16, y: (bounds.height - d) / 2, width: d, height: d))
+        let size = titleSize
+        (title as NSString).draw(at: NSPoint(x: 16 + d + 8, y: (bounds.height - size.height) / 2),
+                                 withAttributes: titleAttributes)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        onPick()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onPick()
+        return true
+    }
+}

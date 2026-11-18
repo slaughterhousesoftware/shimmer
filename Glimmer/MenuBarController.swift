@@ -223,13 +223,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // its half-second grace (updateSpinner) before the icon goes, so a
         // gap between two steps doesn't make it blink out and back.
         let holdingSpinner = presentation == nil && spinner.isRunning
-        let visible = presentation != nil || holdingSpinner
+        // Its own menu is open (a pick in Servers can leave nothing to show):
+        // the icon stays until the menu closes, or the menu would vanish.
+        let holdingForMenu = presentation == nil && menuIsOpen && item.isVisible
+        let visible = presentation != nil || holdingSpinner || holdingForMenu
         // Establish the Dock fallback before an idle status item disappears.
         AppDelegate.refreshActivationPolicy()
         if item.isVisible != visible { item.isVisible = visible }
         guard visible, let button = item.button else { return }
         guard let presentation else {
-            updateSpinner(false, in: button)
+            if holdingSpinner { updateSpinner(false, in: button) }
             return
         }
         button.setAccessibilityLabel("Shimmer")
@@ -297,6 +300,31 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // bypass the app's event stream, so they can't be observed directly).
         AgentControl.shared.menuBarEvent("open")
         Diag.info("menu bar menu opened", "MenuBar")
+        menuIsOpen = true
+        populate(menu)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menuIsOpen = false
+        applyLabel()
+    }
+
+    private var menuIsOpen = false
+
+    /// Rebuild the menu while it stays open - after a pick in the Servers
+    /// list, which (like the Sound menu's outputs) leaves the menu up: the
+    /// header, the Stream rows and the blue disc all follow the new server.
+    /// Run in event-tracking mode, the run loop's mode while a menu is open.
+    private func rebuildOpenMenu() {
+        RunLoop.main.perform(inModes: [.eventTracking, .default]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.populate(self.menu)
+            }
+        }
+    }
+
+    private func populate(_ menu: NSMenu) {
         menu.removeAllItems()
 
         // The header: the PC's name over its live status, inert.
@@ -367,13 +395,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if model.hosts.count > 1 {
             menu.addItem(.separator())
             menu.addItem(.sectionHeader(title: "Servers"))
-            let current = model.isStreaming ? model.activeStreamHostID : model.selectedHost?.id
+            // The one in use: where a switch is headed, else what streams,
+            // else the selection - so the disc moves the moment you pick.
+            let current = model.pendingHostSwitch?.hostID
+                ?? (model.isStreaming ? model.activeStreamHostID : model.selectedHost?.id)
             for host in model.hosts {
-                let row = action(host.displayName, #selector(switchHost),
-                                 image: MenuHostMark.image(for: host, current: host.id == current))
+                // A custom row, as the Sound menu's are: a grey hover, and a
+                // click that keeps the menu open (MenuServerRow). The item's
+                // own action is for the keyboard (arrow to it, Return).
+                let row = action(host.displayName, #selector(switchHost))
                 row.representedObject = host.id
-                // macOS 27 hides menu images unless asked; these are the point.
-                if #available(macOS 27, *) { row.preferredImageVisibility = .visible }
+                row.view = MenuServerRow(title: host.displayName,
+                                         mark: MenuHostMark.image(for: host, current: host.id == current)) {
+                    [weak self] in self?.pickServer(host.id)
+                }
                 menu.addItem(row)
             }
         }
@@ -463,6 +498,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         guard let id = sender.representedObject as? String,
               let host = model.hosts.first(where: { $0.id == id }) else { return }
         model.switchHost(to: host)
+    }
+
+    /// A click in the Servers list: switch, and keep the menu open on the
+    /// new server, the way picking a Sound output does.
+    private func pickServer(_ id: String) {
+        guard let host = model.hosts.first(where: { $0.id == id }) else { return }
+        let current = model.pendingHostSwitch?.hostID
+            ?? (model.isStreaming ? model.activeStreamHostID : model.selectedHost?.id)
+        if host.id != current { model.switchHost(to: host) }
+        rebuildOpenMenu()
     }
 
     /// A verb that flips with the state. Listed idle too: the choice persists,
