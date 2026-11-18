@@ -358,9 +358,21 @@ enum ControlTransport {
         }
         var length: Int?
         for line in head.split(separator: "\r\n") where line.lowercased().hasPrefix("content-length:") {
-            length = Int(line.split(separator: ":")[1].trimmingCharacters(in: .whitespaces))
+            // "Content-Length:" with nothing after the colon splits into ONE
+            // piece (empty pieces are dropped), so indexing the second trapped
+            // the app on whatever answered the port. No value, or one that is
+            // not a non-negative number, is no usable header.
+            let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2,
+                  let value = Int(parts[1].trimmingCharacters(in: .whitespaces)), value >= 0 else { continue }
+            length = value
         }
         return length
+    }
+
+    /// Test seam for `contentLengthHeader` (host-supplied bytes).
+    static func contentLengthForTesting(in headerBytes: Data) throws -> Int? {
+        try contentLengthHeader(in: headerBytes)
     }
 
     // MARK: - HTTP/1.1 response parse

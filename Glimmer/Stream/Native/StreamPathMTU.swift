@@ -124,6 +124,8 @@ final class RttSampler: @unchecked Sendable {
     private static let intervalMs: UInt32 = 60
     /// Hard cap so a pathologically slow launch can't sample forever.
     private static let maxSamples = 40
+    /// Probes tried in all, successful or not (about 10 s of them).
+    private static let maxAttempts = 160
 
     /// Starts sampling immediately - there is no useful window between
     /// construction and the first sample, and the loop captures self WEAKLY, so
@@ -136,19 +138,33 @@ final class RttSampler: @unchecked Sendable {
     }
 
     private func start() {
+        let host = self.host, port = self.port
         queue.async { [weak self] in
-            guard let self else { return }
-            while true {
-                lock.lock()
-                let done = stopped || samples.count >= Self.maxSamples
-                lock.unlock()
+            // `self` is taken per iteration, never held across the probe or
+            // the sleep: bound once outside the loop (as it was) the sampler
+            // kept itself alive, and one whose owner had thrown away - a
+            // launch that failed - went on opening a TCP connection to the
+            // PC every 60 ms until the app quit. An attempt cap ends it even
+            // when no probe ever succeeds.
+            var attempts = 0
+            while attempts < Self.maxAttempts {
+                attempts += 1
+                let done: Bool = {
+                    guard let sampler = self else { return true }
+                    sampler.lock.lock(); defer { sampler.lock.unlock() }
+                    return sampler.stopped || sampler.samples.count >= Self.maxSamples
+                }()
                 if done { return }
                 if let sample = StreamPathMTU.measureOneRttMs(host: host, port: port) {
-                    lock.lock(); samples.append(sample); lock.unlock()
+                    self?.record(sample)
                 }
                 usleep(Self.intervalMs * 1000)
             }
         }
+    }
+
+    private func record(_ sample: Double) {
+        lock.lock(); samples.append(sample); lock.unlock()
     }
 
     /// Stop sampling and return the distribution gathered so far (nil if the

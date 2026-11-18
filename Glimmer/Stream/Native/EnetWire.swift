@@ -31,6 +31,30 @@ enum Enet {
     static let cmdThrottleConfigure: UInt8 = 11
     static let cmdSendUnreliableFragment: UInt8 = 12
 
+    /// Milliseconds from `earlier` to `now` on the channel's wrapping 32-bit
+    /// clock, never negative. `now` is often read just before the lock that
+    /// guards `earlier`: a stamp taken in between is a millisecond AHEAD of
+    /// it, and a plain wrapping subtraction turns that into 49 days - which
+    /// read as a dead peer and ended a healthy stream.
+    static func elapsedMs(now: UInt32, since earlier: UInt32) -> UInt32 {
+        let delta = Int32(bitPattern: now &- earlier)
+        return delta > 0 ? UInt32(delta) : 0
+    }
+
+    /// When a reliable command is resent: one retransmit timeout after it was
+    /// last sent, doubling with each resend (capped), as
+    /// enet_protocol_check_timeouts does. `attempts` counts sends, starting
+    /// at 1 - shifting by it made the FIRST resend wait two timeouts.
+    static func retransmitTimeoutMs(baseMs: UInt32, attempts: Int) -> UInt32 {
+        baseMs * UInt32(1 << min(max(attempts - 1, 0), 4))
+    }
+
+    /// Floor of the retransmit timeout once the link's RTT is known. Below
+    /// one round trip a resend would race the ACK already on its way; this
+    /// is about two control-loop ticks, which is also as fine as the loop
+    /// that sends resends can time them.
+    static let retransmitFloorMs: UInt32 = 30
+
     static let flagAcknowledge: UInt8 = 1 << 7
     static let flagUnsequenced: UInt8 = 1 << 6
     static let commandMask: UInt8 = 0x0F

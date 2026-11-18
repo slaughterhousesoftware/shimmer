@@ -124,6 +124,8 @@ final class VideoDepacketizer {
     private var firstPacketPresentationTimeUs: UInt64 = 0
     private var firstPacketRtpTimestamp: UInt32 = 0
     private var nalChain = Data()
+    /// The most one frame's packets may add up to.
+    static let maxFrameBytes = 64 * 1024 * 1024
 
     // Diagnostics latches.
     private var loggedFirstFrame = false
@@ -250,6 +252,14 @@ final class VideoDepacketizer {
             waitingForIdrFrame = false
             waitingForNextSuccessfulFrame = false
         }
+        // A frame that never ends would grow this until memory ran out: no
+        // real frame comes near the cap (4K at the highest bitrate offered is
+        // a few megabytes for a keyframe).
+        guard nalChain.count + payload.count <= Self.maxFrameBytes else {
+            Diag.error("NativeVideo frame \(frameIndex) passed \(Self.maxFrameBytes) bytes - dropping it", Self.cat)
+            dropCorruptFrame(frameIndex)
+            return
+        }
         // The one copy of the packet's bytes: from the queue's datagram into the frame.
         payload.withUnsafeBytes { nalChain.append(contentsOf: $0) }
 
@@ -276,7 +286,9 @@ final class VideoDepacketizer {
     private func beginFrame(pkt: CompletedPacket, frameIndex: UInt32) {
         // Make sure this is the next consecutive frame (c:805-826).
         if Self.isBefore32(nextFrameNumber, frameIndex) {
-            Diag.warn("NativeVideo network dropped frames \(nextFrameNumber)..\(frameIndex - 1)", Self.cat)
+            // &-: a frame index of 0 after a huge one (wrap, or a forged
+            // datagram - video is plain UDP) must not trap the app in a log line.
+            Diag.warn("NativeVideo network dropped frames \(nextFrameNumber)..\(frameIndex &- 1)", Self.cat)
             nextFrameNumber = frameIndex
             // C:821 - wait for the next complete frame before re-requesting
             // recovery (network-recovery approximation).

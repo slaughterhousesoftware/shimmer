@@ -68,8 +68,8 @@ extension EnetControlChannel {
         // A shorter window would kill a recoverable blip - moonlight rides those
         // out by retransmitting, never self-terminating early, and so do we.
         let health = withState { () -> AckHealth in
-            let sinceAck = now &- lastAckRecvMs
-            let oldest = sentReliable.map { now &- $0.firstSentAtMs }.max() ?? 0
+            let sinceAck = Enet.elapsedMs(now: now, since: lastAckRecvMs)
+            let oldest = sentReliable.map { Enet.elapsedMs(now: now, since: $0.firstSentAtMs) }.max() ?? 0
             return AckHealth(sinceLastAck: sinceAck, unackedCount: sentReliable.count,
                              oldestUnackedMs: oldest, rttMs: roundTripTime,
                              haveRtt: hasRttSample)
@@ -260,7 +260,7 @@ extension EnetControlChannel {
         let rtoBaseMs: UInt32
         if hasRttSample {
             let base = roundTripTime + 4 * rttVariance
-            rtoBaseMs = UInt32(min(max(base, 60), 1000))
+            rtoBaseMs = UInt32(min(max(base, Double(Enet.retransmitFloorMs)), 1000))
         } else {
             rtoBaseMs = Enet.defaultRoundTripTimeMs
         }
@@ -271,8 +271,8 @@ extension EnetControlChannel {
         // backstop is runControlLoop's ackSilenceDeadMs (= ENet's 10s peer timeout),
         // which is what lets a brief blip self-heal once UDP flows again.
         for i in sentReliable.indices {
-            let timeout = rtoBaseMs * UInt32(1 << min(sentReliable[i].attempts, 4))
-            if now &- sentReliable[i].sentAtMs >= timeout {
+            let timeout = Enet.retransmitTimeoutMs(baseMs: rtoBaseMs, attempts: sentReliable[i].attempts)
+            if Enet.elapsedMs(now: now, since: sentReliable[i].sentAtMs) >= timeout {
                 resends.append(sentReliable[i].commandBytes)
                 sentReliable[i].sentAtMs = now
                 sentReliable[i].attempts += 1

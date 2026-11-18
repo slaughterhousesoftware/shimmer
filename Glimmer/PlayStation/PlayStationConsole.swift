@@ -115,8 +115,22 @@ final class PlayStationStore {
         do {
             consoles = try Self.decoder.decode([PlayStationConsole].self, from: data)
         } catch {
-            Diag.error("PlayStation consoles file unreadable: \(error.localizedDescription)", "PlayStation")
+            // Keep it. The list is empty now, and the next registration would
+            // have saved a one-console file over this one - every other
+            // console's registration key gone with it. Moved aside, it can be
+            // repaired or read by a build that understands it.
+            let aside = Self.asideURL(for: url)
+            let moved = (try? FileManager.default.moveItem(at: url, to: aside)) != nil
+            Diag.error("PlayStation consoles file unreadable (\(error.localizedDescription)) - "
+                + (moved ? "kept as \(aside.lastPathComponent)" : "could not move it aside"), "PlayStation")
         }
+    }
+
+    /// Where an unreadable store is kept: beside the original, stamped.
+    static func asideURL(for file: URL, now: Date = Date()) -> URL {
+        let stamp = Int(now.timeIntervalSince1970)
+        return file.deletingLastPathComponent()
+            .appendingPathComponent("\(file.deletingPathExtension().lastPathComponent).unreadable-\(stamp).json")
     }
 
     private func save() {

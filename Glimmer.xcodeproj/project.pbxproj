@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7E46E25C437CDFFCFAB15A9B /* HardeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4E5C7ED3749AE451F39DEE /* HardeningTests.swift */; };
 		E50DEC4062C40BFCD1FE0131 /* ModifierKeyTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F907552A74D8683EB289BD0E /* ModifierKeyTrackerTests.swift */; };
 		D61D45E62D822F3CAA0707DE /* ModifierKeyTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19153614454965A008DA1EA8 /* ModifierKeyTracker.swift */; };
 		2A767384FF0E8141F168BB92 /* StreamFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938817B191C4FC3E8209E9C1 /* StreamFailureTests.swift */; };
@@ -393,6 +394,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		6E4E5C7ED3749AE451F39DEE /* HardeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HardeningTests.swift; sourceTree = "<group>"; };
 		F907552A74D8683EB289BD0E /* ModifierKeyTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModifierKeyTrackerTests.swift; sourceTree = "<group>"; };
 		19153614454965A008DA1EA8 /* ModifierKeyTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stream/ModifierKeyTracker.swift; sourceTree = "<group>"; };
 		938817B191C4FC3E8209E9C1 /* StreamFailureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamFailureTests.swift; sourceTree = "<group>"; };
@@ -1124,6 +1126,7 @@
 		D2000016 /* GlimmerTests */ = {
 			isa = PBXGroup;
 			children = (
+				6E4E5C7ED3749AE451F39DEE /* HardeningTests.swift */,
 				F907552A74D8683EB289BD0E /* ModifierKeyTrackerTests.swift */,
 				938817B191C4FC3E8209E9C1 /* StreamFailureTests.swift */,
 				F4AF526C81BE398020CD8666 /* HostSwitchTests.swift */,
@@ -1611,6 +1614,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E46E25C437CDFFCFAB15A9B /* HardeningTests.swift in Sources */,
 				E50DEC4062C40BFCD1FE0131 /* ModifierKeyTrackerTests.swift in Sources */,
 				2A767384FF0E8141F168BB92 /* StreamFailureTests.swift in Sources */,
 				5D5607A40F1452059ED7508E /* HostSwitchTests.swift in Sources */,

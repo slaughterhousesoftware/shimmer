@@ -343,8 +343,8 @@ final class EnetControlChannel: @unchecked Sendable {
     func health() -> (sentReliable: Int, oldestUnackedMs: UInt32, sinceLastAckMs: UInt32) {
         let now = serviceTimeMs
         return withState {
-            let oldest = sentReliable.map { now &- $0.firstSentAtMs }.max() ?? 0
-            return (sentReliable.count, oldest, now &- lastAckRecvMs)
+            let oldest = sentReliable.map { Enet.elapsedMs(now: now, since: $0.firstSentAtMs) }.max() ?? 0
+            return (sentReliable.count, oldest, Enet.elapsedMs(now: now, since: lastAckRecvMs))
         }
     }
 
