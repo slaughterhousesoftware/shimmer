@@ -325,38 +325,58 @@ extension HostAvatar {
 @MainActor enum InkMeasure {
     private static var cache: [String: (optical: CGFloat, inkBox: CGRect)] = [:]
 
-    /// Measures a mark once (by `key`): draws it into a 256-pixel square, finds its
-    /// ink's bounding box (for `inkBox`), and the share of that box that
-    /// is ink (for `optical`).
+    /// Measures a mark once (by `key`); see `scan`.
     static func measure(_ image: NSImage?, key: String) -> (optical: CGFloat, inkBox: CGRect) {
-        let whole = CGRect(x: 0, y: 0, width: 1, height: 1)
         if let cached = cache[key] { return cached }
+        guard let image else { return (1, CGRect(x: 0, y: 0, width: 1, height: 1)) }
+        let result = scan(image)
+        cache[key] = result
+        return result
+    }
+
+    /// Draws the mark into a 256-pixel RGBA bitmap and reads its alpha bytes
+    /// directly: the ink's bounding box (`inkBox`, as fractions of the
+    /// artwork, y down) and the share of that box that is ink (`optical`, a
+    /// size nudge of at most ±10%). Reading pixel by pixel through
+    /// NSBitmapImageRep took ~100 ms of a first visit to Servers or
+    /// Controller; this takes well under a millisecond.
+    static func scan(_ image: NSImage) -> (optical: CGFloat, inkBox: CGRect) {
+        let whole = CGRect(x: 0, y: 0, width: 1, height: 1)
         let side = 256
-        guard let image, image.size.width > 0, image.size.height > 0, let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
-            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-            bytesPerRow: 0, bitsPerPixel: 0) else { return (1, whole) }
+        guard image.size.width > 0, image.size.height > 0,
+              // RGBA, not alpha-only: an SF Symbol draws nothing into an
+              // alpha-only context.
+              let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8,
+                                      bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = context.data else { return (1, whole) }
         let scale = min(CGFloat(side) / image.size.width, CGFloat(side) / image.size.height)
         let drawn = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
         image.draw(in: NSRect(origin: .zero, size: drawn))
         NSGraphicsContext.restoreGraphicsState()
+        // Rows run down from the top in memory; the drawing sits at the
+        // bitmap's bottom-left.
+        let bytes = data.bindMemory(to: UInt8.self, capacity: side * side * 4)
         var inked = 0, minX = side, maxX = -1, minY = side, maxY = -1
-        for y in 0..<side { for x in 0..<side where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5 {
-            inked += 1
-            minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
-        } }
+        for y in 0..<side {
+            let row = bytes + y * side * 4 + 3
+            for x in 0..<side where row[x * 4] > 127 {
+                inked += 1
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+            }
+        }
         guard inked > 0 else { return (1, whole) }
         let boxW = CGFloat(maxX - minX + 1), boxH = CGFloat(maxY - minY + 1)
         let coverage = CGFloat(inked) / (boxW * boxH)
         let nudge = min(1.1, max(0.9, pow(0.55 / coverage, 0.2)))
-        // The drawing sits at the bitmap's bottom-left; colorAt's rows
-        // run down from the top.
         let top = CGFloat(side) - drawn.height
         let box = CGRect(x: CGFloat(minX) / drawn.width, y: (CGFloat(minY) - top) / drawn.height,
                          width: boxW / drawn.width, height: boxH / drawn.height)
-        cache[key] = (nudge, box)
         return (nudge, box)
     }
 }
