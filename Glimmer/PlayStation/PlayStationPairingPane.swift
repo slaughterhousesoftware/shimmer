@@ -51,11 +51,6 @@ struct PlayStationPairingPane: View {
                         PCConnectionErrorBanner(message: error)
                             .multilineTextAlignment(.leading)
                     }
-                    if let cancel {
-                        Button("Cancel", action: cancel)
-                            .keyboardShortcut(.cancelAction)
-                            .disabled(isPairing)
-                    }
                 }
                 .font(.system(size: 13))
                 .multilineTextAlignment(.center)
@@ -65,6 +60,20 @@ struct PlayStationPairingPane: View {
                 .frame(minHeight: geometry.size.height)
             }
             .scrollBounceBehavior(.basedOnSize)
+        }
+        // Which account the console is paired to, out of the way at the
+        // foot of the pane (it sat between Pair and Cancel).
+        .safeAreaInset(edge: .bottom) {
+            if let onlineID = account?.onlineID {
+                HStack(spacing: 4) {
+                    Text("Signed in as \(onlineID).").foregroundStyle(.secondary)
+                    Button("Use Another Account") { account = nil }
+                        .buttonStyle(.link)
+                        .disabled(isPairing)
+                }
+                .font(.system(size: 11))
+                .padding(.bottom, 14)
+            }
         }
         .sheet(isPresented: $showSignIn) {
             PlayStationSignInSheet { identity in
@@ -86,8 +95,10 @@ struct PlayStationPairingPane: View {
             Text("Sign in to PlayStation Network once. The PS5 registers this Mac to your account.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Sign In to PlayStation Network…") { showSignIn = true }
-                .buttonStyle(.borderedProminent)
+            buttons {
+                Button("Sign In to PlayStation Network…") { showSignIn = true }
+                    .buttonStyle(.borderedProminent)
+            }
         }
     }
 
@@ -114,20 +125,27 @@ struct PlayStationPairingPane: View {
                     Text("Registering with the PS5…").foregroundStyle(.secondary)
                 }
             } else {
-                Button("Pair PS5", action: pair)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(digits.count != 8)
-            }
-            if let onlineID = account?.onlineID {
-                Button("Signed in as \(onlineID) - use another account") {
-                    account = nil
+                buttons {
+                    Button("Pair PS5", action: pair)
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(digits.count != 8)
                 }
-                .buttonStyle(.link)
-                .font(.system(size: 11))
             }
         }
         .onAppear { pinFocused = true }
+    }
+
+    /// The step's button, with Cancel to its left when there is somewhere
+    /// to go back to (the welcome page), as a dialog's.
+    private func buttons(@ViewBuilder _ primary: () -> some View) -> some View {
+        HStack(spacing: 12) {
+            if let cancel {
+                Button("Cancel", action: cancel)
+                    .keyboardShortcut(.cancelAction)
+            }
+            primary()
+        }
     }
 
     private func pair() {
