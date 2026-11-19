@@ -13,6 +13,14 @@ import Testing
 @testable import Glimmer
 
 struct TerminationGateTests {
+    // ⌘Q in settings mid-stream closes settings; anything else quits.
+    @Test func commandQInSettingsMidStreamOnlyClosesSettings() {
+        #expect(TerminationGate.closesSettingsInstead(isStreaming: true, commandQFromKeyboard: true, settingsIsKey: true))
+        #expect(!TerminationGate.closesSettingsInstead(isStreaming: false, commandQFromKeyboard: true, settingsIsKey: true))
+        #expect(!TerminationGate.closesSettingsInstead(isStreaming: true, commandQFromKeyboard: false, settingsIsKey: true))
+        #expect(!TerminationGate.closesSettingsInstead(isStreaming: true, commandQFromKeyboard: true, settingsIsKey: false))
+    }
+
 
     @Test func liveOrConnectingSessionDefersTheQuit() {
         #expect(TerminationGate.reply(isStreaming: true) == .terminateLater)

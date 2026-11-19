@@ -406,6 +406,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let event = NSApp.currentEvent
+        let commandQ = event?.type == .keyDown
+            && event?.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+            && event?.charactersIgnoringModifiers?.lowercased() == "q"
+        let settings = NSApp.keyWindow.flatMap { $0.identifier?.rawValue == "main" ? $0 : nil }
+        if TerminationGate.closesSettingsInstead(isStreaming: model?.isStreaming == true, commandQFromKeyboard: commandQ,
+                                                 settingsIsKey: settings != nil) {
+            Diag.info("⌘Q in settings mid-stream: closing settings, the stream stays", "Launch")
+            settings?.close()
+            return .terminateCancel
+        }
         model?.shutdown()
         // Cmd-Q / menu Quit mid-stream skips the session's stop()/exitCapturedMode(),
         // so the SYSTEM-WIDE pointer-acceleration override would survive process exit.

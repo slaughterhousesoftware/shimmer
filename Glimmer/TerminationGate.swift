@@ -31,6 +31,15 @@ enum TerminationGate {
         isStreaming ? .terminateLater : .terminateNow
     }
 
+    /// ⌘Q pressed in the settings window while a stream is up closes the
+    /// window and leaves the stream alone - in Picture in Picture, a window
+    /// or full screen (Kevin: "it shouldn't exit everything"). The menu
+    /// bar's Quit Shimmer, or ⌘Q anywhere else, still quits.
+    static func closesSettingsInstead(isStreaming: Bool, commandQFromKeyboard: Bool,
+                                      settingsIsKey: Bool) -> Bool {
+        isStreaming && commandQFromKeyboard && settingsIsKey
+    }
+
     /// Run `operation` and return true if it finished within `seconds`, false
     /// if the deadline won. Deliberately NOT a task group: a group scope waits
     /// for every child before returning, so a stop wedged on a dead host would
