@@ -653,13 +653,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         ])
     }
 
-    /// The streaming server's second line: the stream's size and rate, the
-    /// network's round trip and the bitrate, each after its solid glyph, as
-    /// the AirPods' batteries are.
+    /// The streaming server's second line: the stream's size and rate and
+    /// its bitrate, each after its solid glyph, as the AirPods' batteries
+    /// are. (Not the round trip - Kevin: "we don't need to know the latency
+    /// over here".)
     private func streamStats(rttMs: Double?, mbps: Double?) -> [MenuServerRow.Stat] {
         var stats: [MenuServerRow.Stat] = []
         if let shorthand = model.activeStreamShorthand { stats.append(.init(symbol: "play.rectangle.fill", text: shorthand)) }
-        if let rttMs { stats.append(.init(symbol: "clock.fill", text: "\(max(1, Int(rttMs.rounded()))) ms")) }
         if let mbps { stats.append(.init(symbol: "cellularbars", text: "\(Int(mbps.rounded())) Mbps")) }
         if stats.isEmpty, let id = model.activeStreamHostID {
             stats.append(.init(symbol: nil, text: model.hostStatusLine(for: id)))
