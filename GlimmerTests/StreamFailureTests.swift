@@ -55,8 +55,16 @@ struct StreamFailureCopyTests {
                 == "Remote Play ended")
         #expect(StreamFailureCopy.headline("Stream to bazzite ended unexpectedly.") == "Stream ended")
         #expect(StreamFailureCopy.headline("Something new went wrong.") == "Couldn't stream")
-        let width = ("Blocked by a firewall" as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width
-        #expect(width < 130)
+        #expect(StreamFailureCopy.allHeadlines.contains(StreamFailureCopy.headline("Stream to bazzite ended unexpectedly.")))
+    }
+
+    // Every label shows whole in the narrowest card - no "…" on an error.
+    @Test @MainActor func everyHeadlineFitsTheCardWhole() {
+        let room = MenuNowPlayingCard.alertLabelRoom
+        #expect(room > 90)
+        for label in StreamFailureCopy.allHeadlines {
+            #expect(MenuNowPlayingCard.labelWidth(label) <= room, "\(label) needs \(MenuNowPlayingCard.labelWidth(label)) of \(room)")
+        }
     }
 
     @Test func everyPs5RefusalNamesItsOwnFix() {

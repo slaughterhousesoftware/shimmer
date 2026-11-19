@@ -314,19 +314,12 @@ enum MenuInk {
 /// point low); Control Center's spacing is measured baseline to baseline.
 enum MenuText {
     /// `baseline`: the baseline's y in the current view; `flipped`: the view's.
-    /// `maxWidth`: past it the text ends in "…".
-    static func draw(_ text: String, font: NSFont, colour: NSColor, x: CGFloat, baseline: CGFloat, flipped: Bool,
-                     maxWidth: CGFloat? = nil) {
+    static func draw(_ text: String, font: NSFont, colour: NSColor, x: CGFloat, baseline: CGFloat, flipped: Bool) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let attributes: [NSAttributedString.Key: Any] = [
+        let string = NSAttributedString(string: text, attributes: [
             .font: font, NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
-        ]
-        let string = NSAttributedString(string: text, attributes: attributes)
-        var line = CTLineCreateWithAttributedString(string)
-        if let maxWidth, CTLineGetTypographicBounds(line, nil, nil, nil) > Double(maxWidth) {
-            let ellipsis = CTLineCreateWithAttributedString(NSAttributedString(string: "…", attributes: attributes))
-            line = CTLineCreateTruncatedLine(line, Double(max(maxWidth, 0)), .end, ellipsis) ?? line
-        }
+        ])
+        let line = CTLineCreateWithAttributedString(string)
         context.saveGState()
         colour.setFill()
         context.textMatrix = flipped ? CGAffineTransform(scaleX: 1, y: -1) : .identity

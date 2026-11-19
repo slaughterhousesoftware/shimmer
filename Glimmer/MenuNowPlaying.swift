@@ -133,8 +133,22 @@ final class MenuNowPlayingCard: NSView {
     /// and centred on the capitals, its edge under the title's first letter
     /// (a point in: the letter's side bearing), 4 pt before the words; both
     /// in the system's orange. On the subtitle's own baseline (checked at
-    /// 2x: the same pixel rows as the normal subtitle's capitals), ending
-    /// in "…" 10 pt short of the buttons, as the normal subtitle does.
+    /// 2x: the same pixel rows as the normal subtitle's capitals), and at
+    /// least 10 pt short of the buttons, as the normal subtitle.
+    /// An error label's width in the card's type.
+    static func labelWidth(_ text: String) -> CGFloat {
+        (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width
+    }
+
+    /// Room for an error label in the narrowest card (the menu's 308 pt,
+    /// two buttons): the subtitle's width less the warning and its gap.
+    static let alertLabelRoom: CGFloat = {
+        let card = NSRect(x: inset.width, y: 0, width: 308 - inset.width * 2, height: 1)
+        let buttonsLeft = (card.maxX - 26 - buttonPitch - buttonSide / 2).rounded()
+        let glyph = (MenuStatGlyph.image("exclamationmark.triangle.fill")?.size.width ?? 11) + 4 + 1
+        return buttonsLeft - 10 - (card.minX + 62) - glyph
+    }()
+
     private func drawAlert(in rect: NSRect) {
         let font = NSFont.systemFont(ofSize: 11)
         let baseline = rect.maxY - font.ascender
@@ -146,8 +160,12 @@ final class MenuNowPlayingCard: NSView {
             MenuStatGlyph.draw(glyph, in: NSRect(x: x, y: y, width: s.width, height: s.height), colour: .systemOrange)
             x += s.width + 4
         }
-        MenuText.draw(subtitle, font: font, colour: .systemOrange, x: x, baseline: baseline, flipped: false,
-                      maxWidth: rect.maxX - x)
+        // Whole words, never "…" - an error cut short doesn't say what went
+        // wrong. Every label is written to fit (StreamFailureTests checks);
+        // were one not to, the card says the plainest thing that does.
+        let width = rect.maxX - x
+        let text = Self.labelWidth(subtitle) <= width ? subtitle : StreamFailureCopy.fallbackHeadline
+        MenuText.draw(text, font: font, colour: .systemOrange, x: x, baseline: baseline, flipped: false)
     }
 
     // MARK: The card itself as a button (only when it has somewhere to go)

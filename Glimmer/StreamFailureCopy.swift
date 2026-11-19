@@ -156,8 +156,19 @@ enum StreamFailureCopy {
             ("was interrupted", "Connection lost"),
             ("couldn't reach", "Couldn't connect"),
         ]
-        return table.first { text.contains($0.0) }?.1 ?? "Couldn't stream"
+        return table.first { text.contains($0.0) }?.1 ?? fallbackHeadline
     }
+
+    static let fallbackHeadline = "Couldn't stream"
+
+    /// Every label `headline` can give, for the check that each fits.
+    static let allHeadlines = ["Not answering", "Remote Play ended", "In use elsewhere", "Didn't wake up",
+                               "Remote Play is off", "Passcode needed", "Wrong account", "Pair it again",
+                               "Update Shimmer", "Restart the PS5", "Trust needed", "Restart Sunshine",
+                               "Update Sunshine", "Network blocked", "Blocked by a firewall", "Decoder failed",
+                               "Audio failed", "Security error", "Stopped", "Stopped answering", "Took too long",
+                               "App didn't start", "Stream ended", "Connection lost", "Couldn't connect",
+                               fallbackHeadline]
 
     /// A PS5 ended a live stream while no controller was connected to this
     /// Mac: most likely the controller is connected to the console itself
