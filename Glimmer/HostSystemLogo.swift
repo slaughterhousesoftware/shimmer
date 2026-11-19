@@ -46,7 +46,11 @@ struct HostSystemLogo: View {
             case .playStation: mark(Image(systemName: "playstation.logo"), scale: 0.92)
             case .mac: mark(Image(systemName: "apple.logo"), scale: 0.78)
             case .windows: mark(Image("HostLogo-windows").renderingMode(.template), scale: 0.74)
+            // Tux is centred by its box, but its weight is the solid head
+            // and body up top over thin outlined feet, so the box's centre
+            // reads high beside a name. Down a twentieth of the mark.
             case .linux: mark(Image("HostLogo-linux").renderingMode(.template), scale: 0.9)
+                .offset(y: size * 0.05)
             }
         }
         .frame(width: size, height: size)
