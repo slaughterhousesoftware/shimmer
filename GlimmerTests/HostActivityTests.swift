@@ -107,6 +107,20 @@ struct HostActivityTests {
         }
     }
 
+    // Sony's own console names say nothing; a name someone chose does.
+    @Test func onlySonysDefaultConsoleNamesAreGeneric() {
+        for name in ["PS5-661", "PS5-001", "PS4-12"] { #expect(Glimmer.Host.isSonyDefaultName(name), "\(name)") }
+        for name in ["Living Room", "PS5", "PS5-661 upstairs", "Kevin's PS5", "PS5-"] {
+            #expect(!Glimmer.Host.isSonyDefaultName(name), "\(name)")
+        }
+        let ps5 = Glimmer.Host(id: Glimmer.Host.playStationIDPrefix + "x", name: "PS5-661",
+                               customName: Glimmer.Host.genericPlayStationName, localAddress: nil, manualAddress: nil,
+                               apps: [], lastConnected: nil, serverCertPEM: nil, appVersion: nil, gfeVersion: nil,
+                               macAddress: nil)
+        #expect(ps5.hasGenericPlayStationName && ps5.displayName == "PlayStation")
+        #expect(!Self.host("pc").hasGenericPlayStationName)
+    }
+
     @Test @MainActor func connectionProgressIsNotAStreamingClaimAndBelongsToOneHost() {
         let model = AppModel()
         model.isStreaming = true

@@ -534,6 +534,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - The Now Playing card
 
+    /// The card's second line: where the stream is from. A lone PS5 is
+    /// already "PlayStation 5" in the title, so it says what it is instead.
+    private func cardPlace(_ host: Host) -> String {
+        host.hasGenericPlayStationName ? "Remote Play" : host.displayName
+    }
+
     /// What the open menu's card shows, and the watch on what it's made of:
     /// the stream coming up ("Connecting…" to live), ending
     /// or failing while the menu is open redraws it.
@@ -588,7 +594,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             if case .streaming = model.streamPhase {
                 // Just where it's from, as the card says it at rest: the stop
                 // button and the server's stats line already say it's live.
-                subtitle = streamHost.displayName
+                subtitle = cardPlace(streamHost)
             } else {
                 subtitle = model.hostStatusLine(for: streamHost.id)
             }
@@ -626,7 +632,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         // Where it would stream. How that server is doing is its row's
         // second line in Servers, as the AirPods' batteries are theirs.
-        return MenuNowPlayingCard(tile: tile, title: title, subtitle: host.displayName, controls: [
+        return MenuNowPlayingCard(tile: tile, title: title, subtitle: cardPlace(host), controls: [
             Control(symbol: "pip.enter", label: "\(label) in Picture in Picture", action: run(#selector(streamHeroInPiP))),
             Control(symbol: "play.fill", label: label, prominent: true, action: run(#selector(streamHero))),
         ])
