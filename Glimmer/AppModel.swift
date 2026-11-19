@@ -362,6 +362,12 @@ final class AppModel {
     /// the menu bar spins from the click, not from the connect - a PC that
     /// doesn't answer takes the check ~8 s.
     var streamCheckHostID: String?
+    /// A stream just ended and the server hasn't been asked what it runs
+    /// yet (the poller waits out the host's /cancel first): the menu bar
+    /// spins instead of going blank until that answer, or 12 s, says what
+    /// it shows next.
+    var awaitingStatusAfterStream = false
+    @ObservationIgnored var awaitingStatusAfterStreamToken: UUID?
     /// That check's task, and the token that tells its end from a newer one's.
     @ObservationIgnored var streamCheckTask: Task<Void, Never>?
     @ObservationIgnored var streamCheckToken: UUID?

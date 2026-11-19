@@ -121,6 +121,18 @@ struct HostActivityTests {
         #expect(!Self.host("pc").hasGenericPlayStationName)
     }
 
+    // Just after a stream ends, before the server's next status: a spinner,
+    // not an empty menu bar.
+    @Test @MainActor func theMenuBarSpinsRatherThanEmptiesWhileTheServerIsAskedAgain() {
+        let model = AppModel()
+        guard model.menuBarControllerKind == nil else { return }   // a pad would show instead
+        #expect(model.menuBarPresentation == nil)
+        model.awaitingStatusAfterStream = true
+        #expect(model.menuBarPresentation?.spinning == true)
+        model.awaitingStatusAfterStream = false
+        #expect(model.menuBarPresentation == nil)
+    }
+
     @Test @MainActor func connectionProgressIsNotAStreamingClaimAndBelongsToOneHost() {
         let model = AppModel()
         model.isStreaming = true

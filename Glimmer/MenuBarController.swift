@@ -90,9 +90,14 @@ extension AppModel {
         } else {
             nil
         }
-        return MenuBarPresentation(warning: menuBarShowsStreamError, busy: menuBarBusy,
-                                   controller: menuBarControllerKind.map { ($0, menuBarControllerBattery) },
-                                   appGlyph: appGlyph)
+        let controller = menuBarControllerKind.map { ($0, menuBarControllerBattery) }
+        // Just after a stream ends, before the server says what it runs: the
+        // spinner holds the place rather than the icon vanishing and coming
+        // back (Kevin) - only where nothing else would show.
+        let settling = awaitingStatusAfterStream && !isStreaming && appGlyph == nil && controller == nil
+            && !menuBarShowsStreamError
+        return MenuBarPresentation(warning: menuBarShowsStreamError, busy: menuBarBusy || settling,
+                                   controller: controller, appGlyph: appGlyph)
     }
 
     /// Shimmer is on its way somewhere and you are waiting for it:

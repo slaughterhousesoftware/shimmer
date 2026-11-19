@@ -493,6 +493,7 @@ extension AppModel {
         // streamed can never be declared asleep on a single transient
         // miss.
         self.restartHostStatusPolling(afterStream: true)
+        self.awaitStatusAfterStream()
         // Switching PCs: the next stream starts now, in the same mode - no
         // focus steal, no main window in between.
         if let next = pendingHostSwitch {

@@ -287,6 +287,20 @@ extension AppModel {
             self.hostLiveStatus = status
             self.recordReachability(from: status)
             self.clearRecoveredInterruption(status)
+            self.awaitingStatusAfterStream = false
+        }
+    }
+
+    /// See `awaitingStatusAfterStream`: on until the first status after a
+    /// stream lands (publishLiveStatus), at most 12 s.
+    @MainActor func awaitStatusAfterStream() {
+        let token = UUID()
+        awaitingStatusAfterStreamToken = token
+        awaitingStatusAfterStream = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            guard let self, self.awaitingStatusAfterStreamToken == token else { return }
+            self.awaitingStatusAfterStream = false
         }
     }
 
