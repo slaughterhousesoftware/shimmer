@@ -44,8 +44,8 @@ rest mode, and the stream gets the same window, Picture in Picture, audio and
 controller support.
 
 <p align="center">
-  <img src="docs/assets/welcome.webp" width="420" alt="Shimmer's welcome window: Add a PC or PS5 to get started, an address field, and a Nearby list with a Linux PC and a PlayStation, each with a Pair button">
-  <img src="docs/assets/playstation.webp" width="420" alt="Shimmer's Servers tab with a PS5 selected: PlayStation 5 on the home screen with Stream, then its quality, bitrate, codec, HDR and presentation settings">
+  <img src="docs/assets/welcome.webp" width="400" alt="Shimmer's welcome window: Add a PC or PS5 to get started, an address field, and a Nearby list with a Linux PC and a PlayStation, each with a Pair button">
+  <img src="docs/assets/playstation.webp" width="400" alt="Shimmer's Servers tab with a PS5 selected: PlayStation 5 on the home screen with Stream, then its quality, bitrate, codec, HDR and presentation settings">
 </p>
 
 The PS5 sends 1080p or 720p at up to 60 fps. It only takes controller input,
@@ -71,7 +71,7 @@ Other controllers macOS supports, such as Xbox, Switch Pro and DualShock 4
 pads, work too.
 
 <p align="center">
-  <img src="docs/assets/controller.webp" width="420" alt="Shimmer's Controller settings: vibration set to haptic feedback, adaptive triggers on, light bar colours from the game on, and the DualSense's Options, Create and Mute buttons sent to the game">
+  <img src="docs/assets/controller.webp" width="400" alt="Shimmer's Controller settings: vibration set to haptic feedback, adaptive triggers on, light bar colours from the game on, and the DualSense's Options, Create and Mute buttons sent to the game">
 </p>
 
 ## Made for the menu bar
@@ -97,8 +97,8 @@ each machine's stream settings. General and Controller hold the rest. The
 layout takes after Tailscale's Mac app.
 
 <p align="center">
-  <img src="docs/assets/servers.webp" width="420" alt="Shimmer's Servers tab with a Linux PC selected: Steam Big Picture running with Resume, then quality, bitrate, codec and HDR settings">
-  <img src="docs/assets/general.webp" width="420" alt="Shimmer's General settings: Game Mode while streaming, Reduce lag spikes on Wi-Fi, Prefer low audio latency, Be ready at login, and Copy Instructions for coding agents">
+  <img src="docs/assets/servers.webp" width="400" alt="Shimmer's Servers tab with a Linux PC selected: Steam Big Picture running with Resume, then quality, bitrate, codec and HDR settings">
+  <img src="docs/assets/general.webp" width="400" alt="Shimmer's General settings: Game Mode while streaming, Reduce lag spikes on Wi-Fi, Prefer low audio latency, Be ready at login, and Copy Instructions for coding agents">
 </p>
 
 ## Also
