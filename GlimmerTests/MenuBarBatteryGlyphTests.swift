@@ -612,13 +612,30 @@ struct MenuNowPlayingCardTests {
     @Test func theControlsSitRightTheLastOneRightmost() {
         let c = card([.init(symbol: "pip.enter", label: "PiP") {}, .init(symbol: "play.fill", label: "Stream", style: .prominent) {}])
         let b = buttons(c)
-        #expect(c.frame.height == 72 && c.frame.width >= 307)
+        #expect(c.frame.height == 72 && c.frame.width == MenuBarController.menuWidth)
         #expect(b.map { $0.accessibilityLabel() } == ["PiP", "Stream"])
         // 30 pt buttons 38 pt apart, the right one 26 pt in from the card's
         // edge (the card is 12 pt in from the row's).
         #expect(b.allSatisfy { $0.frame.size == NSSize(width: 30, height: 30) })
         #expect(b[1].frame.midX - b[0].frame.midX == 38)
         #expect(abs(b[1].frame.midX - (c.bounds.maxX - 12 - 26)) <= 1)
+    }
+
+    /// One width whatever it says, so the menu never resizes as a stream
+    /// connects; and the longest thing it says in passing still fits.
+    @Test func theCardIsOneWidthAndItsLongestWordsFit() {
+        let two: [MenuNowPlayingCard.Control] = [.init(symbol: "pip.enter", label: "PiP") {},
+                                                 .init(symbol: "stop.fill", label: "End", style: .destructive) {}]
+        let subtitles = ["Remote Play", "Connecting to PlayStation…", "Connection needs attention",
+                         "Online · status unavailable", "Trust needed - pair again"]
+        for subtitle in subtitles {
+            let c = MenuNowPlayingCard(tile: MenuAppTile.image(.playStation), title: "PlayStation 5",
+                                       subtitle: subtitle, controls: two)
+            #expect(c.frame.width == MenuBarController.menuWidth)
+            let room = (buttons(c).map(\.frame.minX).min() ?? 0) - 10 - (12 + 62)
+            let width = (subtitle as NSString).size(withAttributes: MenuNowPlayingCard.subtitleAttributes).width
+            #expect(width <= room, "\(subtitle): \(width) in \(room)")
+        }
     }
 
     @Test func aButtonsClickRunsItsAction() {

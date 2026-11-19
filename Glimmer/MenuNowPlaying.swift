@@ -54,7 +54,9 @@ final class MenuNowPlayingCard: NSView {
         self.onOpen = onOpen
         signature = ([title, subtitle, alert ?? "", onOpen == nil ? "" : "opens"] + controls.map(\.label))
             .joined(separator: "\n")
-        super.init(frame: NSRect(x: 0, y: 0, width: 307, height: Self.height))
+        // Always the menu's width: a card sized to its words resized the
+        // whole menu as they changed. Longer words truncate.
+        super.init(frame: NSRect(x: 0, y: 0, width: MenuBarController.menuWidth, height: Self.height))
         autoresizingMask = [.width]
         for control in controls {
             let button = MenuRoundButton(symbol: control.symbol, label: control.label, style: control.style,
@@ -62,11 +64,6 @@ final class MenuNowPlayingCard: NSView {
             buttons.append(button)
             addSubview(button)
         }
-        // Wide enough for its two lines, up to a point (they truncate past that).
-        let text = max((title as NSString).size(withAttributes: Self.titleAttributes).width,
-                       (subtitle as NSString).size(withAttributes: Self.subtitleAttributes).width)
-        let needed = Self.inset.width * 2 + 10 + 42 + 10 + text + 12 + CGFloat(controls.count) * Self.buttonPitch + 4
-        setFrameSize(NSSize(width: min(max(307, needed.rounded(.up)), 380), height: Self.height))
         setAccessibilityElement(true)
         setAccessibilityRole(onOpen == nil ? .group : .button)
         setAccessibilityLabel("\(title), \(alert ?? subtitle)")
@@ -139,10 +136,10 @@ final class MenuNowPlayingCard: NSView {
         (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width
     }
 
-    /// Room for an error label in the narrowest card (the menu's 308 pt,
-    /// two buttons): the subtitle's width less the warning and its gap.
+    /// Room for an error label in the card (the menu's width, two buttons):
+    /// the subtitle's width less the warning and its gap.
     static let alertLabelRoom: CGFloat = {
-        let card = NSRect(x: inset.width, y: 0, width: 308 - inset.width * 2, height: 1)
+        let card = NSRect(x: inset.width, y: 0, width: MenuBarController.menuWidth - inset.width * 2, height: 1)
         let buttonsLeft = (card.maxX - 26 - buttonPitch - buttonSide / 2).rounded()
         let glyph = (MenuStatGlyph.image("exclamationmark.triangle.fill")?.size.width ?? 11) + 4 + 1
         return buttonsLeft - 10 - (card.minX + 62) - glyph

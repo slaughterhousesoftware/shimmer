@@ -123,10 +123,12 @@ extension AppModel {
 
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
-    /// The menu's width, and the width the hosted rows lay out at: the
-    /// Sound menu's (308 pt, measured on macOS 27 at native 2x). A longer
-    /// row still widens it.
-    private static let menuWidth: CGFloat = 308
+    /// The menu's width, and the width the hosted rows lay out at. One size
+    /// for every state: the card used to widen the menu to fit
+    /// "Connecting to PlayStation…" and narrow it again once streaming
+    /// (Kevin: "pick one size that works"). 324 pt fits the card's longest
+    /// subtitle beside two buttons; the Sound menu is 308.
+    static let menuWidth: CGFloat = 324
 
     private let model: AppModel
     private let item: NSStatusItem
