@@ -53,14 +53,7 @@ struct PlayStationPairingPane: View {
                     } else {
                         codeStep
                     }
-                    // One place for what's wrong, under the buttons: a refused
-                    // code, or the console's own state (resting, silent) as
-                    // soon as the code step knows it.
-                    if let message = error ?? (account == nil ? nil : consoleProblem?.localizedDescription) {
-                        PCConnectionErrorBanner(message: message)
-                            .multilineTextAlignment(.leading)
-                            .id(message)
-                    }
+
                 }
                 .font(.system(size: 13))
                 .multilineTextAlignment(.center)
@@ -105,6 +98,7 @@ struct PlayStationPairingPane: View {
             Text("Sign in to PlayStation Network once. The PS5 registers this Mac to your account.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            problemBanner
             buttons {
                 Button("Sign In to PlayStation Network…") { showSignIn = true }
                     .buttonStyle(.borderedProminent)
@@ -117,6 +111,7 @@ struct PlayStationPairingPane: View {
             Text("On the PS5, open Settings › System › Remote Play › Pair Device, and enter the code it shows.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            problemBanner
             // A word, not digits: "12345678" in grey read as a code already in.
             TextField("8-digit code", text: $pin)
                 .font(.system(size: 28, weight: .medium, design: .monospaced))
@@ -157,6 +152,18 @@ struct PlayStationPairingPane: View {
                 }
                 try? await Task.sleep(for: .seconds(3))
             }
+        }
+    }
+
+    /// One place for what's wrong, over the field it's about: a refused
+    /// code or a failed sign-in, or the console's own state (resting,
+    /// silent) as soon as the code step knows it.
+    @ViewBuilder
+    private var problemBanner: some View {
+        if let message = error ?? (account == nil ? nil : consoleProblem?.localizedDescription) {
+            PCConnectionErrorBanner(message: message)
+                .multilineTextAlignment(.leading)
+                .id(message)
         }
     }
 
