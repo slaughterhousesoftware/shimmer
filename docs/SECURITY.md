@@ -6,9 +6,9 @@
 **Security → Report a vulnerability** flow (private vulnerability reporting) -
 it is end-to-end private between you and the maintainer, needs no key exchange,
 and is the channel that is actually monitored. Include a description of the
-issue, reproduction steps, and the affected version (`Glimmer.app` → menu bar →
-About, or
-`defaults read /Applications/Glimmer.app/Contents/Info CFBundleShortVersionString`).
+issue, reproduction steps, and the affected version (Shimmer → About, or
+`defaults read /Applications/Shimmer.app/Contents/Info CFBundleShortVersionString`).
+Report at https://github.com/slaughterhousesoftware/shimmer/security/advisories/new.
 
 Public disclosure on GitHub Issues is acceptable for non-exploitable bugs (UI
 glitches, build failures, etc.). Anything involving the client identity, the
@@ -17,7 +17,7 @@ Hardened Runtime posture should go through a private advisory first.
 
 ## Threat model
 
-Glimmer is a home-LAN game-streaming client. The audience is a user streaming
+Shimmer (like glimmer, which it is forked from) is a home-LAN game-streaming client. The audience is a user streaming
 from their own gaming PC to their own Mac on their own network. The threat model
 is sized to that.
 

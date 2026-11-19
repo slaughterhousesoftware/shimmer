@@ -23,8 +23,8 @@ decode. There are no submodules and no vendored C library. `swiftlint` and
 Clone:
 
 ```bash
-git clone https://github.com/Se7enbrc/glimmer.git
-cd glimmer
+git clone https://github.com/slaughterhousesoftware/shimmer.git
+cd shimmer
 ```
 
 Install pre-commit hooks:

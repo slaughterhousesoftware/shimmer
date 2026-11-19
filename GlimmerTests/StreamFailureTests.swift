@@ -260,7 +260,7 @@ struct PlayStationFailureTests {
         for address in ["192.168.50.22", "10.0.0.5", "172.20.1.9", "169.254.3.4"] {
             #expect(AppModel.isHomeNetworkAddress(address), "\(address)")
         }
-        for address in ["100.109.155.86", "8.8.8.8", "172.32.0.1", "ps5.local", "fe80::1"] {
+        for address in ["100.64.12.34", "8.8.8.8", "172.32.0.1", "ps5.local", "fe80::1"] {
             #expect(!AppModel.isHomeNetworkAddress(address), "\(address)")
         }
     }

@@ -3,7 +3,7 @@
 # work on the Mac that runs Shimmer, and checks them against thresholds, so a
 # change can be judged by numbers instead of feel.
 #
-#   scripts/ps5-bench [ssh-target]      (default: the MacBook on the LAN, 192.168.50.62)
+#   scripts/ps5-bench [ssh-target]      (default: $SHIMMER_BENCH_HOST, or this Mac)
 #
 # Needs: Shimmer installed and NOT running there, a registered PS5 named
 # "PS5…" awake, and - for the Bluetooth checks - a DualSense on Bluetooth.
@@ -14,7 +14,7 @@
 # input/output rates with Game Mode off and on. Every defaults key it sets is
 # restored. Exit status 1 if a threshold fails.
 set -euo pipefail
-HOST=${1:-kevinpatel@192.168.50.62}
+HOST=${1:-${SHIMMER_BENCH_HOST:-localhost}}
 ROOT=${0:A:h:h}
 BENCH=$ROOT/tools/ps5-bench
 OUT=$(mktemp -d)

@@ -1,52 +1,39 @@
 name: Bug report
-description: Report a streaming, pairing, input, or UI problem.
+description: Report a streaming, pairing, controller or UI problem.
 labels: ["bug"]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Thanks for taking the time to report a bug. Glimmer's debugging culture
-        is telemetry-first: a session scorecard plus the session log usually
-        localizes a streaming problem in minutes, where a prose description
-        alone can take days. Telemetry is **opt-in and stays on your Mac until
-        you attach it.** The files carry performance numbers and the app's log
-        lines, including the app you streamed and your display and network
-        setup. Your PC and Mac appear as short codes, not names, and addresses
-        and error details read `<private>`. Encryption keys, PINs and the text
-        you type are never recorded.
   - type: input
     id: version
     attributes:
-      label: Glimmer version
-      description:
-        Menu bar → About, or `defaults read
-        /Applications/Glimmer.app/Contents/Info CFBundleShortVersionString`
-      placeholder: "2026.8.15 (20260830)"
+      label: Shimmer version
+      description: Shimmer → About, or `defaults read /Applications/Shimmer.app/Contents/Info CFBundleShortVersionString`
+      placeholder: "1.0.0"
     validations:
       required: true
   - type: input
     id: environment
     attributes:
-      label: Mac + macOS version
-      placeholder: 'MacBook Pro 14", macOS 26.x'
+      label: Mac and macOS version
+      placeholder: 'MacBook Pro 14" M5, macOS 27.1'
     validations:
       required: true
   - type: input
     id: host
     attributes:
-      label: Host (Sunshine/GFE version + OS + GPU)
-      placeholder: "Sunshine 2026.8.26, Windows 11, RTX 4080"
+      label: What you stream from
+      description: Sunshine version, OS and GPU for a PC; firmware version for a PS5.
+      placeholder: "Sunshine 2026.8.26 on Bazzite, RX 7800 XT / PS5 firmware 26.02"
     validations:
       required: true
   - type: dropdown
     id: link
     attributes:
-      label: Network link between Mac and host
+      label: Network between the Mac and the host
       options:
         - Wired Ethernet (both ends)
         - Wi-Fi (Mac) → wired host
         - Wi-Fi both ends
-        - VPN / tailnet / remote
+        - VPN / Tailscale / remote
         - Not sure
     validations:
       required: true
@@ -54,39 +41,16 @@ body:
     id: what-happened
     attributes:
       label: What happened?
-      description:
-        What did you do, what did you expect, what happened instead? Rough
-        timestamps help.
+      description: What you did, what you expected, and what happened instead. Rough times help.
     validations:
       required: true
   - type: textarea
-    id: telemetry
+    id: diagnostics
     attributes:
-      label: Telemetry scorecard + session log
+      label: Diagnostics
       description: |
-        For streaming-quality issues (stutter, freezes, audio dropouts, input
-        lag) please attach the session artifacts:
-
-        1. Enable telemetry: in Settings → About, **option-click the version
-           line** to reveal the Telemetry section inside Settings →
-           Diagnostics, then turn on **Performance telemetry**. It applies on
-           the next stream, not the running one.
-        2. Reproduce the problem in a stream. When it "feels bad", press
-           **⌃B** to drop a timestamped bookmark into the telemetry.
-        3. End the stream, then attach from `~/Library/Logs/Shimmer/`:
-           - `telemetry-session-<timestamp>.json` - the session scorecard
-           - `glimmer-<timestamp>.log` - the session log
-           - (optionally) `telemetry-<timestamp>.ndjson` - per-second metrics,
-             if the file isn't too large to attach
-
-        Lines copied from Settings → Diagnostics → Logs and the session files
-        redact private fields. Review them before uploading; streamed app names
-        and display or network details may remain.
-      placeholder: Drag and drop the files here.
-  - type: textarea
-    id: extra
-    attributes:
-      label: Anything else?
-      description:
-        Display setup (resolution / refresh / HDR), controller model, settings
-        that differ from defaults, etc.
+        Paste the output of
+        `/Applications/Shimmer.app/Contents/Resources/shimmerctl doctor`, and if
+        it's a streaming problem attach the session log from
+        `~/Library/Logs/Shimmer/`. Addresses and machine names are redacted in
+        both; read them before posting anyway.

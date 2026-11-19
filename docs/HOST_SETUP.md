@@ -1,8 +1,7 @@
 # Host setup: display modes (Sunshine + VDD)
 
-Glimmer asks the host for an **exact** `width × height @ refresh`, whatever you
-pick in **Settings ▸ Quality**. The presets there are _Native Retina_ (your
-panel's own pixel grid), _HiDPI_ (half that in each direction), and _Custom_.
+Shimmer asks the host for an **exact** `width × height @ refresh`, whatever you
+pick for that PC (its page in the Servers tab, or its row in the menu bar menu).
 The host can only honor a mode it can actually present, so the host's display
 has to be able to produce every mode you might request. On Windows that means a
 **Virtual Display Driver**; on Linux a current Sunshine that resizes the
@@ -23,7 +22,7 @@ needs a virtual display that can.
    `C:\IddSampleDriver\vdd_settings.xml` or `C:\VirtualDisplayDriver\`). Then:
    - set `<gpu><friendlyname>` to your GPU exactly as Device Manager ▸ Display
      adapters shows it;
-   - make sure every resolution/refresh you'll pick in Glimmer has a
+   - make sure every resolution/refresh you'll pick in Shimmer has a
      `<resolution>` entry. The sample already covers the common Mac panels plus
      720p/1080p/1440p/4K at 60/120/240. **Add a block for anything missing.**
 4. **Let Sunshine drive it.** On a current Sunshine, point it at the virtual
@@ -31,7 +30,7 @@ needs a virtual display that can.
    client asked for, and tears it down on disconnect. If your build doesn't do
    this automatically, use the VDD project's enable/disable scripts as Sunshine
    **Prep Commands**: Do on connect, Undo on disconnect.
-5. In Glimmer, pick a resolution/refresh that exists in the config above.
+5. In Shimmer, pick a resolution/refresh that exists in the config above.
 
 ## Linux: Sunshine dynamic resize
 
@@ -51,7 +50,7 @@ the streaming resolution.
 
 ## The one rule
 
-Whatever Glimmer requests must exist on the host. Glimmer accepts any
+Whatever Shimmer requests must exist on the host. Shimmer accepts any
 `640-7680 × 480-4320 @ 30-240`, so if you stream an unusual mode, add it to the
 VDD config (Windows) or the display server's mode list (Linux) first.
 
