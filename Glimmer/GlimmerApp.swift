@@ -330,7 +330,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let mgr = Self.boundManager {
             self.model = mgr
             mgr.attach(appDelegate: self)
-            Task { await mgr.bootstrap() }
+            Task { @MainActor in
+                await mgr.bootstrap()
+                // Nothing added yet: a later launch opens the window too.
+                // Starting in the menu bar only suits someone with a PC or
+                // PS5 to stream from; before that, a launch that shows
+                // nothing looks broken, and the icon can sit behind the notch.
+                if !launchedAtLogin, GlimmerApp.startsInMenuBarOnly, mgr.hosts.isEmpty {
+                    AppDelegate.showMainWindow()
+                }
+            }
         }
 
         // No idle status icon exists. Start with the Dock available; the menu
