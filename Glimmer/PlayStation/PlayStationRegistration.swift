@@ -10,13 +10,16 @@ import Foundation
 
 enum PlayStationRegistration {
     enum Failure: LocalizedError {
-        case invalidAccountID, invalidPIN, rejected, unreachable
+        case invalidAccountID, invalidPIN, rejected, unreachable, resting
         var errorDescription: String? {
             switch self {
             case .invalidAccountID: return "The PlayStation Network account ID is invalid. Sign in again."
             case .invalidPIN: return "The pairing code has 8 digits."
-            case .rejected: return "The PS5 refused to pair. Keep Settings › System › Remote Play › Pair Device open with the code on screen, and enter that code - a new code appears each time the screen opens."
-            case .unreachable: return "The PS5 didn't answer. Check that it's on, on this network, and has Remote Play enabled."
+            case .rejected: return "The PS5 didn't take that code. Check that Pair Device is still open on the PS5, "
+                + "then enter the code it shows now."
+            case .unreachable: return "The PS5 isn't answering. Check that it's on, on this network, "
+                + "and has Remote Play turned on."
+            case .resting: return "The PS5 is in rest mode. Turn it on, then open Pair Device."
             }
         }
     }
@@ -41,6 +44,15 @@ enum PlayStationRegistration {
                 })
             }
         }
+    }
+
+    /// Why pairing can't work right now, from the console's discovery answer
+    /// (nil: no answer). Asked first, so a resting or silent console says so
+    /// in two seconds instead of a refusal that blames the code, or a
+    /// 20-second wait.
+    static func precheck(_ status: PlayStationDiscovery.Status?) -> Failure? {
+        guard let status else { return .unreachable }
+        return status.power == .standby ? .resting : nil
     }
 
     private static func registerBlocking(address: String, account: Data, accountID: String,

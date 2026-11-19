@@ -21,6 +21,12 @@ struct PlayStationPairingPane: View {
     @State private var isPairing = false
     @State private var error: String?
     @State private var showSignIn = false
+    /// What the console says while the code step is up (checked every few
+    /// seconds), so a resting PS5 is called out before a code is typed.
+    @State private var consoleProblem: PlayStationRegistration.Failure?
+    /// The error shown is the console's state (resting, silent), not the
+    /// code: it goes once the console is ready.
+    @State private var errorIsConsoleState = false
     @FocusState private var pinFocused: Bool
 
     private var digits: String { pin.filter(\.isNumber) }
@@ -107,7 +113,12 @@ struct PlayStationPairingPane: View {
             Text("On the PS5, open Settings › System › Remote Play › Pair Device, and enter the code it shows.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            TextField("12345678", text: $pin)
+            if let consoleProblem, error == nil {
+                Label(consoleProblem.localizedDescription, systemImage: "exclamationmark.circle.fill")
+                    .labelStyle(ConsoleProblemLabelStyle())
+            }
+            // A word, not digits: "12345678" in grey read as a code already in.
+            TextField("8-digit code", text: $pin)
                 .font(.system(size: 28, weight: .medium, design: .monospaced))
                 .multilineTextAlignment(.center)
                 .textFieldStyle(.roundedBorder)
@@ -122,11 +133,11 @@ struct PlayStationPairingPane: View {
             if isPairing {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Registering with the PS5…").foregroundStyle(.secondary)
+                    Text("Pairing with the PS5…").foregroundStyle(.secondary)
                 }
             } else {
                 buttons {
-                    Button("Pair PS5", action: pair)
+                    Button("Pair", action: pair)
                         .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
                         .disabled(digits.count != 8)
@@ -134,6 +145,19 @@ struct PlayStationPairingPane: View {
             }
         }
         .onAppear { pinFocused = true }
+        .task(id: isPairing) {
+            guard !isPairing else { return }
+            while !Task.isCancelled {
+                let status = await PlayStationDiscovery.probe(address: target.address)
+                guard !Task.isCancelled else { return }
+                consoleProblem = PlayStationRegistration.precheck(status)
+                if consoleProblem == nil, errorIsConsoleState {
+                    error = nil
+                    errorIsConsoleState = false
+                }
+                try? await Task.sleep(for: .seconds(3))
+            }
+        }
     }
 
     /// The step's button, with Cancel to its left when there is somewhere
@@ -152,9 +176,19 @@ struct PlayStationPairingPane: View {
         guard !isPairing, digits.count == 8, let account else { return }
         isPairing = true
         error = nil
+        errorIsConsoleState = false
         let address = target.address
         Task {
             do {
+                if let problem = PlayStationRegistration.precheck(await PlayStationDiscovery.probe(address: address)) {
+                    consoleProblem = problem
+                    isPairing = false
+                    pin = ""
+                    self.error = problem.localizedDescription
+                    errorIsConsoleState = true
+                    pinFocused = true
+                    return
+                }
                 var console = try await PlayStationRegistration.register(
                     address: address, accountID: account.accountID, pin: digits)
                 if let existing = PlayStationStore.shared.consoles.first(where: { $0.id == console.id }) {
@@ -169,6 +203,7 @@ struct PlayStationPairingPane: View {
                 isPairing = false
                 pin = ""
                 self.error = error.localizedDescription
+                pinFocused = true
             }
         }
     }
@@ -187,7 +222,6 @@ struct PlayStationSignInSheet: View {
             HStack {
                 Text("PlayStation Network").font(.system(size: 13, weight: .semibold))
                 Spacer()
-                if exchanging { ProgressView().controlSize(.small) }
                 Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
             }
             .padding(12)
@@ -202,6 +236,18 @@ struct PlayStationSignInSheet: View {
                     } catch {
                         failed(error.localizedDescription)
                     }
+                }
+            }
+            // Sony's page stays put once it has handed over; say what's
+            // happening instead of leaving it there to be clicked again.
+            .overlay {
+                if exchanging {
+                    VStack(spacing: 10) {
+                        ProgressView()
+                        Text("Signing in…").foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background)
                 }
             }
         }
@@ -249,5 +295,17 @@ private struct PlayStationSignInWebView: NSViewRepresentable {
             decisionHandler(.cancel)
             finished(code)
         }
+    }
+}
+
+/// A short warning about the console, in the step's own type: an orange
+/// mark before secondary text.
+private struct ConsoleProblemLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            configuration.icon.foregroundStyle(.orange)
+            configuration.title.foregroundStyle(.secondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }

@@ -579,4 +579,17 @@ struct CLIAgentInstructionsTests {
         #expect(PlayStationNaming.shownName("PS5-661", among: ["PS5-661"], added: 1) == "PS5-661")
         #expect(PlayStationNaming.shownName("Living Room", among: ["Living Room"], added: 0) == "Living Room")
     }
+
+    // MARK: PS5 pairing
+
+    @Test func pairingSaysARestingOrSilentPS5BeforeTryingTheCode() {
+        func status(_ power: PlayStationDiscovery.Status.Power) -> PlayStationDiscovery.Status {
+            .init(power: power, hostName: "PS5-661", hostID: nil, systemVersion: nil, runningApp: nil)
+        }
+        #expect(PlayStationRegistration.precheck(nil) == .unreachable)
+        #expect(PlayStationRegistration.precheck(status(.standby)) == .resting)
+        #expect(PlayStationRegistration.precheck(status(.ready)) == nil)
+        #expect(PlayStationRegistration.Failure.resting.localizedDescription.contains("rest mode"))
+        #expect(!PlayStationRegistration.Failure.rejected.localizedDescription.contains("Settings ›"))
+    }
 }
