@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.0.1 - 2026-11-19
+
+Fixes to first-time setup and the Servers list.
+
+### Setup
+- Pairing a PC from Nearby on the welcome page explains a failure instead
+  of returning to the page without a word (for example, when the code isn't
+  entered within 5 minutes).
+- Pairing again right after cancelling now says that Sunshine is still
+  holding the previous request (it clears within 5 minutes), instead of
+  "Pairing failed. Try again and approve the PIN on your PC".
+- The back button on a PC's or PS5's setup screen works. It sat on the
+  window's zoom button, which took its clicks.
+- The "Shimmer" title on the welcome page is sharp; it was blurred.
+- Starting a new pairing clears the last attempt's message.
+- Until a PC or PS5 is added, Shimmer opens its window on every launch, not
+  only the first, so quitting during setup no longer leaves only a menu bar
+  icon.
+- macOS's Local Network prompt mentions the PS5 as well as PCs.
+
+### Servers
+- PCs and PS5s nearby that aren't added yet have the same round avatar as
+  added ones, in grey, on the Servers list, the welcome page and their setup
+  screens.
+- A nearby PC shows the Windows logo when it runs Windows, instead of
+  Linux's for any PC whose name doesn't say Windows or Mac.
+- Every system logo is centred to the pixel on its avatar, on Retina and
+  non-Retina screens alike. The Windows logo sat slightly left.
+
+### Download
+- The disk image's window is light, so Finder's black "Shimmer" and
+  "Applications" labels are readable, and it no longer has a caption under
+  the arrow.
+
 ## 1.0.0 - 2026-11-19
 
 The first Shimmer release: a Mac game-streaming client for PCs running

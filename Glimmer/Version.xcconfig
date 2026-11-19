@@ -2,8 +2,10 @@
 //
 // Semantic versioning: MAJOR.MINOR.PATCH, starting at Shimmer 1.0.0.
 //   (Builds before 1.0.0 carried upstream glimmer's CalVer, 2026.9.0.)
-// CURRENT_PROJECT_VERSION (build number) is a monotonic YYYYMMDD stamp, plus a
-// digit if two releases ever land on one day. Sparkle orders updates by it.
+// CURRENT_PROJECT_VERSION (build number) is a monotonic YYYYMMDD stamp, with
+// ".1", ".2" for a second or third release on one day (20261119.1). Never an
+// appended digit: 202611191 would outrank every later date. Sparkle orders
+// updates by it, comparing each dot-separated number in turn.
 //
 // Read by: both Info.plists ($(MARKETING_VERSION)) and the Makefile
 // (DMG_NAME / release tag). Pulled into the build via #include in
@@ -11,5 +13,5 @@
 // because the build is driven by `make` (which passes -xcconfig), the
 // version is NOT set in project.pbxproj - bump it HERE, build with `make`.
 
-MARKETING_VERSION = 1.0.0
-CURRENT_PROJECT_VERSION = 20261119
+MARKETING_VERSION = 1.0.1
+CURRENT_PROJECT_VERSION = 20261119.1
