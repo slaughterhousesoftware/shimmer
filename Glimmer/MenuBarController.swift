@@ -553,7 +553,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // MARK: - The Now Playing card
 
     /// What the open menu's card shows, and the watch on what it's made of:
-    /// the stream coming up ("Connecting…" to "Streaming from"), ending
+    /// the stream coming up ("Connecting…" to live), ending
     /// or failing while the menu is open redraws it.
     private var cardSignature: String?
     /// The card showed a stream's error while the menu was open.
@@ -610,7 +610,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if model.isStreaming {
             let subtitle: String
             if case .streaming = model.streamPhase {
-                subtitle = "Streaming from \(streamHost.displayName)"
+                // Just where it's from, as the card says it at rest: the stop
+                // button and the server's stats line already say it's live.
+                subtitle = streamHost.displayName
             } else {
                 subtitle = model.hostStatusLine(for: streamHost.id)
             }

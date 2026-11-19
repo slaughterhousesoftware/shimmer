@@ -7,7 +7,7 @@
 //  (design/menu-bar/top-3.png, 2026-11-18: "easily the best option").
 //
 //  Ready:     [tile] Steam Big Picture / bazzite        (PiP) (Play)
-//  Streaming: [tile] Steam Big Picture / Streaming from  (PiP) (Stop)
+//  Streaming: [tile] Steam Big Picture / bazzite        (PiP) (Stop)
 //
 //  Geometry is the mock-up's: a 60 pt card inset 12 x 6 in its row, 14 pt
 //  corners, a 42 pt tile, 30 pt round buttons 38 pt apart - in line with
