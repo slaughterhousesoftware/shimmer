@@ -496,11 +496,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Controller battery is shown by the menu-bar icon itself (the battery
         // glyph on the status item), not repeated as a "N% battery" row here.
 
-        // The window rows and Quit at the bottom - Tailscale's layout, where
-        // the window is the exception, not the point. Both open the same
-        // tabbed window: Settings on its tab, Open Shimmer on the last one.
-        // The line above them runs nearly the menu's width, as the Sound
-        // menu's above its Settings rows.
+        // The window and Quit at the bottom - Tailscale's layout, where the
+        // window is the exception, not the point. One row for the window, as
+        // Control Center's "Focus Settings…" (Kevin: one Open Shimmer, not
+        // Settings… and Open Shimmer); no shortcuts shown, though ⌘, and ⌘Q
+        // still work while the menu has the keyboard. The line above runs
+        // nearly the menu's width, as the Sound menu's above its Settings row.
         menu.addItem(separator(footer: true))
         // Plain text at the left edge, like Tailscale's. macOS 26 decorates a
         // menu item with a gear of its own when its ACTION is named
@@ -509,8 +510,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // 27 SDK adds `preferredImageVisibility`). So the selector is not
         // called that, and neither row carries an image - an empty image
         // would suppress the gear but reserve the image column and indent.
-        menu.addItem(action("Settings…", #selector(showSettingsPage), key: ","))
-        menu.addItem(action("Open Shimmer", #selector(openWindow)))
+        menu.addItem(action("Open Shimmer…", #selector(openWindow), key: ","))
         menu.addItem(separator())
         // No "Check for Updates…" here, by request. Sparkle still checks on
         // its own at launch, and the command stays in the app menu.
@@ -826,11 +826,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return MenuDisclosureWell(groups: groups)
     }
 
-    @objc private func showSettingsPage() {
-        model.settingsTab = .computers
-        AppDelegate.showMainWindow()
-    }
-
     @objc private func openWindow() {
         AppDelegate.showMainWindow()
     }
@@ -917,15 +912,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     /// A command row. Drawn by Shimmer (MenuActionRow) so its hover is the
     /// soft grey of Apple's own menu bar menus, not AppKit's accent-blue bar;
-    /// the item keeps its action and shortcut for the keyboard. The image
+    /// the item keeps its action and shortcut for the keyboard, unshown. The image
     /// is for accessibility only - macOS 27 hides a status menu item's image
     /// unless asked, and the rows have always shown without one.
     private func action(_ title: String, _ selector: Selector, key: String = "", image: NSImage? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
         item.target = self
         item.image = image
-        let shortcut = key.isEmpty ? nil : "⌘" + key.uppercased()
-        item.view = MenuActionRow(title: title, shortcut: shortcut) { [weak self, weak item] in
+        item.view = MenuActionRow(title: title) { [weak self, weak item] in
             // A plain item's click: the menu closes, then the action runs.
             guard let item else { return }
             self?.closeMenu()

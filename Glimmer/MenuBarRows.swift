@@ -435,46 +435,33 @@ class MenuRowView: NSView {
     }
 }
 
-/// A plain command row - a title and, if it has one, its shortcut at the
-/// trailing edge - drawn by Shimmer so it hovers grey like the rest. A
-/// click closes the menu and then sends the item's action, as a plain item
-/// does.
+/// A plain command row - its title alone, as Control Center's footer rows
+/// (Focus Settings…, Sound Settings…) show no shortcut - drawn by Shimmer so
+/// it hovers grey like the rest. A click closes the menu and then sends the
+/// item's action, as a plain item does.
 final class MenuActionRow: MenuRowView {
     private let title: String
-    private let shortcut: String?
 
     /// Control Center's footer rows (Sound Settings…): 22 pt.
     static let height: CGFloat = 22
 
-    init(title: String, shortcut: String?, onPick: @escaping () -> Void) {
+    init(title: String, onPick: @escaping () -> Void) {
         self.title = title
-        self.shortcut = shortcut
         super.init(height: Self.height, accessibilityTitle: title, onPick: onPick)
         sizeToContent()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    private static let shortcutAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.tertiaryLabelColor,
-    ]
-
     override var intrinsicContentSize: NSSize {
         let text = (title as NSString).size(withAttributes: Self.titleAttributes).width
-        let key = shortcut.map { ($0 as NSString).size(withAttributes: Self.shortcutAttributes).width + 24 } ?? 0
-        return NSSize(width: Self.contentInset + text + key + 24, height: Self.height)
+        return NSSize(width: Self.contentInset + text + 24, height: Self.height)
     }
 
     override func drawContent(in bounds: NSRect) {
         let size = (title as NSString).size(withAttributes: Self.titleAttributes)
         (title as NSString).draw(at: NSPoint(x: Self.contentInset, y: (bounds.height - size.height) / 2),
                                  withAttributes: Self.titleAttributes)
-        if let shortcut {
-            let s = (shortcut as NSString).size(withAttributes: Self.shortcutAttributes)
-            (shortcut as NSString).draw(at: NSPoint(x: bounds.maxX - Self.contentInset - s.width,
-                                                    y: (bounds.height - s.height) / 2),
-                                        withAttributes: Self.shortcutAttributes)
-        }
     }
 }
 
