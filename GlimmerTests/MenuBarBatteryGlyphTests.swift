@@ -672,7 +672,7 @@ struct MenuServerStatsRowTests {
     }
 
     @Test func theGlyphsAreCutToTheAirPodsInkHeight() {
-        for symbol in ["display.2", "cellularbars"] {
+        for symbol in ["eye.fill", "cellularbars"] {
             let glyph = MenuStatGlyph.image(symbol)
             #expect(glyph?.size.height == 9.5)
             #expect((glyph?.size.width ?? 0) > 6 && (glyph?.size.width ?? 99) < 16)
