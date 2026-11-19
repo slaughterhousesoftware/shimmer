@@ -427,19 +427,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         menu.addItem(volume)
 
-        // A stream's error, under the card's own controls rather than
-        // between the card and its slider.
+        // A stream that didn't start: one row in the menu's own type, under
+        // the card's controls (MenuAlertRow). A click puts it away and the
+        // menu stays up.
         if let error = model.nativeStreamError {
             menu.addItem(separator())
-            menu.addItem(hosted(
-                Text(error)
-                    .font(.system(size: 12))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 4)
-            ))
-            menu.addItem(action("Dismiss", #selector(dismissWarning)))
+            let alert = NSMenuItem()
+            alert.view = MenuAlertRow(message: error, width: Self.menuWidth) { [weak self] in
+                self?.model.dismissStreamError()
+                self?.rebuildOpenMenu()
+            }
+            menu.addItem(alert)
         }
 
         // The servers, listed the way Control Center lists Focus modes and
@@ -529,7 +527,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// A server's second line: its status (the sidebar's words), or nothing
     /// until a check has come back - never "Checking…".
     private func serverStatus(for hostID: String) -> [MenuServerRow.Stat] {
-        let text = model.sidebarStatusText(for: hostID)
+        // A failed stream's error has its own row above (MenuAlertRow); the
+        // server's line stays what the machine is - Offline, not "interrupted".
+        let text = model.sidebarStatusText(for: hostID, ignoringStreamError: true)
         return text == "Checking…" ? [] : [.init(symbol: nil, text: text)]
     }
 
@@ -539,7 +539,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         statusObservation += 1
         let generation = statusObservation
         withObservationTracking {
-            for id in statusRows.keys { _ = model.sidebarStatusText(for: id) }
+            for id in statusRows.keys { _ = model.sidebarStatusText(for: id, ignoringStreamError: true) }
         } onChange: {
             Task { @MainActor [weak self] in
                 guard let self, self.menuIsOpen, generation == self.statusObservation else { return }
@@ -690,7 +690,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
     @objc private func enterPictureInPicture() { model.enterPictureInPicture() }
     @objc private func endStream() { model.endStream() }
-    @objc private func dismissWarning() { model.dismissStreamError() }
     @objc private func stopWaking() {
         guard let host = model.selectedHost else { return }
         model.cancelWake(host)
@@ -903,14 +902,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func header(_ title: String) -> NSMenuItem {
         let item = NSMenuItem()
         item.view = MenuSectionHeaderRow(title)
-        return item
-    }
-
-    private func hosted<Content: View>(_ content: Content) -> NSMenuItem {
-        let view = NSHostingView(rootView: content.frame(width: Self.menuWidth))
-        view.frame = NSRect(origin: .zero, size: view.fittingSize)
-        let item = NSMenuItem()
-        item.view = view
         return item
     }
 

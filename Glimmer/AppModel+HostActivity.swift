@@ -51,9 +51,11 @@ extension AppModel {
     }
 
     /// The words behind a machine's sidebar dot (its tooltip).
-    func sidebarStatusText(for hostID: String, at now: Date = .now) -> String {
+    /// `ignoringStreamError`: the machine's own state even while a failed
+    /// stream's error stands (the menu shows that error in a row of its own).
+    func sidebarStatusText(for hostID: String, at now: Date = .now, ignoringStreamError: Bool = false) -> String {
         if showsOwnStatus(hostID) {
-            let own = hostStatusLine(for: hostID, at: now)
+            let own = hostStatusLine(for: hostID, at: now, ignoringStreamError: ignoringStreamError)
             if own != "Checking…" { return own }
         }
         guard let sample = freshReachability(for: hostID, at: now) else { return "Checking…" }
@@ -80,7 +82,7 @@ extension AppModel {
         return hostStatusLine(for: id)
     }
 
-    func hostStatusLine(for hostID: String, at now: Date = .now) -> String {
+    func hostStatusLine(for hostID: String, at now: Date = .now, ignoringStreamError: Bool = false) -> String {
         if isStreaming, activeStreamHostID == hostID {
             switch streamPhase {
             case .connecting(let stage): return stage
@@ -90,7 +92,7 @@ extension AppModel {
             case .error: return "Stream interrupted"
             }
         }
-        if streamErrorAffectsStatus(of: hostID) {
+        if !ignoringStreamError, streamErrorAffectsStatus(of: hostID) {
             return interruptedStreamHost?.id == hostID ? "Connection interrupted" : "Connection needs attention"
         }
         guard let live = liveStatus(for: hostID, at: now) else { return "Checking…" }

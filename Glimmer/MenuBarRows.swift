@@ -627,6 +627,93 @@ final class MenuServerRow: MenuRowView {
     }
 }
 
+/// A stream that didn't start, said in the menu's own row: an orange disc
+/// where a server's mark sits, the headline as a row's name (13 pt, 14 pt
+/// baseline) and what to do about it in a second line's type (11 pt,
+/// MenuInk.secondary, baselines 14 pt apart from 28), wrapping as long as it
+/// needs. An × where a server's chevron sits; a click anywhere on it puts
+/// the error away.
+final class MenuAlertRow: MenuRowView {
+    private let headline: String
+    private let detailLines: [String]
+
+    static let headlineFont = NSFont.menuFont(ofSize: 0)
+    static let detailFont = NSFont.systemFont(ofSize: 11)
+    private static let textX = MenuRowView.contentInset + MenuHostMark.diameter + 8
+    /// Room on the right for the ×, as a server row keeps for its chevron.
+    private static let trailing: CGFloat = 40
+
+    /// `width`: the menu's, to wrap the advice to.
+    init(message: String, width: CGFloat, onDismiss: @escaping () -> Void) {
+        let (headline, detail) = Self.split(message)
+        self.headline = headline
+        detailLines = detail.map { Self.wrap($0, width: width - Self.textX - Self.trailing) } ?? []
+        // The last baseline 6 pt above the row's bottom; one line is a
+        // server row's 32 pt.
+        let height = detailLines.isEmpty ? MenuServerRow.height : 28 + CGFloat(detailLines.count - 1) * 14 + 6
+        super.init(height: max(MenuServerRow.height, height), accessibilityTitle: message, onPick: onDismiss)
+        setAccessibilityHelp("Dismiss")
+        setFrameSize(NSSize(width: width, height: frame.height))
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The first sentence is the headline, the rest the advice.
+    static func split(_ message: String) -> (headline: String, detail: String?) {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let end = text.range(of: ". ") else {
+            return (text.hasSuffix(".") ? String(text.dropLast()) : text, nil)
+        }
+        let rest = text[end.upperBound...].trimmingCharacters(in: .whitespaces)
+        return (String(text[..<end.lowerBound]), rest.isEmpty ? nil : rest)
+    }
+
+    static func wrap(_ text: String, width: CGFloat) -> [String] {
+        let string = NSAttributedString(string: text, attributes: [.font: detailFont])
+        let typesetter = CTTypesetterCreateWithAttributedString(string)
+        var lines: [String] = [], start = 0
+        let ns = text as NSString
+        while start < ns.length {
+            let count = CTTypesetterSuggestLineBreak(typesetter, start, Double(max(width, 40)))
+            guard count > 0 else { break }
+            lines.append(ns.substring(with: NSRange(location: start, length: count))
+                .trimmingCharacters(in: .whitespaces))
+            start += count
+        }
+        return lines
+    }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: frame.width, height: frame.height) }
+
+    override func drawContent(in bounds: NSRect) {
+        // The disc, centred on the first 32 pt as a server's mark is.
+        let d = MenuHostMark.diameter
+        let disc = NSRect(x: MenuRowView.contentInset, y: bounds.maxY - 3 - d, width: d, height: d)
+        NSColor.systemOrange.setFill()
+        NSBezierPath(ovalIn: disc).fill()
+        if let mark = MenuStatGlyph.image("exclamationmark", inkHeight: 13, weight: .bold) {
+            let s = mark.size
+            MenuStatGlyph.draw(mark, in: NSRect(x: disc.midX - s.width / 2, y: disc.midY - s.height / 2,
+                                                width: s.width, height: s.height), colour: .white)
+        }
+        // Baselines from the top: the headline at 14 (alone, the row's
+        // middle), the advice from 28, 14 apart.
+        let headlineBaseline = detailLines.isEmpty ? bounds.maxY - 20.5 : bounds.maxY - 14
+        MenuText.draw(headline, font: Self.headlineFont, colour: MenuInk.primary, x: Self.textX,
+                      baseline: headlineBaseline, flipped: false)
+        for (i, line) in detailLines.enumerated() {
+            MenuText.draw(line, font: Self.detailFont, colour: MenuInk.secondary, x: Self.textX,
+                          baseline: bounds.maxY - 28 - CGFloat(i) * 14, flipped: false)
+        }
+        // The ×, where a server's chevron turns, centred on the first 32 pt.
+        if let close = MenuStatGlyph.image("xmark", inkHeight: 9, weight: .semibold) {
+            let s = close.size
+            MenuStatGlyph.draw(close, in: NSRect(x: bounds.maxX - 21 - s.width / 2, y: bounds.maxY - 16 - s.height / 2,
+                                                 width: s.width, height: s.height), colour: MenuInk.header)
+        }
+    }
+}
+
 /// The small solid glyphs of a server's second line, cut to their ink and
 /// sized to the AirPods' (9.5 pt tall), so every glyph sits exactly where
 /// the measurements put it whatever padding its symbol carries.

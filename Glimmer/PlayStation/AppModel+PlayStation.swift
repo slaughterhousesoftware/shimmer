@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import Network
 
 extension Host {
     static let playStationIDPrefix = "ps5-"
@@ -133,6 +134,17 @@ extension AppModel {
         if Task.isCancelled { throw StreamError.cancelled }
         guard status?.power != .ready else { return true }
         let answered = status != nil
+        // On the home network a PS5 always answers discovery while it rests,
+        // and only a resting one can be woken: silence there means it's off
+        // (or unplugged, or resting with its network features off), and no
+        // wake or session will reach it. Say so now, not after a 40 s wake
+        // and a session timeout. (Over a route that filters discovery - a
+        // VPN - silence proves nothing, so that still goes on to try.)
+        if !answered, Self.isHomeNetworkAddress(console.address) {
+            Diag.notice("PS5: \(console.nickname) didn't answer discovery on the home network - not trying further",
+                        "PlayStation")
+            throw StreamError.playStation(.unreachable("no discovery answer on the home network"))
+        }
         if currentStreamToken == token, case .connecting(let stage) = streamPhase, stage != Self.cancellingStage {
             streamPhase = .connecting(stage: "Waking \(console.nickname)…")
         }
@@ -154,6 +166,15 @@ extension AppModel {
     }
 
     nonisolated static let playStationWakeSeconds: TimeInterval = 40
+
+    /// A private LAN address (10/8, 172.16/12, 192.168/16, link-local) -
+    /// where discovery reaches a resting PS5. Not Tailscale's 100.64/10.
+    nonisolated static func isHomeNetworkAddress(_ address: String) -> Bool {
+        guard let ip = IPv4Address(address) else { return false }
+        let b = [UInt8](ip.rawValue)
+        return b[0] == 10 || (b[0] == 172 && (16...31).contains(b[1])) || (b[0] == 192 && b[1] == 168)
+            || (b[0] == 169 && b[1] == 254)
+    }
 
     /// What the failure of a PS5 attempt means given whether the console ever
     /// answered discovery: "on but not answering" is only true of one that did.

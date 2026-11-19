@@ -47,7 +47,7 @@ struct StreamFailureCopyTests {
             (.versionMismatch, "Update Shimmer"),
             (.didNotWake, "didn't wake up"),
             (.noAnswer, "Remote Play is enabled"),
-            (.unreachable("no answer"), "plugged in"),
+            (.unreachable("no answer"), "turned off"),
         ]
         var seen = Set<String>()
         for (failure, expected) in failures {
@@ -224,6 +224,17 @@ struct StopWhileStartingTests {
 }
 
 struct PlayStationFailureTests {
+    // Silence from a console on the home network ends the attempt at once;
+    // over Tailscale (100.64/10) discovery may be filtered, so it doesn't.
+    @Test func onlyTheHomeNetworkCountsAsSilenceMeaningOff() {
+        for address in ["192.168.50.22", "10.0.0.5", "172.20.1.9", "169.254.3.4"] {
+            #expect(AppModel.isHomeNetworkAddress(address), "\(address)")
+        }
+        for address in ["100.109.155.86", "8.8.8.8", "172.32.0.1", "ps5.local", "fe80::1"] {
+            #expect(!AppModel.isHomeNetworkAddress(address), "\(address)")
+        }
+    }
+
     @Test func aConsoleThatNeverAnsweredDiscoveryIsUnreachableNotSilent() {
         let silent = StreamError.playStation(.noAnswer)
         guard case StreamError.playStation(.unreachable) =

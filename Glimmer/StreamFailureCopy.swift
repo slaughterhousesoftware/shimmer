@@ -147,7 +147,9 @@ enum StreamFailureCopy {
             return "\(hostName) is on but didn't answer. Check that Remote Play is enabled on it "
                 + "(Settings › System › Remote Play), then try again."
         case .unreachable:
-            return "Couldn't reach \(hostName). Make sure it's plugged in and on the same network."
+            // First sentence: the menu's headline (MenuAlertRow).
+            return "\(hostName) isn't answering. It's turned off or not on this network. "
+                + "Turn it on or put it in rest mode, then try again."
         }
     }
 
