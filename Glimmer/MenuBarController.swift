@@ -111,6 +111,7 @@ extension AppModel {
     /// pairing (its own window shows that), or a stream that is live.
     var menuBarBusy: Bool {
         if case .connecting = streamPhase { return true }
+        if debugHoldsSpinner { return true }
         if streamCheckHostID != nil { return true }
         if powerWaitHostID != nil || !LunaPower.shared.actionInFlight.isEmpty { return true }
         return pendingHostSwitch != nil

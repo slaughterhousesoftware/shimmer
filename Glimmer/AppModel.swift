@@ -370,6 +370,9 @@ final class AppModel {
     /// A stream setting was changed in the menu during this stream, so the
     /// menu says it applies to the next one. Cleared when a stream ends.
     @ObservationIgnored var streamSettingsChangedMidStream = false
+    /// `--debug-spinner=<seconds>`: the menu bar spinner held on, for demo
+    /// recordings of it (a real connect shows it for well under a second).
+    var debugHoldsSpinner = false
     @ObservationIgnored var awaitingStatusAfterStreamToken: UUID?
     /// That check's task, and the token that tells its end from a newer one's.
     @ObservationIgnored var streamCheckTask: Task<Void, Never>?

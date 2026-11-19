@@ -107,6 +107,12 @@ extension AppModel {
         if let path = Self.debugKnob("render-avatars") {
             HostAvatar.renderGallery(to: URL(fileURLWithPath: path))
         }
+        // `--debug-spinner=<seconds>`: hold the menu bar spinner on (demo
+        // recordings; a real connect shows it for a fraction of a second).
+        if let seconds = Self.debugKnob("spinner").flatMap(Double.init) {
+            debugHoldsSpinner = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.debugHoldsSpinner = false }
+        }
         // `--debug-cycle=<host>:<sec>[,<host>:<sec>...]`: a stress loop for
         // stream start/stop - stream each host for up to <sec> (randomised
         // down to half), end it, wait a random 0.3-4 s, go on to the next,
@@ -240,7 +246,10 @@ extension AppModel {
         log.notice("DEBUG automation armed: stream host~=\(hostMatch, privacy: .private) pipAfter=\(pipAfter ?? -1) quitAfter=\(quitAfter ?? -1)")
 
         // Give discovery/host-load a beat, then select + stream.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        // `--debug-stream-delay=<sec>` waits longer (demo recordings open the
+        // menu first).
+        let delay = Self.debugKnob("stream-delay").flatMap(Double.init) ?? 2.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             guard let host = self.hosts.first(where: {
                 $0.name.localizedCaseInsensitiveContains(hostMatch)
