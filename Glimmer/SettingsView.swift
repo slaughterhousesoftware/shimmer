@@ -41,31 +41,11 @@ struct AppShell: View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
                 // The title bar area: the system title is hidden (see
-                // WindowChromeTweak) so it can be centred here, clear of the
-                // traffic lights, exactly as the reference app has it.
+                // WindowChromeTweak) so it can be centred, clear of the traffic
+                // lights, exactly as the reference app has it. The title itself
+                // is drawn in the overlay below; this keeps its room.
                 VStack(spacing: 0) {
-                    Text("Shimmer")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(activeState == .inactive ? .secondary : .primary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 30)
-                        .overlay(alignment: .leading) {
-                            if showsWelcome, pairingTarget != nil {
-                                Button {
-                                    pairingTarget = nil
-                                } label: {
-                                    Image(systemName: "chevron.left")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .frame(width: 26, height: 26)
-                                        .background(.primary.opacity(0.06), in: Circle())
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(model.pairingInFlight)
-                                .help("Back to PCs")
-                                .accessibilityLabel("Back to welcome")
-                                .padding(.leading, 42)
-                            }
-                        }
+                    Color.clear.frame(height: 30)
                     if !showsWelcome {
                         SettingsTabBar(selection: $model.settingsTab)
                     }
@@ -91,6 +71,40 @@ struct AppShell: View {
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
+            // Back, below the title bar rather than in it: in the title row it
+            // sat on the zoom button and the title bar took its clicks, which
+            // left a PC or PS5 opened by mistake with no way back.
+            .overlay(alignment: .topLeading) {
+                if showsWelcome, pairingTarget != nil {
+                    Button {
+                        pairingTarget = nil
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 26, height: 26)
+                            .background(.primary.opacity(0.06), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.pairingInFlight)
+                    .help("Back")
+                    .accessibilityLabel("Back to welcome")
+                    .padding(.leading, 14)
+                    .padding(.top, 8)
+                }
+            }
+        }
+        // The title, drawn ABOVE the pages rather than beside them. The
+        // welcome page's content is a scroll view straight under the title, so
+        // macOS stretches it up beneath the title bar and lays its scroll-edge
+        // blur over the top 32pt; a title painted underneath came out smeared.
+        .overlay(alignment: .top) {
+            Text("Shimmer")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(activeState == .inactive ? .secondary : .primary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 30)
+                .allowsHitTesting(false)
         }
         // Waived on the WHOLE stack, not just the title row. Waiving it on the
         // title alone drew that row beside the traffic lights but still let the

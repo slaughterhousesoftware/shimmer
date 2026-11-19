@@ -80,10 +80,13 @@ struct ComputersTab: View {
                                  address: $setupAddress, looking: lookingUpAddress,
                                  connect: connectFirstPC,
                                  pairPC: { pc in
+                                     // A new attempt: the last one's message no longer applies.
+                                     setupError = nil
                                      pairingTarget = PCPairingTarget(name: pc.displayName, address: pc.host,
                                                                      startImmediately: true)
                                  },
                                  pairPlayStation: { console, name in
+                                     setupError = nil
                                      pairingTarget = PCPairingTarget(name: name, address: console.address,
                                                                      isPlayStation: true)
                                  },
