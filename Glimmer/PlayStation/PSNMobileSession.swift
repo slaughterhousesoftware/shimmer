@@ -162,11 +162,21 @@ protocol PSNCredentialStore: Sendable {
 }
 
 /// One generic-password item in the login keychain, JSON inside.
-struct KeychainPSNCredentialStore: PSNCredentialStore {
+///
+/// An item this build can't open - left by an older build signed another
+/// way, or a Debug build on the same Mac - can't be read or deleted without
+/// the keychain's password (it can be overwritten, uselessly). So it's left
+/// alone: the next sign-in saves under a fresh account name and remembers
+/// which.
+struct KeychainPSNCredentialStore: PSNCredentialStore, @unchecked Sendable {
     var service = "Shimmer PlayStation Network"
-    var account = "presence"
+    var defaults: UserDefaults = .standard
+    static let accountKey = "PSN.presenceKeychainAccount"
+    static let defaultAccount = "presence"
 
-    private var base: [String: Any] {
+    private var account: String { defaults.string(forKey: Self.accountKey) ?? Self.defaultAccount }
+
+    private func query(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
          kSecAttrAccount as String: account]
     }
@@ -179,7 +189,7 @@ struct KeychainPSNCredentialStore: PSNCredentialStore {
 
     func load() -> PSNCredentials? {
         Self.quiet
-        var query = base
+        var query = query(account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
@@ -196,22 +206,48 @@ struct KeychainPSNCredentialStore: PSNCredentialStore {
     func save(_ credentials: PSNCredentials) -> Bool {
         guard let data = try? JSONEncoder().encode(credentials) else { return false }
         Self.quiet
-        let query = base
-        let update = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if update == errSecSuccess { return true }
-        if update != errSecItemNotFound { SecItemDelete(query as CFDictionary) }
-        var add = base
+        let current = account
+        switch readStatus(current) {
+        case errSecSuccess:
+            let update = SecItemUpdate(query(current) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            if update == errSecSuccess { return true }
+        case errSecItemNotFound:
+            if add(data, account: current) { return true }
+        default:
+            // There but not ours: macOS lets this build overwrite such an
+            // item, then won't let it read it back (measured). A new name.
+            break
+        }
+        let fresh = "\(Self.defaultAccount)-\(UUID().uuidString.prefix(8).lowercased())"
+        guard add(data, account: fresh) else { return false }
+        defaults.set(fresh, forKey: Self.accountKey)
+        Diag.info("PSN sign-in saved under a new keychain name (the old item belongs to another build)", "PlayStation")
+        return true
+    }
+
+    private func readStatus(_ account: String) -> OSStatus {
+        var query = query(account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        return SecItemCopyMatching(query as CFDictionary, &result)
+    }
+
+    private func add(_ data: Data, account: String) -> Bool {
+        var add = query(account)
         add[kSecValueData as String] = data
         add[kSecAttrLabel as String] = service
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         let status = SecItemAdd(add as CFDictionary, nil)
-        if status != errSecSuccess { Diag.warn("PSN sign-in not saved to the keychain (\(status))", "PlayStation") }
+        if status != errSecSuccess, status != errSecDuplicateItem {
+            Diag.warn("PSN sign-in not saved to the keychain (\(status))", "PlayStation")
+        }
         return status == errSecSuccess
     }
 
     func clear() {
         Self.quiet
-        SecItemDelete(base as CFDictionary)
+        SecItemDelete(query(account) as CFDictionary)
     }
 }
 
