@@ -21,7 +21,7 @@ extension Host {
     /// Shown as plain "PlayStation", not its network name.
     var hasGenericPlayStationName: Bool { isPlayStation && customName == Self.genericPlayStationName }
 
-    /// Sony's default console name, "PS5-" and digits ("PS5-661"): nobody
+    /// Sony's default console name, "PS5-" and digits ("PS5-482"): nobody
     /// chose it, and with one console it tells nobody anything.
     static func isSonyDefaultName(_ name: String) -> Bool {
         name.wholeMatch(of: /PS[45]-\d+/) != nil
@@ -49,7 +49,7 @@ extension LibraryApp {
 
 extension AppModel {
     /// Registered consoles as hosts, for the library and the menu bar.
-    /// A lone console still under Sony's default name ("PS5-661") is just
+    /// A lone console still under Sony's default name ("PS5-482") is just
     /// "PlayStation" (Kevin: most people have one; nobody cares about its
     /// network name). Renamed, or one of several, it keeps its name.
     func playStationHosts() -> [Host] {

@@ -11,7 +11,7 @@ import Testing
 
 struct HostAvatarTests {
     @Test func ps5IsPlayStation() {
-        #expect(HostAvatar.mark(isPlayStation: true, serverName: "PS5-661", kind: .playStation) == .playStation)
+        #expect(HostAvatar.mark(isPlayStation: true, serverName: "PS5-482", kind: .playStation) == .playStation)
     }
     @Test func distroNameWins() {
         #expect(HostAvatar.mark(isPlayStation: false, serverName: "bazzite", kind: .linux) == .icon(.bazzite))

@@ -214,7 +214,7 @@ struct TakionV20Tests {
         #expect(encoded { $0.gyro_y = .nan } == rest)
     }
 
-    // MARK: Pad info (live PS5-661, Takion 20, 2026-11-17)
+    // MARK: Pad info (a live PS5, Takion 20, 2026-11-17)
 
     private static func padInfo(_ hex: String) -> ChiakiPadInfo? {
         let bytes = hex.split(separator: " ").map { UInt8($0, radix: 16)! }

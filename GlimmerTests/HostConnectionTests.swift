@@ -512,11 +512,11 @@ struct CLIAgentInstructionsTests {
     // Whole paragraphs - no line break inside a sentence - and the server
     // named as what it is.
     @Test func agentInstructionsArePlainParagraphsAndNameTheServer() {
-        let ps5 = ShimmerCLIAgentInstructions.text(hostName: "PlayStation", address: "192.168.50.22", isPlayStation: true)
-        #expect(ps5.contains("PlayStation, a PlayStation 5 (Remote Play), at 192.168.50.22"))
+        let ps5 = ShimmerCLIAgentInstructions.text(hostName: "PlayStation", address: "192.168.1.22", isPlayStation: true)
+        #expect(ps5.contains("PlayStation, a PlayStation 5 (Remote Play), at 192.168.1.22"))
         #expect(ps5.contains("Remote Play must be on"))
         #expect(!ps5.contains("Sunshine's ports"))
-        let pc = ShimmerCLIAgentInstructions.text(hostName: "bazzite", address: "192.168.50.40")
+        let pc = ShimmerCLIAgentInstructions.text(hostName: "bazzite", address: "192.168.1.40")
         #expect(pc.contains("bazzite, a PC running Sunshine or Apollo"))
         for paragraph in pc.components(separatedBy: "\n\n") {
             #expect(!paragraph.contains("\n"), "a line break inside: \(paragraph.prefix(40))")
@@ -527,10 +527,10 @@ struct CLIAgentInstructionsTests {
 
     @Test func aTypedAddressThatAnswersPlayStationDiscoveryIsAPS5() async {
         let outcome = await AddressLookup.identify("ps5.local",
-                                                   resolve: { _ in "192.168.50.22" },
-                                                   playStation: { $0 == "192.168.50.22" ? "PS5-661" : nil },
+                                                   resolve: { _ in "192.168.1.22" },
+                                                   playStation: { $0 == "192.168.1.22" ? "PS5-482" : nil },
                                                    sunshine: { _, _ in false })
-        #expect(outcome == .playStation(name: "PS5-661", address: "192.168.50.22"))
+        #expect(outcome == .playStation(name: "PS5-482", address: "192.168.1.22"))
     }
 
     @Test func aTypedAddressWithSunshineIsAPCAndKeepsWhatWasTyped() async {
@@ -569,14 +569,14 @@ struct CLIAgentInstructionsTests {
     }
 
     @Test func aLiteralIPv4IsUsedAsIs() async {
-        #expect(await AddressLookup.ipv4(for: "192.168.50.22") == "192.168.50.22")
+        #expect(await AddressLookup.ipv4(for: "192.168.1.22") == "192.168.1.22")
         #expect(await AddressLookup.ipv4(for: "localhost") == "127.0.0.1")
     }
 
     @MainActor @Test func aLonePS5UnderSonysNameIsShownAsPlayStation() {
-        #expect(PlayStationNaming.shownName("PS5-661", among: ["PS5-661"], added: 0) == "PlayStation")
-        #expect(PlayStationNaming.shownName("PS5-661", among: ["PS5-661", "PS5-123"], added: 0) == "PS5-661")
-        #expect(PlayStationNaming.shownName("PS5-661", among: ["PS5-661"], added: 1) == "PS5-661")
+        #expect(PlayStationNaming.shownName("PS5-482", among: ["PS5-482"], added: 0) == "PlayStation")
+        #expect(PlayStationNaming.shownName("PS5-482", among: ["PS5-482", "PS5-123"], added: 0) == "PS5-482")
+        #expect(PlayStationNaming.shownName("PS5-482", among: ["PS5-482"], added: 1) == "PS5-482")
         #expect(PlayStationNaming.shownName("Living Room", among: ["Living Room"], added: 0) == "Living Room")
     }
 
@@ -584,7 +584,7 @@ struct CLIAgentInstructionsTests {
 
     @Test func pairingSaysARestingOrSilentPS5BeforeTryingTheCode() {
         func status(_ power: PlayStationDiscovery.Status.Power) -> PlayStationDiscovery.Status {
-            .init(power: power, hostName: "PS5-661", hostID: nil, systemVersion: nil, runningApp: nil)
+            .init(power: power, hostName: "PS5-482", hostID: nil, systemVersion: nil, runningApp: nil)
         }
         #expect(PlayStationRegistration.precheck(nil) == .unreachable)
         #expect(PlayStationRegistration.precheck(status(.standby)) == .resting)

@@ -48,10 +48,10 @@ struct StreamFailureCopyTests {
             (.didNotWake, "Didn't wake up"), (.noAnswer, "Remote Play is off"), (.unreachable(""), "Not answering"),
         ]
         for (failure, expected) in failures {
-            let headline = StreamFailureCopy.headline(StreamFailureCopy.playStation(failure, hostName: "PS5-661"))
+            let headline = StreamFailureCopy.headline(StreamFailureCopy.playStation(failure, hostName: "PS5-482"))
             #expect(headline == expected, "\(failure)")
         }
-        #expect(StreamFailureCopy.headline(StreamFailureCopy.playStationEndedForLocalController(hostName: "PS5-661"))
+        #expect(StreamFailureCopy.headline(StreamFailureCopy.playStationEndedForLocalController(hostName: "PS5-482"))
                 == "Remote Play ended")
         #expect(StreamFailureCopy.headline("Stream to bazzite ended unexpectedly.") == "Stream ended")
         #expect(StreamFailureCopy.headline("Something new went wrong.") == "Couldn't stream")
@@ -81,9 +81,9 @@ struct StreamFailureCopyTests {
         ]
         var seen = Set<String>()
         for (failure, expected) in failures {
-            let text = StreamFailureCopy.connect(StreamError.playStation(failure), hostName: "PS5-661")
+            let text = StreamFailureCopy.connect(StreamError.playStation(failure), hostName: "PS5-482")
             #expect(text.contains(expected), "\(failure) → \(text)")
-            #expect(text.contains("PS5-661"))
+            #expect(text.contains("PS5-482"))
             seen.insert(text)
         }
         #expect(seen.count == failures.count)
@@ -257,7 +257,7 @@ struct PlayStationFailureTests {
     // Silence from a console on the home network ends the attempt at once;
     // over Tailscale (100.64/10) discovery may be filtered, so it doesn't.
     @Test func onlyTheHomeNetworkCountsAsSilenceMeaningOff() {
-        for address in ["192.168.50.22", "10.0.0.5", "172.20.1.9", "169.254.3.4"] {
+        for address in ["192.168.1.22", "10.0.0.5", "172.20.1.9", "169.254.3.4"] {
             #expect(AppModel.isHomeNetworkAddress(address), "\(address)")
         }
         for address in ["100.64.12.34", "8.8.8.8", "172.32.0.1", "ps5.local", "fe80::1"] {

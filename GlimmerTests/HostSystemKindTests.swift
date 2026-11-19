@@ -28,7 +28,7 @@ struct HostSystemKindTests {
         #expect(HostSystemKind.resolve(isPlayStation: false, ttl: nil, serverName: "DESKTOP-WIN11") == .windows)
     }
     @Test func parsesPingTTL() {
-        #expect(HostSystemKind.ttl(fromPingOutput: "64 bytes from 192.168.50.40: icmp_seq=0 ttl=64 time=2.8 ms") == 64)
+        #expect(HostSystemKind.ttl(fromPingOutput: "64 bytes from 192.168.1.40: icmp_seq=0 ttl=64 time=2.8 ms") == 64)
         #expect(HostSystemKind.ttl(fromPingOutput: "Request timeout for icmp_seq 0") == nil)
     }
 }
