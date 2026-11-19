@@ -48,6 +48,12 @@ enum HostSystemKind: String, Sendable {
         return cached(hostID: host.id) ?? kind
     }
 
+    /// A machine not added yet (a nearby PC): ping it the same way, but cache
+    /// nothing - it has no saved id yet. Until the answer, its name decides.
+    static func detect(address: String, serverName: String) async -> Self {
+        resolve(isPlayStation: false, ttl: await pingTTL(address), serverName: serverName)
+    }
+
     private static func pingTTL(_ address: String) async -> Int? {
         await withCheckedContinuation { continuation in
             let process = Process()

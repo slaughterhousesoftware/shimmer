@@ -107,12 +107,10 @@ struct PCPairingPane: View {
             ScrollView {
                 VStack(spacing: 20) {
                     VStack(spacing: 8) {
-                        Image(systemName: "desktopcomputer")
-                            .font(.system(size: 28, weight: .regular))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 64, height: 64)
-                            .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+                        // The sidebar's grey avatar for a machine not added yet.
+                        NearbyHostAvatar(name: target.name, address: address, isPlayStation: false, size: 64)
                             .padding(.bottom, 4)
+                            .accessibilityHidden(true)
                         Text(address == target.address ? target.name : address)
                             .font(.system(size: 18, weight: .semibold))
                             .fixedSize(horizontal: false, vertical: true)
@@ -167,11 +165,7 @@ struct PCPairingPane: View {
             ScrollView {
                 VStack(spacing: 28) {
                     VStack(spacing: 8) {
-                        Image(systemName: "desktopcomputer")
-                            .font(.system(size: 28))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 64, height: 64)
-                            .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+                        NearbyHostAvatar(name: target.name, address: address, isPlayStation: false, size: 64)
                             .accessibilityHidden(true)
                         Text(target.name)
                             .font(.system(size: 18, weight: .semibold))

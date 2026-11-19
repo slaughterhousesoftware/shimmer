@@ -1,73 +1,45 @@
 //
 //  HostSystemLogo.swift
 //
-//  A machine's system as a plain mark in the text colour - Tux, the Windows
-//  squares, the Apple, the PlayStation logo (nearby machines not added yet) -
-//  and as a round avatar for saved ones (HostAvatar). Each plain mark is
-//  scaled so the four read the same size.
+//  A machine's system as a round avatar: in its brand's colours for saved
+//  machines (HostAvatar), in grey for nearby ones not added yet
+//  (NearbyHostAvatar).
 //
 
 import AppKit
 import SwiftUI
 
-struct HostSystemLogo: View {
-    private let fixedKind: HostSystemKind?
-    private let host: Host?
-    let size: CGFloat
-    @AppStorage private var cachedKind: String
+/// A machine not added yet (Nearby): the saved machines' avatar - same disc,
+/// same mark, same size - in grey, the way the menu bar draws the servers not
+/// in use (a 9% disc, a 50% mark, after Control Center's Focus list). It
+/// reads as the same kind of thing, not added yet.
+///
+/// A PC's mark comes from pinging it, as a saved one's does (Windows answers
+/// with a TTL of 128, Linux and macOS with 64): by name alone, anything not
+/// called "Windows" or "Mac" drew Tux.
+struct NearbyHostAvatar: View {
+    let name: String
+    let address: String
+    let isPlayStation: Bool
+    var size: CGFloat = SettingsMetrics.sidebarIconSize
+    @State private var detected: (address: String, kind: HostSystemKind)?
 
-    /// A saved machine: its detected (cached) system.
-    init(host: Host, size: CGFloat) {
-        self.host = host
-        self.fixedKind = nil
-        self.size = size
-        _cachedKind = AppStorage(wrappedValue: "", HostSystemKind.storageKey(for: host.id))
-    }
-
-    /// A machine not added yet (nearby): a kind settled by the caller.
-    init(kind: HostSystemKind, size: CGFloat) {
-        self.host = nil
-        self.fixedKind = kind
-        self.size = size
-        _cachedKind = AppStorage(wrappedValue: "", "glimmer.hostSystem.-")
-    }
-
-    private var kind: HostSystemKind {
-        if let fixedKind { return fixedKind }
-        guard let host else { return .linux }
-        if host.isPlayStation { return .playStation }
-        return HostSystemKind(rawValue: cachedKind)
-            ?? HostSystemKind.resolve(isPlayStation: false, ttl: nil, serverName: host.name)
+    private var mark: HostAvatar.Mark {
+        let kind = detected.flatMap { $0.address == address ? $0.kind : nil }
+            ?? HostSystemKind.resolve(isPlayStation: isPlayStation, ttl: nil, serverName: name)
+        return HostAvatar.mark(isPlayStation: isPlayStation, serverName: name, kind: kind)
     }
 
     var body: some View {
-        Group {
-            switch kind {
-            case .playStation: mark(Image(systemName: "playstation.logo"), scale: 0.92)
-            case .mac: mark(Image(systemName: "apple.logo"), scale: 0.78)
-            case .windows: mark(Image("HostLogo-windows").renderingMode(.template), scale: 0.74)
-            // Tux is centred by its box, but its weight is the solid head
-            // and body up top over thin outlined feet, so the box's centre
-            // reads high beside a name. Down a twentieth of the mark.
-            case .linux: mark(Image("HostLogo-linux").renderingMode(.template), scale: 0.9)
-                .offset(y: size * 0.05)
+        HostAvatar.disc(mark, size: size,
+                        fill: AnyShapeStyle(Color.primary.opacity(0.09)),
+                        ink: Color.primary.opacity(0.5))
+            .accessibilityLabel(HostAvatar.name(of: mark))
+            .task(id: address) {
+                guard !isPlayStation else { return }
+                let kind = await HostSystemKind.detect(address: address, serverName: name)
+                detected = (address, kind)
             }
-        }
-        .frame(width: size, height: size)
-        .accessibilityLabel(Self.name(of: kind))
-    }
-
-    private func mark(_ image: Image, scale: CGFloat) -> some View {
-        image.resizable().scaledToFit().frame(width: size * scale, height: size * scale)
-    }
-
-    static func name(of kind: HostSystemKind) -> String {
-        switch kind {
-        case .linux: "Linux"
-        case .windows: "Windows"
-        case .mac: "Mac"
-        case .playStation: "PlayStation"
-        }
     }
 }
 

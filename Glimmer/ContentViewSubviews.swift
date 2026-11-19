@@ -106,13 +106,11 @@ struct FirstPCSetup: View {
                                     .foregroundStyle(.secondary)
                                     .padding(.leading, 2)
                                 ForEach(nearby) { pc in
-                                    nearbyRow(name: pc.displayName,
-                                              logo: HostSystemKind.resolve(isPlayStation: false, ttl: nil,
-                                                                           serverName: pc.displayName),
+                                    nearbyRow(name: pc.displayName, isPlayStation: false,
                                               address: pc.host) { pairPC(pc) }
                                 }
                                 ForEach(playStations, id: \.console.id) { item in
-                                    nearbyRow(name: item.name, logo: .playStation, address: item.console.address) {
+                                    nearbyRow(name: item.name, isPlayStation: true, address: item.console.address) {
                                         pairPlayStation(item.console, item.name)
                                     }
                                 }
@@ -140,14 +138,13 @@ struct FirstPCSetup: View {
         connect(trimmedAddress)
     }
 
-    /// A nearby machine: its system's mark, its name, Pair. The mark's ink
-    /// sits centred between the border and the name (about 11 pt each way),
-    /// Pair 6 pt inside the border on its three sides.
-    private func nearbyRow(name: String, logo: HostSystemKind, address: String,
+    /// A nearby machine: its grey avatar (as in the sidebar's Nearby), its
+    /// name, Pair. The disc and Pair each sit 6 pt inside the border.
+    private func nearbyRow(name: String, isPlayStation: Bool, address: String,
                            pair: @escaping () -> Void) -> some View {
         HStack(spacing: FirstPCMetrics.logoGap) {
-            HostSystemLogo(kind: logo, size: FirstPCMetrics.logoSize)
-                .foregroundStyle(.secondary)
+            NearbyHostAvatar(name: name, address: address, isPlayStation: isPlayStation,
+                             size: FirstPCMetrics.logoSize)
                 .accessibilityHidden(true)
             Text(name)
                 .font(.system(size: 14))
@@ -164,7 +161,7 @@ struct FirstPCSetup: View {
                 .controlSize(.small)
                 .disabled(looking)
                 .help("Pair with \(name)")
-                .accessibilityLabel("Pair with nearby \(logo == .playStation ? "PS5" : "PC") \(name), \(address)")
+                .accessibilityLabel("Pair with nearby \(isPlayStation ? "PS5" : "PC") \(name), \(address)")
         }
         .padding(.leading, FirstPCMetrics.logoInset)
         .padding(.trailing, FirstPCMetrics.rowInset)
@@ -202,12 +199,11 @@ private enum FirstPCMetrics {
     /// The row's right padding: Pair (a small button, 22 pt) then sits 6 pt
     /// inside the 1 pt border at the right as at the top and bottom.
     static let rowInset: CGFloat = 7
-    /// The mark's padding and its gap to the name: its ink (about 1.5 pt
-    /// inside its 20 pt box) is then as far from the border as from the
-    /// name. At 7 and 10 it was 8.5 and 14.5: it looked pushed left.
-    static let logoInset: CGFloat = 11
+    /// The avatar's padding, its gap to the name and its size: a 24 pt disc
+    /// 6 pt inside the 1 pt border, as Pair is on the right.
+    static let logoInset: CGFloat = 7
     static let logoGap: CGFloat = 8
-    static let logoSize: CGFloat = 20
+    static let logoSize: CGFloat = 24
     static let buttonHeight: CGFloat = 28
     static let cornerRadius: CGFloat = 8
 }

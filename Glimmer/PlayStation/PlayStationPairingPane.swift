@@ -36,11 +36,8 @@ struct PlayStationPairingPane: View {
             ScrollView {
                 VStack(spacing: 20) {
                     VStack(spacing: 8) {
-                        Image(systemName: "playstation.logo")
-                            .font(.system(size: 28, weight: .regular))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 64, height: 64)
-                            .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+                        // The sidebar's grey avatar for a machine not added yet.
+                        NearbyHostAvatar(name: target.name, address: target.address, isPlayStation: true, size: 64)
                             .padding(.bottom, 4)
                             .accessibilityHidden(true)
                         Text(target.name)

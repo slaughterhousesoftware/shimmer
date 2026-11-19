@@ -252,7 +252,8 @@ struct ComputersTab: View {
                             Button {
                                 pairingTarget = PCPairingTarget(name: pc.displayName, address: pc.host)
                             } label: {
-                                NearbyPCRow(pc: pc, selected: pairingTarget?.address == pc.host)
+                                NearbyRow(name: pc.displayName, address: pc.host, isPlayStation: false,
+                                          selected: pairingTarget?.address == pc.host)
                             }
                             .buttonStyle(.plain)
                             .disabled(model.pairingInFlight)
@@ -264,8 +265,8 @@ struct ComputersTab: View {
                             Button {
                                 pairingTarget = PCPairingTarget(name: name, address: ps.address, isPlayStation: true)
                             } label: {
-                                NearbyPlayStationRow(console: ps, name: name,
-                                                     selected: pairingTarget?.address == ps.address)
+                                NearbyRow(name: name, address: ps.address, isPlayStation: true,
+                                          selected: pairingTarget?.address == ps.address)
                             }
                             .buttonStyle(.plain)
                             .disabled(model.pairingInFlight)
@@ -591,50 +592,35 @@ struct NearbyPCList {
     }
 }
 
-private struct NearbyPlayStationRow: View {
-    let console: PlayStationDiscovery.Found
+/// A machine on the network that isn't added yet: laid out exactly like a
+/// saved one (HostRow) - same avatar size, type and selection - with its
+/// avatar in grey (NearbyHostAvatar) and no status badge.
+private struct NearbyRow: View {
     let name: String
+    let address: String
+    let isPlayStation: Bool
     let selected: Bool
     var body: some View {
         HStack(spacing: 8) {
-            HostSystemLogo(kind: .playStation, size: 22)
-                .frame(width: SettingsMetrics.sidebarIconSize, height: SettingsMetrics.sidebarIconSize)
-                .foregroundStyle(.secondary)
+            NearbyHostAvatar(name: name, address: address, isPlayStation: isPlayStation)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(name).font(.system(size: 13)).lineLimit(1)
-                Text(console.address).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                Text(address)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .frame(minHeight: SettingsMetrics.sidebarRowHeight)
-        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.primary.opacity(0.13) : .clear))
-        .contentShape(Rectangle())
-    }
-}
-
-private struct NearbyPCRow: View {
-    let pc: HostDiscovery.Discovered
-    let selected: Bool
-    var body: some View {
-        HStack(spacing: 8) {
-            HostSystemLogo(kind: HostSystemKind.resolve(isPlayStation: false, ttl: nil, serverName: pc.displayName),
-                           size: 22)
-                .frame(width: SettingsMetrics.sidebarIconSize, height: SettingsMetrics.sidebarIconSize)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(pc.displayName).font(.system(size: 13)).lineLimit(1)
-                Text(pc.host).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .frame(minHeight: SettingsMetrics.sidebarRowHeight)
-        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.primary.opacity(0.13) : .clear))
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(selected ? Color(nsColor: .unemphasizedSelectedContentBackgroundColor) : Color.clear))
         .contentShape(Rectangle())
     }
 }
