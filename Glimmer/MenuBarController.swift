@@ -150,11 +150,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         observeLabel()
         observeFullScreenApps()
-        // The PS5's game arrived (or changed) with the menu up: its card follows.
-        PlayStationNowPlaying.shared.onChange = { [weak self] in
-            guard let self, self.menuIsOpen else { return }
-            self.rebuildOpenMenu()
-        }
     }
 
     // MARK: - Opening over a full-screen app
@@ -238,9 +233,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// symbol and the number. The app glyph (streaming or host-running) shows
     /// only when NO pad is connected. Idle with none of these: no icon.
     private func applyLabel() {
-        // While a PS5 streams, its game is kept current for the card.
-        PlayStationNowPlaying.shared.setStreaming(
-            model.isStreaming && model.hosts.first { $0.id == model.activeStreamHostID }?.isPlayStation == true)
         let presentation = model.menuBarPresentation
         // Loading just ended with nothing else to show: the spinner finishes
         // its half-second grace (updateSpinner) before the icon goes, so a
@@ -326,9 +318,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         AgentControl.shared.menuBarEvent("open")
         Diag.info("menu bar menu opened", "MenuBar")
         menuIsOpen = true
-        // The game on the PS5, for the card: what's known shows at once,
-        // and PSN is asked again.
-        if showsPlayStationCard { PlayStationNowPlaying.shared.menuWillOpen() }
         populate(menu)
         startStatsRefresh()
     }
@@ -348,13 +337,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         statsTimer?.invalidate()
         statsTimer = nil
         applyLabel()
-    }
-
-    /// The card is a PS5's: the one streaming, else the one selected.
-    private var showsPlayStationCard: Bool {
-        let shown = model.isStreaming ? (model.hosts.first { $0.id == model.activeStreamHostID } ?? model.selectedHost)
-            : model.selectedHost
-        return shown?.isPlayStation == true
     }
 
     /// The server whose stream settings are open under it (its chevron),
@@ -596,15 +578,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         let streamHost = model.isStreaming ? (model.hosts.first { $0.id == model.activeStreamHostID } ?? host) : host
         let app = model.heroTargetApp
-        // A PS5 is its game, when PSN says which (PlayStationNowPlaying);
-        // otherwise the console itself.
-        let game = streamHost.isPlayStation ? PlayStationNowPlaying.shared.game : nil
-        // No game but PSN has the account on the PS5: its home screen (the
-        // console's own mark stays the tile - Sony has no home-screen icon).
-        let home = streamHost.isPlayStation && game == nil && PlayStationNowPlaying.shared.homeScreen
-        let title = streamHost.isPlayStation ? (game?.name ?? (home ? "Home Screen" : "PlayStation 5"))
-            : (app?.name ?? model.defaultAppName)
-        let tile = game?.tile ?? MenuAppTile.image(streamHost.isPlayStation ? .playStation : .app(app))
+        // A PS5 is the console itself.
+        let title = streamHost.isPlayStation ? "PlayStation 5" : (app?.name ?? model.defaultAppName)
+        let tile = MenuAppTile.image(streamHost.isPlayStation ? .playStation : .app(app))
         let stop = Control(symbol: "stop.fill", label: "End Stream", action: run(#selector(endStream)))
 
         if model.isStreaming {

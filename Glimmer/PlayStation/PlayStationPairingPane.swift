@@ -167,12 +167,10 @@ struct PlayStationSignInSheet: View {
             }
             .padding(12)
             Divider()
-            PSNSignInWebView(url: PlayStationAccount.signInURL, code: PlayStationAccount.authorizationCode(in:)) { code, npsso in
+            PlayStationSignInWebView(url: PlayStationAccount.signInURL,
+                                     code: PlayStationAccount.authorizationCode(in:)) { code in
                 guard !exchanging else { return }
                 exchanging = true
-                // The same sign-in can show the PS5's game in the menu bar
-                // (PlayStationNowPlaying): its session cookie is enough.
-                if let npsso { Task { await PlayStationNowPlaying.shared.signIn(npsso: npsso) } }
                 Task {
                     do {
                         signedIn(try await PlayStationAccount.identity(forCode: code))
@@ -183,5 +181,48 @@ struct PlayStationSignInSheet: View {
             }
         }
         .frame(width: 520, height: 680)
+    }
+}
+
+/// Sony's sign-in page in a fresh, cookie-less session; the redirect's
+/// authorization code is handed back and the page goes no further.
+private struct PlayStationSignInWebView: NSViewRepresentable {
+    let url: URL
+    /// The code in a redirect URL, if this is the redirect.
+    let code: (URL) -> String?
+    let finished: (_ code: String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(code: code, finished: finished) }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        // A fresh session each time: no Sony cookies linger in the app.
+        config.websiteDataStore = .nonPersistent()
+        let view = WKWebView(frame: .zero, configuration: config)
+        view.navigationDelegate = context.coordinator
+        view.load(URLRequest(url: url))
+        return view
+    }
+
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let code: (URL) -> String?
+        let finished: (String) -> Void
+
+        init(code: @escaping (URL) -> String?, finished: @escaping (String) -> Void) {
+            self.code = code
+            self.finished = finished
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+            guard let url = navigationAction.request.url, let code = code(url) else {
+                decisionHandler(.allow)
+                return
+            }
+            decisionHandler(.cancel)
+            finished(code)
+        }
     }
 }

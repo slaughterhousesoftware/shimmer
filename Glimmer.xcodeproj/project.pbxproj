@@ -39,9 +39,6 @@
 		C678781937558FEE383D8083 /* AWDLGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4B968254E5CDDB992E359B /* AWDLGuard.swift */; };
 		255438963A823424172308BC /* PlayStationPairingPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11D1D86A663B5C4755D8F18 /* PlayStationPairingPane.swift */; };
 		A5935AEA1FCB35DF38388CEA /* PlayStationRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5D380ED9764266B435A5D5A /* PlayStationRegistration.swift */; };
-		A1C0DE5000000000000000A1 /* PSNGameInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE5000000000000000A2 /* PSNGameInfo.swift */; };
-		A1C0DE5000000000000000B1 /* PSNMobileSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE5000000000000000B2 /* PSNMobileSession.swift */; };
-		A1C0DE5000000000000000C1 /* PlayStationNowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE5000000000000000C2 /* PlayStationNowPlaying.swift */; };
 		016552DD7F7CBB43C47FF3AA /* PlayStationAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9025E83EA79A32F73E1612A0 /* PlayStationAccount.swift */; };
 		106BC6DC964BBD0ACFEBC345 /* PlayStationBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF776067011D566A9B013D2 /* PlayStationBackendTests.swift */; };
 		CCA22C40CE48AF21B0962415 /* PlayStationDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003C043D52EE86B121928754 /* PlayStationDiscovery.swift */; };
@@ -331,7 +328,6 @@
 		B4F0A1C20000000000000001 /* SleepRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F0A1C20000000000000002 /* SleepRecoveryTests.swift */; };
 		5E1D1A600000000000000001 /* LogPrivacyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1D1A600000000000000002 /* LogPrivacyTests.swift */; };
 		B9E351AA8D864ACAB1563301 /* HostConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E351AA8D864ACAB1563302 /* HostConnectionTests.swift */; };
-		A1C0DE5000000000000000D1 /* PlayStationNowPlayingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE5000000000000000D2 /* PlayStationNowPlayingTests.swift */; };
 		A1C0DEMBBATTST1000000000 /* MenuBarBatteryGlyphTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEMBBATTST2000000000 /* MenuBarBatteryGlyphTests.swift */; };
 		A1C0DEF17A10000000000000 /* FrameRateRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DEF17A20000000000000 /* FrameRateRangeTests.swift */; };
 		5E1DE0A10000000000000008 /* TelemetryGaugeRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1DE0A10000000000000009 /* TelemetryGaugeRenderTests.swift */; };
@@ -434,9 +430,6 @@
 		FE4B968254E5CDDB992E359B /* AWDLGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AWDLGuard.swift; sourceTree = "<group>"; };
 		C11D1D86A663B5C4755D8F18 /* PlayStationPairingPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationPairingPane.swift; sourceTree = "<group>"; };
 		F5D380ED9764266B435A5D5A /* PlayStationRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationRegistration.swift; sourceTree = "<group>"; };
-		A1C0DE5000000000000000A2 /* PSNGameInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PSNGameInfo.swift; sourceTree = "<group>"; };
-		A1C0DE5000000000000000B2 /* PSNMobileSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PSNMobileSession.swift; sourceTree = "<group>"; };
-		A1C0DE5000000000000000C2 /* PlayStationNowPlaying.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationNowPlaying.swift; sourceTree = "<group>"; };
 		9025E83EA79A32F73E1612A0 /* PlayStationAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationAccount.swift; sourceTree = "<group>"; };
 		CDF776067011D566A9B013D2 /* PlayStationBackendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStationBackendTests.swift; sourceTree = "<group>"; };
 		003C043D52EE86B121928754 /* PlayStationDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayStation/PlayStationDiscovery.swift; sourceTree = "<group>"; };
@@ -732,7 +725,6 @@
 		B4F0A1C20000000000000002 /* SleepRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepRecoveryTests.swift; sourceTree = "<group>"; };
 		5E1D1A600000000000000002 /* LogPrivacyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogPrivacyTests.swift; sourceTree = "<group>"; };
 		B9E351AA8D864ACAB1563302 /* HostConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostConnectionTests.swift; sourceTree = "<group>"; };
-		A1C0DE5000000000000000D2 /* PlayStationNowPlayingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayStationNowPlayingTests.swift"; sourceTree = "<group>"; };
 		A1C0DEMBBATTST2000000000 /* MenuBarBatteryGlyphTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarBatteryGlyphTests.swift"; sourceTree = "<group>"; };
 		A1C0DEF17A20000000000000 /* FrameRateRangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FrameRateRangeTests.swift"; sourceTree = "<group>"; };
 		5E1DE0A10000000000000009 /* TelemetryGaugeRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TelemetryGaugeRenderTests.swift"; sourceTree = "<group>"; };
@@ -876,9 +868,6 @@
 				FE4B968254E5CDDB992E359B /* AWDLGuard.swift */,
 				C11D1D86A663B5C4755D8F18 /* PlayStationPairingPane.swift */,
 				F5D380ED9764266B435A5D5A /* PlayStationRegistration.swift */,
-				A1C0DE5000000000000000A2 /* PSNGameInfo.swift */,
-				A1C0DE5000000000000000B2 /* PSNMobileSession.swift */,
-				A1C0DE5000000000000000C2 /* PlayStationNowPlaying.swift */,
 				9025E83EA79A32F73E1612A0 /* PlayStationAccount.swift */,
 				003C043D52EE86B121928754 /* PlayStationDiscovery.swift */,
 				37F18688097FEF7818841A5D /* AppModel+PlayStation.swift */,
@@ -1188,7 +1177,6 @@
 				B4F0A1C20000000000000002 /* SleepRecoveryTests.swift */,
 				B9E351AA8D864ACAB1563302 /* HostConnectionTests.swift */,
 				5E1D1A600000000000000002 /* LogPrivacyTests.swift */,
-				A1C0DE5000000000000000D2 /* PlayStationNowPlayingTests.swift */,
 				A1C0DEMBBATTST2000000000 /* MenuBarBatteryGlyphTests.swift */,
 				A1C0DEF17A20000000000000 /* FrameRateRangeTests.swift */,
 				5E1DE0A10000000000000009 /* TelemetryGaugeRenderTests.swift */,
@@ -1380,9 +1368,6 @@
 				C678781937558FEE383D8083 /* AWDLGuard.swift in Sources */,
 				255438963A823424172308BC /* PlayStationPairingPane.swift in Sources */,
 				A5935AEA1FCB35DF38388CEA /* PlayStationRegistration.swift in Sources */,
-				A1C0DE5000000000000000A1 /* PSNGameInfo.swift in Sources */,
-				A1C0DE5000000000000000B1 /* PSNMobileSession.swift in Sources */,
-				A1C0DE5000000000000000C1 /* PlayStationNowPlaying.swift in Sources */,
 				016552DD7F7CBB43C47FF3AA /* PlayStationAccount.swift in Sources */,
 				CCA22C40CE48AF21B0962415 /* PlayStationDiscovery.swift in Sources */,
 				31C39F412719B58B000410C4 /* AppModel+PlayStation.swift in Sources */,
@@ -1684,7 +1669,6 @@
 				B4F0A1C20000000000000001 /* SleepRecoveryTests.swift in Sources */,
 				B9E351AA8D864ACAB1563301 /* HostConnectionTests.swift in Sources */,
 				5E1D1A600000000000000001 /* LogPrivacyTests.swift in Sources */,
-				A1C0DE5000000000000000D1 /* PlayStationNowPlayingTests.swift in Sources */,
 				A1C0DEMBBATTST1000000000 /* MenuBarBatteryGlyphTests.swift in Sources */,
 				A1C0DEF17A10000000000000 /* FrameRateRangeTests.swift in Sources */,
 				5E1DE0A10000000000000008 /* TelemetryGaugeRenderTests.swift in Sources */,
