@@ -497,9 +497,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // glyph on the status item), not repeated as a "N% battery" row here.
 
         // The window and Quit at the bottom - Tailscale's layout, where the
-        // window is the exception, not the point. One row for the window, as
-        // Control Center's "Focus Settings…" (Kevin: one Open Shimmer, not
-        // Settings… and Open Shimmer); no shortcuts shown, though ⌘, and ⌘Q
+        // window is the exception, not the point. One row for the window - it
+        // is Shimmer's settings - named as Control Center's "Focus Settings…"
+        // and opening on Servers, as the app menu's Settings… does (Kevin
+        // 2026-11-18: one row, and settings); no shortcuts shown, though ⌘, and ⌘Q
         // still work while the menu has the keyboard. The line above runs
         // nearly the menu's width, as the Sound menu's above its Settings row.
         menu.addItem(separator(footer: true))
@@ -510,7 +511,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // 27 SDK adds `preferredImageVisibility`). So the selector is not
         // called that, and neither row carries an image - an empty image
         // would suppress the gear but reserve the image column and indent.
-        menu.addItem(action("Open Shimmer…", #selector(openWindow), key: ","))
+        menu.addItem(action("Shimmer Settings…", #selector(showSettings), key: ","))
         menu.addItem(separator())
         // No "Check for Updates…" here, by request. Sparkle still checks on
         // its own at launch, and the command stays in the app menu.
@@ -826,7 +827,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return MenuDisclosureWell(groups: groups)
     }
 
-    @objc private func openWindow() {
+    @objc private func showSettings() {
+        model.settingsTab = .computers
         AppDelegate.showMainWindow()
     }
 

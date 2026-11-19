@@ -205,16 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         StreamWindow.becomeRegularApp()
         activateFromMenuBar()
         openMainWindow?()
-        for delay in [0.05, 0.4] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                MainActor.assumeIsolated {
-                    guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" && $0.isVisible }),
-                          !window.isKeyWindow || !NSApp.isActive else { return }
-                    activateFromMenuBar()
-                    window.makeKeyAndOrderFront(nil)
-                }
-            }
-        }
+        bringMainWindowForward(attempt: 0)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             MainActor.assumeIsolated {
                 let window = NSApp.windows.first { $0.identifier?.rawValue == "main" }
@@ -222,6 +213,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Diag.warn("Main window not in front 1 s after it was asked for (active=\(NSApp.isActive), "
                     + "visible=\(window?.isVisible == true))", "Launch")
             }
+        }
+    }
+
+    /// Until the main window is key, every 50 ms for up to 2 s: once it is
+    /// on screen, activate and make it key. Two looks (0.05 and 0.4 s) weren't
+    /// enough - with a stream window up, activation brought that forward and
+    /// the main window turned up after both looks, so the stream window kept
+    /// the front ("Main window not in front 1 s after", Kevin's MacBook,
+    /// 2026-11-18 22:20).
+    @MainActor private static func bringMainWindowForward(attempt: Int) {
+        let window = NSApp.windows.first { $0.identifier?.rawValue == "main" && $0.isVisible }
+        if let window, window.isKeyWindow, NSApp.isActive { return }
+        if let window {
+            activateFromMenuBar()
+            window.makeKeyAndOrderFront(nil)
+        }
+        guard attempt < 40 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            MainActor.assumeIsolated { bringMainWindowForward(attempt: attempt + 1) }
         }
     }
 
