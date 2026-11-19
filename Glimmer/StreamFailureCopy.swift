@@ -122,6 +122,15 @@ enum StreamFailureCopy {
         return message.last.map { "?!".contains($0) } == true ? message : message + "."
     }
 
+    /// A PS5 ended a live stream while no controller was connected to this
+    /// Mac: most likely the controller is connected to the console itself
+    /// and signed in there as the account Remote Play uses.
+    static func playStationEndedForLocalController(hostName: String) -> String {
+        "\(hostName) ended Remote Play. It does that when the Remote Play account signs in on the console "
+            + "with a controller connected to the PS5. Connect the controller to this Mac instead: hold Create "
+            + "and the PS button until its light flashes, then choose it in System Settings › Bluetooth."
+    }
+
     static func playStation(_ failure: PlayStationFailure, hostName: String) -> String {
         switch failure {
         case .inUse:

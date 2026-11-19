@@ -89,6 +89,24 @@ struct HostActivityTests {
         #expect(model.sidebarStatusText(for: ps5.id, at: Self.now) == "Offline")
     }
 
+    /// The PS5 closing a live stream itself, with no controller on the Mac:
+    /// the controller is on the console, signed in as the Remote Play
+    /// account. Said, not a silent stop - and only then.
+    @Test @MainActor func aPS5EndingTheStreamWithNoControllerHereSaysWhy() {
+        let model = AppModel()
+        let ps5 = Self.host(Glimmer.Host.playStationIDPrefix + "ended"), pc = Self.host("ended-pc")
+        for (host, pad, expected) in [(ps5, false, true), (ps5, true, false), (pc, false, false)] {
+            model.nativeStreamError = nil
+            model.controllerConnected = pad
+            model.isStreaming = true
+            model.activeStreamHostID = host.id
+            model.handleNativeEvent(.connectionTerminated(errorCode: 0), host: host)
+            #expect((model.nativeStreamError?.contains("Connect the controller to this Mac") == true) == expected,
+                    "\(host.id) pad \(pad)")
+            model.isStreaming = false
+        }
+    }
+
     @Test @MainActor func connectionProgressIsNotAStreamingClaimAndBelongsToOneHost() {
         let model = AppModel()
         model.isStreaming = true

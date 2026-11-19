@@ -568,6 +568,15 @@ extension AppModel {
                 }
                 streamErrorHostID = host.id
                 markStreamInterruption(hostID: host.id)
+            } else if host.isPlayStation, !controllerConnected {
+                // The PS5 itself closed a live session ("Server shutting
+                // down"), with no controller on this Mac. What does that,
+                // seen 2026-11-18: the controller is connected to the console
+                // and signs in as the Remote Play account - the PS5 then ends
+                // Remote Play for that account. Say so, or the stream just
+                // vanishes.
+                nativeStreamError = StreamFailureCopy.playStationEndedForLocalController(hostName: host.displayName)
+                streamErrorHostID = host.id
             }
         case .reconnecting:
             // The host closed a live session (it likely restarted across a
