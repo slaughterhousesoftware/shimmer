@@ -284,6 +284,30 @@ class MenuTintView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// The menu's text greys, measured off the Sound menu at native 2x in the
+/// dark (Kevin's MacBook, 2026-11-18): how much of the way to white each
+/// ink goes over the glass. Apple's menu text isn't the system label
+/// colours - its names are brighter (90% against labelColor's 85%) and its
+/// second lines, headers and chevrons dimmer (45% and 41% against
+/// secondaryLabelColor's 55%), so with the system colours a server's
+/// second line read bigger and heavier than the AirPods' batteries in the
+/// same 11 pt. Light mode keeps the system values: not measured.
+enum MenuInk {
+    /// A row's name, a control's label.
+    static let primary = ink(dark: 0.90, light: 0.85)
+    /// A row's second line (the AirPods' batteries, a server's status).
+    static let secondary = ink(dark: 0.45, light: 0.50)
+    /// Section headers and the disclosure chevron.
+    static let header = ink(dark: 0.41, light: 0.50)
+
+    private static func ink(dark: CGFloat, light: CGFloat) -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? NSColor(white: 1, alpha: dark) : NSColor(white: 0, alpha: light)
+        }
+    }
+}
+
 /// A line of text with its baseline exactly where asked. NSString's
 /// draw(at:) places the line's box, and the baseline lands wherever the
 /// font's metrics and pixel snapping put it (a 12 pt header came out a
@@ -383,7 +407,7 @@ class MenuRowView: NSView {
     func redrawContent() { content.needsDisplay = true }
 
     static let titleAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.labelColor,
+        .font: NSFont.menuFont(ofSize: 0), .foregroundColor: MenuInk.primary,
     ]
 
     /// The content, above the hover band.
@@ -553,7 +577,7 @@ final class MenuServerRow: MenuRowView {
                                      withAttributes: Self.titleAttributes)
         } else {
             // Baselines 14 and 28 pt down from the row's top.
-            MenuText.draw(title, font: font, colour: .labelColor, x: Self.textX, baseline: bounds.maxY - 14,
+            MenuText.draw(title, font: font, colour: MenuInk.primary, x: Self.textX, baseline: bounds.maxY - 14,
                           flipped: false)
             drawStats(baseline: bounds.maxY - 28)
         }
@@ -571,11 +595,11 @@ final class MenuServerRow: MenuRowView {
             if let symbol = stat.symbol, let glyph = MenuStatGlyph.image(symbol) {
                 let s = glyph.size
                 MenuStatGlyph.draw(glyph, in: NSRect(x: x, y: middle - s.height / 2, width: s.width, height: s.height),
-                                   colour: .secondaryLabelColor)
+                                   colour: MenuInk.secondary)
                 x += s.width + 6.5
             }
             let ink = Self.ink(of: stat.text)
-            MenuText.draw(stat.text, font: font, colour: .secondaryLabelColor, x: x - ink.left, baseline: baseline,
+            MenuText.draw(stat.text, font: font, colour: MenuInk.secondary, x: x - ink.left, baseline: baseline,
                           flipped: false)
             x += ink.width
         }
@@ -598,7 +622,7 @@ final class MenuServerRow: MenuRowView {
         turn.rotate(byDegrees: -90 * disclosureProgress)
         turn.concat()
         MenuStatGlyph.draw(chevron, in: NSRect(x: -s.width / 2, y: -s.height / 2 - 0.5, width: s.width, height: s.height),
-                           colour: .secondaryLabelColor)
+                           colour: MenuInk.header)
         NSGraphicsContext.restoreGraphicsState()
     }
 }
@@ -706,7 +730,7 @@ final class MenuSectionHeaderRow: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        MenuText.draw(title, font: Self.font, colour: .secondaryLabelColor, x: MenuRowView.contentInset,
+        MenuText.draw(title, font: Self.font, colour: MenuInk.header, x: MenuRowView.contentInset,
                       baseline: Self.baseline, flipped: true)
     }
 }
@@ -826,7 +850,7 @@ final class MenuSegmentRow: NSView {
                 let frame = row.segmentFrame(i)
                 let width = (label as NSString).size(withAttributes: [.font: font]).width
                 // The capitals centred on the track.
-                MenuText.draw(label, font: font, colour: .labelColor, x: (frame.midX - width / 2).rounded(),
+                MenuText.draw(label, font: font, colour: MenuInk.primary, x: (frame.midX - width / 2).rounded(),
                               baseline: (frame.midY + font.capHeight / 2).rounded(), flipped: true)
             }
         }
@@ -882,7 +906,7 @@ final class MenuBitrateRow: NSView {
         let auto = NSTextField(labelWithString: "Auto")
         for label in [auto, value] {
             label.font = .menuFont(ofSize: 0)
-            label.textColor = .secondaryLabelColor
+            label.textColor = MenuInk.secondary
         }
         value.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         value.alignment = .right
@@ -949,7 +973,7 @@ final class MenuNoteRow: NSView {
     override func draw(_ dirtyRect: NSRect) {
         (text as NSString).draw(at: NSPoint(x: MenuRowView.contentInset, y: 5), withAttributes: [
             .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
-            .foregroundColor: NSColor.secondaryLabelColor,
+            .foregroundColor: MenuInk.secondary,
         ])
     }
 }

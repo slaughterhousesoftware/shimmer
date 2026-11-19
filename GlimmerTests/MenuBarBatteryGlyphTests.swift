@@ -648,6 +648,21 @@ struct MenuNowPlayingCardTests {
 /// the stream's numbers on a second line under the name.
 @MainActor
 struct MenuServerStatsRowTests {
+    // The Sound menu's greys in the dark, not the system label colours.
+    @Test @MainActor func theTextGreysAreTheSoundMenus() {
+        func alpha(_ colour: NSColor, _ name: NSAppearance.Name) -> CGFloat {
+            var a: CGFloat = -1
+            NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+                a = (colour.usingColorSpace(.sRGB) ?? colour).alphaComponent
+            }
+            return a
+        }
+        #expect(abs(alpha(MenuInk.primary, .darkAqua) - 0.90) < 0.001)
+        #expect(abs(alpha(MenuInk.secondary, .darkAqua) - 0.45) < 0.001)
+        #expect(abs(alpha(MenuInk.header, .darkAqua) - 0.41) < 0.001)
+        #expect(abs(alpha(MenuInk.primary, .aqua) - 0.85) < 0.001)
+    }
+
     @Test func theSecondLineKeepsTheRowItsHeight() {
         let row = MenuServerRow(title: "bazzite", mark: NSImage(size: NSSize(width: 26, height: 26))) {}
         row.stats = [.init(symbol: "play.rectangle.fill", text: "1440p120 HDR"), .init(symbol: "clock.fill", text: "8 ms"),

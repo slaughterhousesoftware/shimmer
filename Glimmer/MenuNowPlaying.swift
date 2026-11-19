@@ -81,14 +81,14 @@ final class MenuNowPlayingCard: NSView {
     static let titleAttributes: [NSAttributedString.Key: Any] = {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byTruncatingTail
-        return [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.labelColor,
+        return [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: MenuInk.primary,
                 .paragraphStyle: style]
     }()
 
     static let subtitleAttributes: [NSAttributedString.Key: Any] = {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byTruncatingTail
-        return [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor,
+        return [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: MenuInk.secondary,
                 .paragraphStyle: style]
     }()
 
