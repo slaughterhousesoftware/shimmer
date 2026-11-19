@@ -53,9 +53,13 @@ struct PlayStationPairingPane: View {
                     } else {
                         codeStep
                     }
-                    if let error {
-                        PCConnectionErrorBanner(message: error)
+                    // One place for what's wrong, under the buttons: a refused
+                    // code, or the console's own state (resting, silent) as
+                    // soon as the code step knows it.
+                    if let message = error ?? (account == nil ? nil : consoleProblem?.localizedDescription) {
+                        PCConnectionErrorBanner(message: message)
                             .multilineTextAlignment(.leading)
+                            .id(message)
                     }
                 }
                 .font(.system(size: 13))
@@ -113,10 +117,6 @@ struct PlayStationPairingPane: View {
             Text("On the PS5, open Settings › System › Remote Play › Pair Device, and enter the code it shows.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let consoleProblem, error == nil {
-                Label(consoleProblem.localizedDescription, systemImage: "exclamationmark.circle.fill")
-                    .labelStyle(ConsoleProblemLabelStyle())
-            }
             // A word, not digits: "12345678" in grey read as a code already in.
             TextField("8-digit code", text: $pin)
                 .font(.system(size: 28, weight: .medium, design: .monospaced))
@@ -295,17 +295,5 @@ private struct PlayStationSignInWebView: NSViewRepresentable {
             decisionHandler(.cancel)
             finished(code)
         }
-    }
-}
-
-/// A short warning about the console, in the step's own type: an orange
-/// mark before secondary text.
-private struct ConsoleProblemLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            configuration.icon.foregroundStyle(.orange)
-            configuration.title.foregroundStyle(.secondary)
-        }
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
