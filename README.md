@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/menu-unfold.webp" width="490" alt="Shimmer's menu bar menu on a Mac while it streams a PS5: PlayStation 5 Remote Play with Picture in Picture and End Stream buttons, a volume slider, then the PS5's resolution, frame rate, bitrate and HDR settings unfolding and folding away">
+  <img src="docs/assets/gta6-pip.webp" width="100%" alt="GTA 6 streaming from a PS5 in a Picture in Picture window on a Mac. The window stays on top and moves between corners while the Mac is used for Maps, a movie in Infuse, iPhone Mirroring and Safari">
 </p>
 
 Shimmer is a native Mac client for game streaming. It plays games from a PC
@@ -31,9 +31,9 @@ apps, Spaces and full-screen windows, and can pop out on its own when you
 switch apps. The controller keeps driving the game, and the mouse over the PiP
 window moves the PC's pointer.
 
-It uses the same display layer the stream already draws into, so there is no
-second decoder, and there are no significant frame drops through Stage
-Manager, Mission Control or locking the screen.
+It reuses the stream's own display layer, so there's no second decoder and no
+significant frame drops through Stage Manager, Mission Control or locking the
+screen.
 
 ## PlayStation 5
 
@@ -44,7 +44,7 @@ rest mode, and the stream gets the same window, Picture in Picture, audio and
 controller support.
 
 <p align="center">
-  <img src="docs/assets/welcome.webp" width="400" alt="Shimmer's welcome window: Add a PC or PS5 to get started, an address field, and a Nearby list with a Linux PC and a PlayStation, each with a Pair button">
+  <img src="docs/assets/welcome.webp" width="400" alt="Shimmer's welcome window: Add a PC or PS5 to get started, an address field, and a Nearby list with a Bazzite PC and a PlayStation, each with a grey avatar and a Pair button">
   <img src="docs/assets/playstation.webp" width="400" alt="Shimmer's Servers tab with a PS5 selected: PlayStation 5 on the home screen with Stream, then its quality, bitrate, codec, HDR and presentation settings">
 </p>
 
@@ -59,11 +59,9 @@ network or reachable through a Tailscale subnet route.
 With a DualSense, you get what the console or game sends:
 
 - **Adaptive triggers**, from the PS5 and from PC games that use them.
-- **Haptics** played on the controller's own actuators, not converted to rumble.
-  Over USB they play exactly as the console sends them. Over Bluetooth they go
-  in the controller's haptics report, as closely as the Mac's Bluetooth link
-  allows: it carries about 33 reports a second, so dense effects can lose some
-  detail while short ones come through whole.
+- **Haptics** on the controller's own actuators, not converted to rumble. Over
+  USB they play exactly as sent. Over Bluetooth the Mac's link carries about
+  33 reports a second, so dense effects can lose some detail.
 - **Light bar** colours from the game.
 - **Touchpad and motion** sent back to the game.
 
@@ -76,9 +74,17 @@ pads, work too.
 
 ## Made for the menu bar
 
-Shimmer lives in the menu bar. The icon shows the connected controller and its
-battery, drawn after Steam's controller icons, or the game you're streaming,
-and turns into a spinner while it connects.
+Shimmer lives in the menu bar. Its menu starts, resumes and ends streams,
+opens Picture in Picture, and sets each server's resolution, frame rate,
+bitrate and HDR without opening a window.
+
+<p align="center">
+  <img src="docs/assets/menu-unfold.webp" width="490" alt="Shimmer's menu bar menu on a Mac while it streams a PS5: PlayStation 5 Remote Play with Picture in Picture and End Stream buttons, a volume slider, then the PS5's resolution, frame rate, bitrate and HDR settings unfolding and folding away">
+</p>
+
+The icon shows the connected controller and its battery, drawn after Steam's
+controller icons, or the game you're streaming, and turns into a spinner while
+it connects.
 
 <p align="center">
   <img src="docs/assets/menu-bar-spinner.webp" width="490" alt="A Mac menu bar with Shimmer's icon as a turning glass pyramid while it connects">
@@ -86,9 +92,6 @@ and turns into a spinner while it connects.
 <p align="center">
   <img src="docs/assets/menu-bar-icons.webp" width="474" alt="Shimmer's menu bar icon for six controllers: DualSense, Xbox Wireless, Switch Pro, DualShock 4, Steam Controller charging and 8BitDo Ultimate">
 </p>
-
-Its menu starts, resumes and ends streams, opens Picture in Picture, and sets
-each server's resolution, frame rate, bitrate and HDR without opening a window.
 
 ## One window
 
@@ -146,9 +149,7 @@ permissions across rebuilds. `make` builds and installs
 
 - On macOS 27.2, the menu bar menu doesn't open while another app is full
   screen.
-- PS5 streams top out at 1080p60; that's what Remote Play sends.
-- DualSense haptics over Bluetooth can lose detail in dense effects (see
-  above). USB is exact.
+- PS5 streams top out at 1080p60, which is what Remote Play sends.
 
 ## Under the hood
 
