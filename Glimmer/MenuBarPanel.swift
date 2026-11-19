@@ -66,15 +66,15 @@ final class MenuBarPanel: NSPanel {
 
     // MARK: Showing
 
-    /// Shows `items` (top to bottom) under `button`, Control Center's way:
-    /// the menu's right edge flush with the right end of the item's
-    /// highlight, its top just under the menu bar, kept on the screen.
+    /// Shows `items` (top to bottom) under `button`, NSMenu's way: the
+    /// menu's left edge a little left of the item, its top just under the
+    /// menu bar, kept on the screen.
     func show(items: [NSView], minimumWidth: CGFloat, under button: NSStatusBarButton, takingKeyboard: Bool = true) {
         guard let buttonWindow = button.window, let screen = buttonWindow.screen ?? NSScreen.main else { return }
         let width = root.setItems(items, minimumWidth: minimumWidth)
         let buttonFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         let visible = screen.visibleFrame
-        var left = buttonFrame.maxX + Self.highlightOverhang - width
+        var left = buttonFrame.minX - Self.menuOffset
         left = min(left, screen.frame.maxX - Self.screenEdgeGap - width)
         left = max(left, screen.frame.minX + Self.screenEdgeGap)
         let top = Self.menuBarBottom(on: screen, buttonWindow: buttonWindow) - Self.topGap
@@ -117,15 +117,11 @@ final class MenuBarPanel: NSPanel {
         })
     }
 
-    // Control Center's place, measured at native 2x on Kevin's MacBook
-    // (2026-11-18): its pop-ups (Battery, Sound) hang from the right end of
-    // their item's highlight - the glass's right edge and the highlight's
-    // on the same pixel. Shimmer's highlight ends 2 pt past its button's
-    // frame (1 pt past the item's accessibility frame, which is a point
-    // wider than the button): placed at +1 pt the glass ended a point
-    // short. Their tops sit 1 pt under the menu bar. (NSMenu instead hangs
-    // its left edge 8 pt left of the item.)
-    private static let highlightOverhang: CGFloat = 2
+    // NSMenu's place, measured against the system menu it replaces. (Control
+    // Center's pop-ups hang from the right end of their item instead -
+    // Shimmer did that on 2026-11-18 and Kevin asked for this back.) The
+    // Sound menu's pop-up sits 1 pt under the menu bar too.
+    private static let menuOffset: CGFloat = 8
     private static let topGap: CGFloat = 1
     private static let screenEdgeGap: CGFloat = 6
 
