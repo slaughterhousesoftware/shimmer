@@ -209,14 +209,12 @@ final class MenuRoundButton: NSView {
     /// How much a button asks to be pressed (Kevin, 2026-11-18: only the
     /// stream button is blue; the rest shouldn't pull the eye).
     enum Style {
-        /// The menu's grey disc, the symbol in the text colour.
+        /// The menu's grey disc, the symbol in the text colour (Picture in
+        /// Picture: Kevin tried it tinted blue and wanted the grey back).
         case plain
         /// The action the card is for (Stream, Try Again): the accent colour,
         /// the symbol white.
         case prominent
-        /// A secondary choice (Picture in Picture): the accent at 20% with
-        /// the symbol in the accent - the system's "tinted" button.
-        case tinted
         /// Ending something (End Stream, Stop Waking): the system red, the
         /// symbol white.
         case destructive
@@ -253,9 +251,6 @@ final class MenuRoundButton: NSView {
         case .prominent:
             fill = pressed(.controlAccentColor)
             ink = .white
-        case .tinted:
-            fill = NSColor.controlAccentColor.withAlphaComponent(isPressed ? 0.32 : 0.2)
-            ink = .controlAccentColor
         case .destructive:
             fill = pressed(.systemRed)
             ink = .white
