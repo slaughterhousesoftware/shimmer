@@ -113,7 +113,7 @@ enum MenuHostMark {
         case .playStation:
             return symbol("playstation.logo", 0x0070D1)
         case .icon(.bazzite):
-            return Art(image: NSImage(named: "HostLogo-bazzite-mark") ?? NSImage(), key: "HostLogo-bazzite-mark",
+            return Art(image: vector("HostLogo-bazzite-mark"), key: "HostLogo-bazzite-mark",
                        colours: [colour(0x0047AB), colour(0x8A2BE2)])
         case .icon(.chimeraOS):
             return symbol("gamecontroller.fill", HostIcon.chimeraOS.backgroundRGB)
@@ -123,14 +123,43 @@ enum MenuHostMark {
             return symbol("desktopcomputer", HostIcon.computer.backgroundRGB)
         case .icon(let icon):
             let name = icon.assetName ?? "HostLogo-linux"
-            return Art(image: NSImage(named: name) ?? NSImage(), key: name, colours: [colour(icon.backgroundRGB)])
+            return Art(image: vector(name), key: name, colours: [colour(icon.backgroundRGB)])
         }
     }
 
+    /// A bundled logo's vector artwork alone. The asset catalog also bakes
+    /// each SVG into bitmaps on a canvas rounded up to whole points (the
+    /// Windows mark's 24.48 pt into 25 px), the artwork in its top-left
+    /// corner, and AppKit draws those when they fit: the mark came out small
+    /// and a quarter pixel up and left, and didn't match its measured ink box.
+    private static func vector(_ name: String) -> NSImage {
+        guard let image = NSImage(named: name) else { return NSImage() }
+        let vectors = image.representations.filter { $0.pixelsWide == 0 }
+        guard let rep = vectors.first else { return image }
+        let only = NSImage(size: rep.size)
+        only.addRepresentation(rep)
+        return only
+    }
+
     static func image(for host: Host, look: Look, appearance: NSAppearance) -> NSImage {
-        let mark = HostAvatar.mark(for: host)
+        image(for: HostAvatar.mark(for: host), look: look,
+              dark: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
+    }
+
+    private struct CacheKey: Hashable {
+        let mark: String, look: Look, dark: Bool, diameter: CGFloat
+    }
+    private static var cache: [CacheKey: NSImage] = [:]
+
+    /// `mark` as a disc `diameter` across - the menu's 26 pt, or the
+    /// sidebar's avatars (HostAvatar, NearbyHostAvatar) - one bitmap per
+    /// screen scale, so its ink is centred to the pixel at 1x as at 2x.
+    /// Drawn once per mark, look and size.
+    static func image(for mark: HostAvatar.Mark, look: Look, dark: Bool,
+                      diameter: CGFloat = MenuHostMark.diameter) -> NSImage {
+        let key = CacheKey(mark: HostAvatar.name(of: mark) + "\(mark)", look: look, dark: dark, diameter: diameter)
+        if let cached = cache[key] { return cached }
         let art = art(for: mark)
-        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
 
         // The colours, settled now for the menu's appearance.
         let disc: [NSColor]
@@ -145,36 +174,39 @@ enum MenuHostMark {
             ink = dark ? NSColor.white.withAlphaComponent(0.55) : NSColor.black.withAlphaComponent(0.5)
         }
 
-        // The sidebar's size for this mark's ink, scaled to the menu's disc.
+        // The one size rule for every mark (HostAvatar.glyphFrame).
         let measure = InkMeasure.measure(art.image, key: art.key)
         let box = measure.inkBox
         let imageSize = art.image.size
         let aspect = imageSize.height > 0 ? imageSize.width / imageSize.height : 1
         let inkSize = HostAvatar.glyphFrame(aspect: aspect * box.width / max(box.height, 0.01), size: diameter,
                                             optical: measure.optical)
-        // The whole artwork's size for that much ink.
-        let frame = CGSize(width: inkSize.width / max(box.width, 0.01), height: inkSize.height / max(box.height, 0.01))
         let image = NSImage(size: NSSize(width: diameter, height: diameter))
-        for scale in [1, 2, 3] as [CGFloat] {
-            if let rep = render(art: art, disc: disc, ink: ink, frame: frame, scale: scale) {
+        // 4x for the --debug-render-avatars gallery, drawn at 4x.
+        for scale in [1, 2, 3, 4] as [CGFloat] {
+            if let rep = render(art: art, disc: disc, ink: ink, inkSize: inkSize, inkBox: box,
+                                diameter: diameter, scale: scale) {
                 image.addRepresentation(rep)
             }
         }
         image.accessibilityDescription = HostAvatar.name(of: mark)
+        cache[key] = image
         return image
     }
 
     /// One bitmap of the disc and its mark at `scale` pixels a point.
-    private static func render(art: Art, disc: [NSColor], ink: NSColor, frame: CGSize,
-                               scale: CGFloat) -> NSBitmapImageRep? {
+    ///
+    /// The vector artwork is drawn straight into the bitmap, its frame in
+    /// whole pixels and its measured ink box exactly on the disc's centre. No
+    /// threshold, no whole-pixel shift, no resampling: centring an alpha>50%
+    /// box by whole pixels had left the Windows mark up to a pixel off at 1x.
+    private static func render(art: Art, disc: [NSColor], ink: NSColor, inkSize: CGSize, inkBox box: CGRect,
+                               diameter: CGFloat, scale: CGFloat) -> NSBitmapImageRep? {
         let side = Int((diameter * scale).rounded())
-        let glyphWidth = Int((frame.width * scale).rounded(.up)) + 2
-        let glyphHeight = Int((frame.height * scale).rounded(.up)) + 2
-        guard art.image.size.width > 0, art.image.size.height > 0,
-              let glyph = CGContext(data: nil, width: glyphWidth, height: glyphHeight, bitsPerComponent: 8,
-                                    bytesPerRow: glyphWidth * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        guard art.image.size.width > 0, art.image.size.height > 0, box.width > 0, box.height > 0,
+              let glyph = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8,
+                                    bytesPerRow: side * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
-              let pixels = glyph.data,
               let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side,
                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                          colorSpaceName: .calibratedRGB, bytesPerRow: 0, bitsPerPixel: 0)
@@ -183,29 +215,30 @@ enum MenuHostMark {
         rep.size = NSSize(width: side, height: side)
         defer { rep.size = NSSize(width: diameter, height: diameter) }
 
+        // The whole artwork's frame for that ink, in whole pixels: an SVG
+        // drawn into a fractional width renders at a rounded-down size from
+        // its left edge (measured: 0.44 px left at 18.36 px), while a whole
+        // width lands exactly, even at a fractional origin. The disc's parity
+        // keeps a mark whose ink is centred in its artwork (Windows) on whole
+        // pixels, so its edges stay sharp.
+        let frame = CGSize(width: wholePixels(inkSize.width * scale / box.width, parityOf: side),
+                           height: wholePixels(inkSize.height * scale / box.height, parityOf: side))
+        // Its ink box's centre exactly on the disc's (the box is measured
+        // y-down; the bitmap is y-up).
+        let centre = CGFloat(side) / 2
+        let rect = CGRect(x: centre - box.midX * frame.width,
+                          y: centre - (1 - box.midY) * frame.height,
+                          width: frame.width, height: frame.height)
+
         // The mark, tinted opaque (a translucent tint over the artwork's own
         // black would leave the black showing; its opacity comes later).
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: glyph, flipped: false)
-        let inner = NSRect(x: 1, y: 1, width: frame.width * scale, height: frame.height * scale)
-        art.image.draw(in: inner)
+        art.image.draw(in: rect)
         ink.withAlphaComponent(1).setFill()
-        inner.fill(using: .sourceAtop)
+        rect.fill(using: .sourceAtop)
         NSGraphicsContext.restoreGraphicsState()
-
-        // Where its ink landed (pixels at least half opaque; rows in memory
-        // run down from the top).
-        let bytes = pixels.bindMemory(to: UInt8.self, capacity: glyphWidth * glyphHeight * 4)
-        var minX = glyphWidth, maxX = -1, minRow = glyphHeight, maxRow = -1
-        for row in 0..<glyphHeight {
-            let line = bytes + row * glyphWidth * 4 + 3
-            for x in 0..<glyphWidth where line[x * 4] > 127 {
-                minX = min(minX, x); maxX = max(maxX, x); minRow = min(minRow, row); maxRow = max(maxRow, row)
-            }
-        }
-        guard maxX >= 0, let mark = glyph.makeImage() else { return nil }
-        let inkMidX = CGFloat(minX + maxX + 1) / 2
-        let inkMidY = CGFloat(glyphHeight) - CGFloat(minRow + maxRow + 1) / 2   // y up
+        guard let mark = glyph.makeImage() else { return nil }
 
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
@@ -220,12 +253,16 @@ enum MenuHostMark {
             cg.setFillColor(disc[0].cgColor)
             cg.fillEllipse(in: whole)
         }
-        // The ink box's centre on the disc's, in whole pixels so it stays crisp.
-        let x = (CGFloat(side) / 2 - inkMidX).rounded()
-        let y = (CGFloat(side) / 2 - inkMidY).rounded()
         cg.setAlpha(ink.alphaComponent)
-        cg.draw(mark, in: CGRect(x: x, y: y, width: CGFloat(glyphWidth), height: CGFloat(glyphHeight)))
+        cg.draw(mark, in: whole)
         return rep
+    }
+
+    /// The nearest whole-pixel length to `pixels` with the parity of
+    /// `parityOf` pixels.
+    static func wholePixels(_ pixels: CGFloat, parityOf side: Int) -> CGFloat {
+        let parity = CGFloat(side % 2)
+        return max(2 * ((pixels - parity) / 2).rounded() + parity, 1)
     }
 
     private static func colour(_ rgb: UInt32) -> NSColor {

@@ -117,3 +117,19 @@ struct InkMeasureTests {
         #expect(fast * 3 < slow, "scan \(fast * 1000) ms vs reference \(slow * 1000) ms")
     }
 }
+
+@MainActor
+struct AvatarPixelSnapTests {
+    /// The ink's pixel count shares the disc's parity, so the space either
+    /// side of it splits into whole pixels.
+    @Test func inkPixelsShareTheDiscsParity() {
+        for side in [24, 26, 36, 52, 72, 108] {
+            for pixels in stride(from: 8.0, through: 60.0, by: 0.37) {
+                let snapped = MenuHostMark.wholePixels(pixels, parityOf: side)
+                #expect(snapped == snapped.rounded())
+                #expect(Int(snapped) % 2 == side % 2)
+                #expect(abs(snapped - pixels) <= 1.0001)
+            }
+        }
+    }
+}

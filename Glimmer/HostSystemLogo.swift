@@ -31,9 +31,7 @@ struct NearbyHostAvatar: View {
     }
 
     var body: some View {
-        HostAvatar.disc(mark, size: size,
-                        fill: AnyShapeStyle(Color.primary.opacity(0.09)),
-                        ink: Color.primary.opacity(0.5))
+        HostAvatar.disc(mark, size: size, look: .off)
             .accessibilityLabel(HostAvatar.name(of: mark))
             .task(id: address) {
                 guard !isPlayStation else { return }
@@ -139,25 +137,24 @@ struct HostAvatar: View {
     /// not by the artwork's frame: an SF Symbol's frame carries padding, and
     /// the ink's box is what the eye reads, so it lands exactly on the
     /// disc's centre.
-    /// `fill` and `ink` replace the platform's colours - the menu bar's
-    /// Servers rows draw the machines not in use in grey, as an off Focus is.
-    static func disc(_ mark: Mark, size: CGFloat, fill: AnyShapeStyle? = nil, ink: Color? = nil) -> some View {
-        let glyph = Glyph(mark)
-        let box = glyph.inkBox
-        let inkSize = glyphFrame(aspect: glyph.aspect * box.width / box.height, size: size, optical: glyph.optical)
-        let frame = CGSize(width: inkSize.width / box.width, height: inkSize.height / box.height)
-        return Circle()
-            .fill(fill ?? glyph.fill)
-            .overlay {
-                glyph.image
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: frame.width, height: frame.height)
-                    .foregroundStyle(ink ?? glyph.ink)
-                    .offset(x: (0.5 - box.midX) * frame.width,
-                            y: (0.5 - box.midY) * frame.height)
-            }
-            .frame(width: size, height: size)
+    /// `look` .off is a nearby machine's grey (the menu bar's for servers
+    /// not in use). Drawn by MenuHostMark as one bitmap per screen scale, its
+    /// ink centred to the pixel in each: laid out by SwiftUI, a fractional
+    /// mark frame was rounded to whole pixels and the Windows mark sat about
+    /// a quarter of a pixel left on a 1x screen.
+    static func disc(_ mark: Mark, size: CGFloat, look: MenuHostMark.Look = .current) -> some View {
+        DiscImage(mark: mark, size: size, look: look)
+    }
+
+    private struct DiscImage: View {
+        let mark: Mark
+        let size: CGFloat
+        let look: MenuHostMark.Look
+        @Environment(\.colorScheme) private var colorScheme
+        var body: some View {
+            Image(nsImage: MenuHostMark.image(for: mark, look: look, dark: colorScheme == .dark, diameter: size))
+                .frame(width: size, height: size)
+        }
     }
 
     /// The ink's size for a disc `size` across: the geometric mean of its
@@ -176,76 +173,6 @@ struct HostAvatar: View {
         return CGSize(width: width, height: height)
     }
 
-    /// A mark's artwork, its proportions, and the colours it sits in.
-    @MainActor private struct Glyph {
-        let image: Image
-        let aspect: CGFloat
-        let fill: AnyShapeStyle
-        let ink: Color
-        /// The size nudge for how much of its box the mark inks: the 0.2th
-        /// power of (typical coverage ÷ this mark's), within 0.9-1.1.
-        let optical: CGFloat
-        /// The ink's bounding box within the artwork, as fractions of its
-        /// width and height (y down).
-        let inkBox: CGRect
-
-        init(_ mark: Mark) {
-            switch mark {
-            case .playStation:
-                self.init(symbol: "playstation.logo", fill: AnyShapeStyle(HostAvatar.colour(0x0070D1)))
-            case .icon(.bazzite):
-                // The press kit's gradient disc, its monogram solid white.
-                self.init(asset: "HostLogo-bazzite-mark", fill: AnyShapeStyle(LinearGradient(
-                    colors: [HostAvatar.colour(0x0047AB), HostAvatar.colour(0x8A2BE2)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing)))
-            case .icon(.chimeraOS):
-                // Its only artwork is a detailed mascot that can't read at
-                // sidebar size.
-                self.init(symbol: "gamecontroller.fill", fill: AnyShapeStyle(HostAvatar.colour(HostIcon.chimeraOS.backgroundRGB)))
-            case .icon(.macOS):
-                self.init(symbol: "apple.logo", fill: AnyShapeStyle(HostAvatar.colour(HostIcon.macOS.backgroundRGB)))
-            case .icon(.computer), .icon(.automatic):
-                self.init(symbol: "desktopcomputer", fill: AnyShapeStyle(HostAvatar.colour(HostIcon.computer.backgroundRGB)))
-            case .icon(let icon):
-                self.init(asset: icon.assetName ?? "HostLogo-linux",
-                          fill: AnyShapeStyle(HostAvatar.colour(icon.backgroundRGB)),
-                          ink: icon == .linux ? .black : .white)
-            }
-        }
-
-        private init(symbol: String, fill: AnyShapeStyle) {
-            // Drawn from the same NSImage that is measured: SwiftUI's own
-            // resizable symbol drops the padding NSImage keeps around it, so
-            // the measured ink box wouldn't match what lands on screen.
-            let ns = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 64, weight: .regular))
-            let size = ns?.size ?? CGSize(width: 1, height: 1)
-            let measure = InkMeasure.measure(ns, key: "symbol:" + symbol)
-            let image = ns.map { Image(nsImage: $0).renderingMode(.template) } ?? Image(systemName: symbol)
-            self.init(image: image, aspect: size.width / max(size.height, 1), fill: fill,
-                      ink: .white, optical: measure.optical, inkBox: measure.inkBox)
-        }
-
-        private init(asset: String, fill: AnyShapeStyle, ink: Color = .white) {
-            let ns = NSImage(named: asset)
-            let size = ns?.size ?? CGSize(width: 1, height: 1)
-            let measure = InkMeasure.measure(ns, key: asset)
-            self.init(image: Image(asset).renderingMode(.template),
-                      aspect: size.width / max(size.height, 1), fill: fill, ink: ink,
-                      optical: measure.optical, inkBox: measure.inkBox)
-        }
-
-        private init(image: Image, aspect: CGFloat, fill: AnyShapeStyle, ink: Color,
-                     optical: CGFloat, inkBox: CGRect) {
-            self.image = image
-            self.aspect = aspect
-            self.fill = fill
-            self.ink = ink
-            self.optical = optical
-            self.inkBox = inkBox
-        }
-    }
-
     /// A 7 pt dot (at 36 pt) centred on the disc's rim at 45° (r·cos45° ≈
     /// 12.7 pt each way), so it sits on the edge instead of over the mark.
     private var badge: CGFloat { size * 7 / 36 }
@@ -258,10 +185,6 @@ struct HostAvatar: View {
         }
     }
 
-    fileprivate static func colour(_ rgb: UInt32) -> Color {
-        Color(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255,
-              blue: Double(rgb & 255) / 255)
-    }
 }
 
 /// Status colours for a machine's avatar dot.
@@ -286,8 +209,12 @@ extension HostAvatar {
                 HStack(spacing: 14) {
                     ForEach(start..<min(start + 6, marks.count), id: \.self) { i in
                         VStack(spacing: 4) {
-                            disc(marks[i].1, size: 36)
-                            Text(marks[i].0).font(.system(size: 9)).lineLimit(1).frame(width: 64)
+                            HStack(spacing: 4) {
+                                disc(marks[i].1, size: 36)
+                                // As a nearby machine (NearbyHostAvatar).
+                                disc(marks[i].1, size: 36, look: .off)
+                            }
+                            Text(marks[i].0).font(.system(size: 9)).lineLimit(1).frame(width: 76)
                         }
                     }
                 }
