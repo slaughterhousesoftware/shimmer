@@ -6,6 +6,23 @@
     <description>Shimmer auto-update feed</description>
     <language>en</language>
     <item>
+      <title>1.0.1</title>
+      <description><![CDATA[
+<p>Fixes to first-time setup and the Servers list.</p>
+<h3>Setup</h3>
+<ul><li>Pairing a PC from Nearby on the welcome page explains a failure instead of returning to the page without a word (for example, when the code isn't entered within 5 minutes).</li><li>Pairing again right after cancelling now says that Sunshine is still holding the previous request (it clears within 5 minutes), instead of "Pairing failed. Try again and approve the PIN on your PC".</li><li>The back button on a PC's or PS5's setup screen works. It sat on the window's zoom button, which took its clicks.</li><li>The "Shimmer" title on the welcome page is sharp; it was blurred.</li><li>Starting a new pairing clears the last attempt's message.</li><li>Until a PC or PS5 is added, Shimmer opens its window on every launch, not only the first, so quitting during setup no longer leaves only a menu bar icon.</li><li>macOS's Local Network prompt mentions the PS5 as well as PCs.</li></ul>
+<h3>Servers</h3>
+<ul><li>PCs and PS5s nearby that aren't added yet have the same round avatar as added ones, in grey, on the Servers list, the welcome page and their setup screens.</li><li>A nearby PC shows the Windows logo when it runs Windows, instead of Linux's for any PC whose name doesn't say Windows or Mac.</li><li>Every system logo is centred to the pixel on its avatar, on Retina and non-Retina screens alike. The Windows logo sat slightly left.</li></ul>
+<h3>Download</h3>
+<ul><li>The disk image's window is light, so Finder's black "Shimmer" and "Applications" labels are readable, and it no longer has a caption under the arrow.</li></ul>
+]]></description>
+      <pubDate>Thu, 19 Nov 2026 21:02:46 GMT</pubDate>
+      <sparkle:version>20261119.1</sparkle:version>
+      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/slaughterhousesoftware/shimmer/releases/download/v1.0.1/Shimmer-1.0.1.zip" type="application/octet-stream" sparkle:edSignature="E32afOyctrJBC5aYu9e0LgLSvCxsMVPybEIykiIn01iXaCIvKdLNOMBF2GQrmdzcfMncZJW8G6QzBxitkjvUBA==" length="10653481" />
+    </item>
+    <item>
       <title>1.0.0</title>
       <description><![CDATA[
 <p>The first Shimmer release: a Mac game-streaming client for PCs running Sunshine and for the PS5, built around Picture in Picture and the DualSense. Signed with Developer ID and notarized; installed copies update themselves.</p>
