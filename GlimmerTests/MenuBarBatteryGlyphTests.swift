@@ -610,7 +610,7 @@ struct MenuNowPlayingCardTests {
     }
 
     @Test func theControlsSitRightTheLastOneRightmost() {
-        let c = card([.init(symbol: "pip.enter", label: "PiP") {}, .init(symbol: "play.fill", label: "Stream", prominent: true) {}])
+        let c = card([.init(symbol: "pip.enter", label: "PiP") {}, .init(symbol: "play.fill", label: "Stream", style: .prominent) {}])
         let b = buttons(c)
         #expect(c.frame.height == 72 && c.frame.width >= 307)
         #expect(b.map { $0.accessibilityLabel() } == ["PiP", "Stream"])

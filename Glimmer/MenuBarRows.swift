@@ -38,6 +38,9 @@ final class MenuVolumeSlider: NSView {
         }
         slider.minValue = 0
         slider.maxValue = 1
+        // Grey, not the accent blue a key panel gives a slider (Apple's own
+        // Sound slider is blue): in this menu only the stream button is blue.
+        slider.trackFillColor = MenuSliderFill.colour
         slider.doubleValue = level
         slider.isContinuous = true
         slider.target = self
@@ -63,6 +66,12 @@ final class MenuVolumeSlider: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     @objc private func moved() { onChange(slider.doubleValue) }
+}
+
+/// The menu's sliders fill in the system's grey (Kevin, 2026-11-18: blue
+/// pulls the eye; only the stream button should).
+enum MenuSliderFill {
+    static let colour = NSColor.systemGray
 }
 
 /// A server's round mark for its menu row: the Settings sidebar's avatar
@@ -899,6 +908,7 @@ final class MenuBitrateRow: NSView {
         value.alignment = .right
         slider.minValue = 0
         slider.maxValue = Double(stops.count)
+        slider.trackFillColor = MenuSliderFill.colour
         // Stepped, but without tick marks - they cluttered a menu row; the
         // knob snaps to the stop instead (`moved`).
         slider.doubleValue = Double(index)

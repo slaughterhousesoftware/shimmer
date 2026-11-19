@@ -587,7 +587,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // A PS5 is the console itself.
         let title = streamHost.isPlayStation ? "PlayStation 5" : (app?.name ?? model.defaultAppName)
         let tile = MenuAppTile.image(streamHost.isPlayStation ? .playStation : .app(app))
-        let stop = Control(symbol: "stop.fill", label: "End Stream", action: run(#selector(endStream)))
+        let stop = Control(symbol: "stop.fill", label: "End Stream", style: .destructive, action: run(#selector(endStream)))
 
         if model.isStreaming {
             let subtitle: String
@@ -600,8 +600,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
             // In PiP the button takes it back to the window; otherwise into PiP.
             let pip = model.nativeStreamPictureInPicture
-                ? Control(symbol: "pip.exit", label: "Exit Picture in Picture", action: run(#selector(resumeStream)))
-                : Control(symbol: "pip.enter", label: "Picture in Picture", action: run(#selector(enterPictureInPicture)))
+                ? Control(symbol: "pip.exit", label: "Exit Picture in Picture", style: .tinted, action: run(#selector(resumeStream)))
+                : Control(symbol: "pip.enter", label: "Picture in Picture", style: .tinted, action: run(#selector(enterPictureInPicture)))
             // The card itself is the way back to a stream out of sight.
             let back = model.liveStreamRowTitle != nil ? run(#selector(resumeStream)) : nil
             return MenuNowPlayingCard(tile: tile, title: title, subtitle: subtitle, controls: [pip, stop], onOpen: back)
@@ -612,7 +612,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                                       controls: [stop])
         }
         if LunaPower.shared.actionInFlight[host.id] == "on" || model.powerWaitHostID == host.id {
-            let cancel = Control(symbol: "stop.fill", label: "Stop Waking \(host.displayName)",
+            let cancel = Control(symbol: "stop.fill", label: "Stop Waking \(host.displayName)", style: .destructive,
                                  action: run(#selector(stopWaking)))
             return MenuNowPlayingCard(tile: tile, title: title, subtitle: "Waking \(host.displayName)…",
                                       controls: [cancel])
@@ -626,15 +626,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             errorShownInMenu = true
             return MenuNowPlayingCard(tile: tile, title: title, subtitle: StreamFailureCopy.headline(error), alert: error,
                                       controls: [
-                Control(symbol: "pip.enter", label: "Try Again in Picture in Picture", action: run(#selector(streamHeroInPiP))),
-                Control(symbol: "arrow.clockwise", label: "Try Again", prominent: true, action: run(#selector(streamHero))),
+                Control(symbol: "pip.enter", label: "Try Again in Picture in Picture", style: .tinted, action: run(#selector(streamHeroInPiP))),
+                Control(symbol: "arrow.clockwise", label: "Try Again", style: .prominent, action: run(#selector(streamHero))),
             ])
         }
         // Where it would stream. How that server is doing is its row's
         // second line in Servers, as the AirPods' batteries are theirs.
         return MenuNowPlayingCard(tile: tile, title: title, subtitle: cardPlace(host), controls: [
-            Control(symbol: "pip.enter", label: "\(label) in Picture in Picture", action: run(#selector(streamHeroInPiP))),
-            Control(symbol: "play.fill", label: label, prominent: true, action: run(#selector(streamHero))),
+            Control(symbol: "pip.enter", label: "\(label) in Picture in Picture", style: .tinted, action: run(#selector(streamHeroInPiP))),
+            Control(symbol: "play.fill", label: label, style: .prominent, action: run(#selector(streamHero))),
         ])
     }
 

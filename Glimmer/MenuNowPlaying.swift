@@ -21,8 +21,7 @@ final class MenuNowPlayingCard: NSView {
     struct Control {
         var symbol: String
         var label: String
-        /// The blue one: the action the card is for.
-        var prominent = false
+        var style: MenuRoundButton.Style = .plain
         var action: () -> Void
     }
 
@@ -58,7 +57,7 @@ final class MenuNowPlayingCard: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: 307, height: Self.height))
         autoresizingMask = [.width]
         for control in controls {
-            let button = MenuRoundButton(symbol: control.symbol, label: control.label, prominent: control.prominent,
+            let button = MenuRoundButton(symbol: control.symbol, label: control.label, style: control.style,
                                          action: control.action)
             buttons.append(button)
             addSubview(button)
@@ -207,13 +206,29 @@ final class MenuNowPlayingCard: NSView {
 /// the accent colour for the one the card is for - darker while pressed.
 final class MenuRoundButton: NSView {
     private let symbol: String
-    private let prominent: Bool
+    /// How much a button asks to be pressed (Kevin, 2026-11-18: only the
+    /// stream button is blue; the rest shouldn't pull the eye).
+    enum Style {
+        /// The menu's grey disc, the symbol in the text colour.
+        case plain
+        /// The action the card is for (Stream, Try Again): the accent colour,
+        /// the symbol white.
+        case prominent
+        /// A secondary choice (Picture in Picture): the accent at 20% with
+        /// the symbol in the accent - the system's "tinted" button.
+        case tinted
+        /// Ending something (End Stream, Stop Waking): the system red, the
+        /// symbol white.
+        case destructive
+    }
+
+    private let style: Style
     private let action: () -> Void
     private var isPressed = false { didSet { if isPressed != oldValue { needsDisplay = true } } }
 
-    init(symbol: String, label: String, prominent: Bool, action: @escaping () -> Void) {
+    init(symbol: String, label: String, style: Style, action: @escaping () -> Void) {
         self.symbol = symbol
-        self.prominent = prominent
+        self.style = style
         self.action = action
         super.init(frame: NSRect(x: 0, y: 0, width: 30, height: 30))
         toolTip = label
@@ -224,16 +239,29 @@ final class MenuRoundButton: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    override var allowsVibrancy: Bool { !prominent }
+    override var allowsVibrancy: Bool { style == .plain }
 
     override func draw(_ dirtyRect: NSRect) {
-        let fill: NSColor = prominent
-            ? (isPressed ? NSColor.controlAccentColor.blended(withFraction: 0.2, of: .black) ?? .controlAccentColor
-                         : .controlAccentColor)
-            : NSColor.labelColor.withAlphaComponent(isPressed ? 0.18 : 0.09)
+        func pressed(_ colour: NSColor) -> NSColor {
+            isPressed ? colour.blended(withFraction: 0.2, of: .black) ?? colour : colour
+        }
+        let fill: NSColor, ink: NSColor
+        switch style {
+        case .plain:
+            fill = NSColor.labelColor.withAlphaComponent(isPressed ? 0.18 : 0.09)
+            ink = .labelColor
+        case .prominent:
+            fill = pressed(.controlAccentColor)
+            ink = .white
+        case .tinted:
+            fill = NSColor.controlAccentColor.withAlphaComponent(isPressed ? 0.32 : 0.2)
+            ink = .controlAccentColor
+        case .destructive:
+            fill = pressed(.systemRed)
+            ink = .white
+        }
         fill.setFill()
         NSBezierPath(ovalIn: bounds).fill()
-        let ink: NSColor = prominent ? .white : .labelColor
         let config = NSImage.SymbolConfiguration(pointSize: bounds.height * 0.42, weight: .semibold)
             .applying(.init(paletteColors: [ink]))
         guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config)
