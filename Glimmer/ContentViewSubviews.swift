@@ -140,11 +140,13 @@ struct FirstPCSetup: View {
         connect(trimmedAddress)
     }
 
+    /// A nearby machine: its system's mark, its name, Pair. The mark sits
+    /// as far in from the left as Pair does from the right, top and bottom
+    /// (FirstPCMetrics.rowInset), so the row reads as one even frame.
     private func nearbyRow(name: String, logo: HostSystemKind, address: String,
                            pair: @escaping () -> Void) -> some View {
         HStack(spacing: 10) {
-            HostSystemLogo(kind: logo, size: 18)
-                .frame(width: 22)
+            HostSystemLogo(kind: logo, size: FirstPCMetrics.logoSize)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(name)
@@ -164,8 +166,7 @@ struct FirstPCSetup: View {
                 .help("Pair with \(name)")
                 .accessibilityLabel("Pair with nearby \(logo == .playStation ? "PS5" : "PC") \(name), \(address)")
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 4)
+        .padding(.horizontal, FirstPCMetrics.rowInset)
         .modifier(FirstPCRowStyle())
     }
 }
@@ -197,6 +198,12 @@ struct PCConnectionErrorBanner: View {
 
 private enum FirstPCMetrics {
     static let rowHeight: CGFloat = 36
+    /// The row's side padding: Pair (a small button, 22 pt) then sits 6 pt
+    /// inside the 1 pt border at the right as at the top and bottom, and
+    /// the mark's ink about 8 pt in at the left, as its own gaps above and
+    /// below (measured at 2x, 2026-11-18).
+    static let rowInset: CGFloat = 7
+    static let logoSize: CGFloat = 20
     static let buttonHeight: CGFloat = 28
     static let cornerRadius: CGFloat = 8
 }
