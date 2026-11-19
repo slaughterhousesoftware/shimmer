@@ -45,5 +45,6 @@ struct PlayStationSettingsPane: View {
         } header: {
             FormSectionHeader("Video")
         }
+        PlayStationNowPlayingSection()
     }
 }

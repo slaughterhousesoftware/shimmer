@@ -167,9 +167,12 @@ struct PlayStationSignInSheet: View {
             }
             .padding(12)
             Divider()
-            PlayStationSignInWebView { code in
+            PSNSignInWebView(url: PlayStationAccount.signInURL, code: PlayStationAccount.authorizationCode(in:)) { code, npsso in
                 guard !exchanging else { return }
                 exchanging = true
+                // The same sign-in can show the PS5's game in the menu bar
+                // (PlayStationNowPlaying): its session cookie is enough.
+                if let npsso { Task { await PlayStationNowPlaying.shared.signIn(npsso: npsso) } }
                 Task {
                     do {
                         signedIn(try await PlayStationAccount.identity(forCode: code))
@@ -180,38 +183,5 @@ struct PlayStationSignInSheet: View {
             }
         }
         .frame(width: 520, height: 680)
-    }
-}
-
-private struct PlayStationSignInWebView: NSViewRepresentable {
-    let gotCode: (String) -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator(gotCode: gotCode) }
-
-    func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        // A fresh, non-persistent session each time: no Sony cookies linger.
-        config.websiteDataStore = .nonPersistent()
-        let view = WKWebView(frame: .zero, configuration: config)
-        view.navigationDelegate = context.coordinator
-        view.load(URLRequest(url: PlayStationAccount.signInURL))
-        return view
-    }
-
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
-
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        let gotCode: (String) -> Void
-        init(gotCode: @escaping (String) -> Void) { self.gotCode = gotCode }
-
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-                     decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-            if let url = navigationAction.request.url, let code = PlayStationAccount.authorizationCode(in: url) {
-                decisionHandler(.cancel)
-                gotCode(code)
-                return
-            }
-            decisionHandler(.allow)
-        }
     }
 }
