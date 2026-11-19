@@ -140,12 +140,12 @@ struct FirstPCSetup: View {
         connect(trimmedAddress)
     }
 
-    /// A nearby machine: its system's mark, its name, Pair. The mark sits
-    /// as far in from the left as Pair does from the right, top and bottom
-    /// (FirstPCMetrics.rowInset), so the row reads as one even frame.
+    /// A nearby machine: its system's mark, its name, Pair. The mark's ink
+    /// sits centred between the border and the name (about 11 pt each way),
+    /// Pair 6 pt inside the border on its three sides.
     private func nearbyRow(name: String, logo: HostSystemKind, address: String,
                            pair: @escaping () -> Void) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: FirstPCMetrics.logoGap) {
             HostSystemLogo(kind: logo, size: FirstPCMetrics.logoSize)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
@@ -166,7 +166,8 @@ struct FirstPCSetup: View {
                 .help("Pair with \(name)")
                 .accessibilityLabel("Pair with nearby \(logo == .playStation ? "PS5" : "PC") \(name), \(address)")
         }
-        .padding(.horizontal, FirstPCMetrics.rowInset)
+        .padding(.leading, FirstPCMetrics.logoInset)
+        .padding(.trailing, FirstPCMetrics.rowInset)
         .modifier(FirstPCRowStyle())
     }
 }
@@ -198,11 +199,14 @@ struct PCConnectionErrorBanner: View {
 
 private enum FirstPCMetrics {
     static let rowHeight: CGFloat = 36
-    /// The row's side padding: Pair (a small button, 22 pt) then sits 6 pt
-    /// inside the 1 pt border at the right as at the top and bottom, and
-    /// the mark's ink about 8 pt in at the left, as its own gaps above and
-    /// below (measured at 2x, 2026-11-18).
+    /// The row's right padding: Pair (a small button, 22 pt) then sits 6 pt
+    /// inside the 1 pt border at the right as at the top and bottom.
     static let rowInset: CGFloat = 7
+    /// The mark's padding and its gap to the name: its ink (about 1.5 pt
+    /// inside its 20 pt box) is then as far from the border as from the
+    /// name. At 7 and 10 it was 8.5 and 14.5: it looked pushed left.
+    static let logoInset: CGFloat = 11
+    static let logoGap: CGFloat = 8
     static let logoSize: CGFloat = 20
     static let buttonHeight: CGFloat = 28
     static let cornerRadius: CGFloat = 8
