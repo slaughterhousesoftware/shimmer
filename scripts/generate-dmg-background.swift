@@ -1,11 +1,12 @@
 #!/usr/bin/swift
-// Renders the DMG window background: a dark neutral gradient with a thin arrow
+// Renders the DMG window background: a light lavender gradient with a thin arrow
 // pointing from where Finder draws Shimmer.app to where it draws the
 // /Applications alias. The app icon is deliberately NOT painted here - Finder
 // shows the real icon on top, and a painted copy would double up.
 //
-// Palette is the dark variant from scripts/generate-icon-layers.swift, so the
-// installer window reads as the same product as the icon.
+// Light on purpose: Finder draws the icons' labels ("Shimmer", "Applications")
+// in black over a background picture, in Dark Mode too, so a dark background
+// leaves them unreadable. The purple glow is the Default icon's.
 //
 // Output (run from repo root):
 //   scripts/dmg/background.png     660x400  (1x)
@@ -36,7 +37,7 @@ let gradientDivisor: CGFloat = 4
 
 let outputDir = URL(fileURLWithPath: "scripts/dmg")
 
-// MARK: - Palette (dark variant, scripts/generate-icon-layers.swift)
+// MARK: - Palette
 
 guard let srgb = CGColorSpace(name: CGColorSpace.sRGB) else {
     fatalError("sRGB color space unavailable")
@@ -51,14 +52,14 @@ func rgb(_ r: Int, _ g: Int, _ b: Int, _ a: CGFloat = 1.0) -> CGColor {
     )
 }
 
-let bgTopLeft = rgb(0x16, 0x16, 0x1B)
-let bgBottomRight = rgb(0x22, 0x1F, 0x2A)
-let accent = rgb(0x50, 0x28, 0x90, 0.32) // warm purple glow
-let accentFade = rgb(0x50, 0x28, 0x90, 0.0)
-let cool = rgb(0x0C, 0x0C, 0x10, 0.50) // cool counter-glow
-let coolFade = rgb(0x0C, 0x0C, 0x10, 0.0)
-let arrowColor = rgb(0xFF, 0xEE, 0xDD, 0.34) // moon cream, kept faint
-let captionColor = rgb(0xFF, 0xEE, 0xDD, 0.38)
+let bgTopLeft = rgb(0xFB, 0xFA, 0xFD)
+let bgBottomRight = rgb(0xEE, 0xEA, 0xF5)
+let accent = rgb(0x6A, 0x3F, 0xD0, 0.10) // purple glow, the icon's
+let accentFade = rgb(0x6A, 0x3F, 0xD0, 0.0)
+let cool = rgb(0xFF, 0xFF, 0xFF, 0.60) // lift behind the app icon
+let coolFade = rgb(0xFF, 0xFF, 0xFF, 0.0)
+let arrowColor = rgb(0x3A, 0x33, 0x4A, 0.34) // dark plum, kept faint
+let captionColor = rgb(0x3A, 0x33, 0x4A, 0.55)
 
 func linearGradient(_ stops: [(CGFloat, CGColor)]) -> CGGradient {
     let colors = stops.map { $0.1 } as CFArray
@@ -160,7 +161,7 @@ func render(scale: CGFloat) -> Data? {
     let caption = "Drag Shimmer to Applications"
     let attrs: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-        .foregroundColor: NSColor(cgColor: captionColor) ?? .white,
+        .foregroundColor: NSColor(cgColor: captionColor) ?? .black,
         .kern: 0.4
     ]
     let size = (caption as NSString).size(withAttributes: attrs)

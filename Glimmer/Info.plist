@@ -64,7 +64,7 @@
 	     type the app browses - Discovery.swift browses _nvstream._tcp (GFE)
 	     and _nvstream-tcp._tcp (Sunshine). -->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Shimmer finds and connects to your gaming PCs on your local network.</string>
+	<string>Shimmer finds and connects to your gaming PCs and PS5 on your local network.</string>
 	<!-- Input Monitoring (kIOHIDRequestTypeListenEvent). REQUIRED for the
 	     permission API to behave: without this key IOHIDCheckAccess /
 	     IOHIDRequestAccess return denied even when the user HAS granted the

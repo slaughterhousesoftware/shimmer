@@ -20,6 +20,9 @@ struct ComputersTab: View {
     @State private var pendingManualAddress: AddressLookup.Outcome?
     @State private var setupAddress = ""
     @State private var setupError: String?
+    /// The address `setupError` is about. Putting that address back in the
+    /// field after a failed pairing must not clear the message; typing must.
+    @State private var setupErrorAddress: String?
     @State private var lookingUpAddress = false
     @State private var appRefreshTask: Task<Void, Never>?
     @State private var refreshingApps = false
@@ -146,7 +149,9 @@ struct ComputersTab: View {
                 catch { return }
             }
         }
-        .onChange(of: setupAddress) { setupError = nil }
+        .onChange(of: setupAddress) { _, address in
+            if address != setupErrorAddress { setupError = nil }
+        }
         .onChange(of: model.selectedHost?.id) {
             resetAppActions()
             chosenAppName = nil
@@ -174,6 +179,7 @@ struct ComputersTab: View {
             lookingUpAddress = false
             guard setupAddress == address else { return }
             if case .nothing(let message) = outcome {
+                setupErrorAddress = address
                 setupError = message
             } else {
                 open(outcome)
@@ -357,6 +363,7 @@ struct ComputersTab: View {
         } else if let target = pairingTarget {
             PCPairingPane(target: target, failed: model.hosts.isEmpty ? { address, message in
                 guard pairingTarget?.id == target.id else { return }
+                setupErrorAddress = address
                 setupAddress = address
                 setupError = message
                 pairingTarget = nil
