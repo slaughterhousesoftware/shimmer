@@ -17,23 +17,24 @@
 //  are reflected immediately in the menu", NSMenuItem.h) but pays a window
 //  resize for it every frame.
 //
-//  The motion, measured frame by frame off a 60 fps recording of the Sound
-//  menu on macOS 27 (Kevin's MacBook, 2026-11-18; three opens and three
-//  closes, each fitted within ~1%):
+//  The motion, measured frame by frame off native-pixel recordings of the
+//  Sound menu's AirPods row on macOS 27 (Kevin's MacBook, 2026-11-18; the
+//  menu's bottom edge over three opens and three closes, the row below the
+//  band over the closes; the springs fitted jointly, 1.2% rms):
 //  - the rows below slide and the opened band fades on one spring:
-//    SwiftUI's snappy at 0.35 s (damping 0.85 - it settles a hair past its
-//    mark, ~1.5 pt, and back). The chevron turns on it too - assumed: the
-//    pointer covered the chevron in the recording;
+//    SwiftUI's snappy at 0.32 s (damping 0.85 - it settles a hair past its
+//    mark, ~2 pt, and back). The chevron turns on it too - assumed: the
+//    chevron shows only under the pointer;
 //  - the menu's height chases them on a slower critically damped spring:
-//    smooth at 0.42 s. So opening, the rows run ahead and the bottom of the
+//    smooth at 0.40 s. (A first fit off a 60 fps screen recording gave
+//    0.35 and 0.42 - visibly slower than the real menu side by side.)
+//    So opening, the rows run ahead and the bottom of the
 //    menu (Settings…, Quit) uncovers them; closing, the rows slide up over
 //    the fading band, and the bottom follows, leaving a gap that closes.
 //  - the band itself doesn't move: it is in place from the first frame and
 //    fades, drawn under the rows that pass over it.
 //  SwiftUI's own Spring does the arithmetic (`update(value:velocity:...)`).
-//  Recorded back off Shimmer the same way, its curves match Apple's: the
-//  height within 0.7-1.5% rms over all six cycles, the rows sliding within
-//  0.5-0.8%, the fade within ~2% (design/menu-bar/disclosure-motion).
+//  The fit's scripts are in design/menu-bar/disclosure-motion.
 //
 //  The rows are subviews of one menu item, so arrow keys reach the list as
 //  a whole, not each server (VoiceOver still reaches each row's button).
@@ -44,9 +45,9 @@ import SwiftUI
 
 enum MenuDisclosureMotion {
     /// The rows below, the band's fade and the chevron.
-    static let content = Spring.snappy(duration: 0.35)
+    static let content = Spring.snappy(duration: 0.32)
     /// The menu's height, chasing the content.
-    static let height = Spring.smooth(duration: 0.42)
+    static let height = Spring.smooth(duration: 0.40)
 }
 
 /// The Servers rows as one menu item's view, so they can move independently
@@ -290,6 +291,7 @@ final class MenuDisclosureWell: NSView {
 
     init(groups: [Group]) {
         super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 0))
+        wantsLayer = true
         autoresizingMask = [.width]
         let fill = MenuTintView(frame: bounds)
         fill.tint = .band
@@ -326,4 +328,19 @@ final class MenuDisclosureWell: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The band fades with its parts each faded on its own, not flattened
+    /// first. Its tints add light to the glass (MenuTintView's `plusL`); a
+    /// group fade draws them into a clear layer first, where adding light
+    /// is plain painting, and lays that over the glass - about 6 grey
+    /// levels darker than the same tint added straight to the glass. So
+    /// the band brightened by a step in the frame its opacity reached 1,
+    /// as the motion settled (measured off Shimmer's recording, 2026-11-18).
+    /// Faded part by part, adding light stays adding light at every
+    /// opacity, and a fade to 1 lands exactly on the resting look.
+    override func makeBackingLayer() -> CALayer {
+        let layer = super.makeBackingLayer()
+        layer.allowsGroupOpacity = false
+        return layer
+    }
 }
