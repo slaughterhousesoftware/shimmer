@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/slaughterhousesoftware/shimmer/releases/latest"><b>Download Shimmer 1.0</b></a>
+  <b>Shimmer 1.0: signed download coming soon</b> (<a href="#build-from-source">build from source</a> for now)
   &nbsp;·&nbsp; macOS 26 or later, Apple silicon &nbsp;·&nbsp; Free and open source (GPLv3)
 </p>
 
@@ -32,8 +32,8 @@ switch apps. The controller keeps driving the game, and the mouse over the PiP
 window moves the PC's pointer.
 
 It uses the same display layer the stream already draws into, so there is no
-second decoder, and the game keeps its frame rate through Stage Manager,
-Mission Control and locking the screen.
+second decoder, and there are no significant frame drops through Stage
+Manager, Mission Control or locking the screen.
 
 ## PlayStation 5
 
@@ -116,11 +116,11 @@ layout takes after Tailscale's Mac app.
 
 ## Install
 
-Download the DMG from [Releases](https://github.com/slaughterhousesoftware/shimmer/releases/latest)
-and drag Shimmer to Applications. It is signed with a Developer ID and
-notarized by Apple, and it updates itself through
-[Sparkle](https://sparkle-project.org); each update is checked against
-Shimmer's own signing key. Every release lists the SHA-256 of its files.
+Shimmer 1.0 is coming to [Releases](https://github.com/slaughterhousesoftware/shimmer/releases)
+as a DMG signed with a Developer ID and notarized by Apple. It will update
+itself through [Sparkle](https://sparkle-project.org), checking each update
+against Shimmer's own signing key, and every release will list the SHA-256 of
+its files. Until it's there, build it from source (below).
 
 You need macOS 26 or later on Apple silicon, and either a PC running
 [Sunshine](https://github.com/LizardByte/Sunshine) or a PS5 with Remote Play
