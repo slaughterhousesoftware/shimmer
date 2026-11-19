@@ -22,32 +22,67 @@
 //  menu's bottom edge over three opens and three closes, the row below the
 //  band over the closes; the springs fitted jointly, 1.2% rms):
 //  - the rows below slide and the opened band fades on one spring:
-//    SwiftUI's snappy at 0.32 s (damping 0.85 - it settles a hair past its
-//    mark, ~2 pt, and back). The chevron turns on it too - assumed: the
-//    chevron shows only under the pointer;
-//  - the menu's height chases them on a slower critically damped spring:
-//    smooth at 0.40 s. (A first fit off a 60 fps screen recording gave
-//    0.35 and 0.42 - visibly slower than the real menu side by side.)
+//    SwiftUI's snappy at 0.32 s (stiffness 385.5, damping 0.85 of critical -
+//    it settles a hair past its mark, ~2 pt, and back). The chevron turns
+//    on it too - assumed: the chevron shows only under the pointer;
+//  - the menu's height chases them on a slightly overdamped spring
+//    (stiffness 300, damping 38: 1.1 times critical), so its last few
+//    points creep in as the Sound menu's do, never past. From 5% of the
+//    way, it reaches 25/50/80/95/99% at 62/122/219/343/483 ms; Apple's
+//    at 55/114/206/339/492. (A critically damped 0.40 s fitted as well
+//    overall but landed its last 1% 45 ms early. A first fit off a 60 fps
+//    screen recording gave 0.35 and 0.42 - visibly slower side by side.)
 //    So opening, the rows run ahead and the bottom of the
 //    menu (Settings…, Quit) uncovers them; closing, the rows slide up over
 //    the fading band, and the bottom follows, leaving a gap that closes.
 //  - the band itself doesn't move: it is in place from the first frame and
 //    fades, drawn under the rows that pass over it.
-//  SwiftUI's own Spring does the arithmetic (`update(value:velocity:...)`).
-//  The fit's scripts are in design/menu-bar/disclosure-motion.
+//  MenuSpring steps the springs, in steps of 1/1200 s at most, rather
+//  than SwiftUI's Spring: that clamps damping at critical (asked for 38,
+//  it used 34.6, and the height landed 80 ms early), and its update over a
+//  whole 120 Hz frame drifts from the true curve. Shimmer recorded back
+//  matched each model to within a few ms. The fit's scripts are in
+//  design/menu-bar/disclosure-motion.
 //
 //  The rows are subviews of one menu item, so arrow keys reach the list as
 //  a whole, not each server (VoiceOver still reaches each row's button).
 //
 
 import AppKit
-import SwiftUI
 
 enum MenuDisclosureMotion {
-    /// The rows below, the band's fade and the chevron.
-    static let content = Spring.snappy(duration: 0.32)
+    /// The rows below, the band's fade and the chevron: SwiftUI's
+    /// `.snappy(duration: 0.32)`.
+    static let content = MenuSpring(duration: 0.32, dampingRatio: 0.85)
     /// The menu's height, chasing the content.
-    static let height = Spring.smooth(duration: 0.40)
+    static let height = MenuSpring(stiffness: 300, damping: 38)
+    /// The longest step the springs take at once; a display frame is cut
+    /// into steps this short, so the motion is the same at any refresh rate.
+    static let maximumStep: TimeInterval = 1.0 / 1200
+}
+
+/// A damped spring of unit mass, stepped semi-implicitly (velocity, then
+/// position) - the model the motion was fitted with. Any damping, over
+/// critical too.
+struct MenuSpring {
+    let stiffness: Double
+    let damping: Double
+
+    init(stiffness: Double, damping: Double) {
+        self.stiffness = stiffness
+        self.damping = damping
+    }
+
+    /// SwiftUI's parametrisation: `duration` the period undamped.
+    init(duration: Double, dampingRatio: Double) {
+        stiffness = pow(2 * .pi / duration, 2)
+        damping = 4 * .pi * dampingRatio / duration
+    }
+
+    func step(value: inout Double, velocity: inout Double, target: Double, by dt: Double) {
+        velocity += (stiffness * (target - value) - damping * velocity) * dt
+        value += velocity * dt
+    }
 }
 
 /// The Servers rows as one menu item's view, so they can move independently
@@ -122,16 +157,15 @@ final class MenuDisclosureList: NSView {
     /// One step of the springs (the display link's, or a test's).
     func advance(by dt: TimeInterval) {
         let target = isExpanded ? 1.0 : 0
-        var m = motion
-        var content = m.content, speed = m.contentVelocity
-        MenuDisclosureMotion.content.update(value: &content, velocity: &speed, target: target, deltaTime: dt)
-        m.content = content
-        m.contentVelocity = speed
-        var height = m.height, velocity = m.heightVelocity
-        MenuDisclosureMotion.height.update(value: &height, velocity: &velocity, target: m.content, deltaTime: dt)
-        m.height = height
-        m.heightVelocity = velocity
-        motion = m
+        var content = motion.content, speed = motion.contentVelocity
+        var height = motion.height, velocity = motion.heightVelocity
+        let steps = max(1, Int((dt / MenuDisclosureMotion.maximumStep).rounded(.up)))
+        let step = dt / Double(steps)
+        for _ in 0..<steps {
+            MenuDisclosureMotion.content.step(value: &content, velocity: &speed, target: target, by: step)
+            MenuDisclosureMotion.height.step(value: &height, velocity: &velocity, target: content, by: step)
+        }
+        motion = Motion(content: content, contentVelocity: speed, height: height, heightVelocity: velocity)
         if !isAnimating { motion = Motion(content: target, height: target) }
         layoutForMotion()
     }

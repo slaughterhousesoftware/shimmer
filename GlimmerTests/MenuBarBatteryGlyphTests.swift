@@ -516,6 +516,32 @@ struct MenuDisclosureListTests {
         #expect(list.frame.height == 226 && r[2].frame.minY == 194 && w.alphaValue == 1 && !list.isAnimating)
     }
 
+    // The Sound menu's height creeps in to its mark and never passes it.
+    @Test func theMenuNeverOpensPastItsHeight() {
+        let r = rows(3), w = well()
+        let list = MenuDisclosureList(rows: r, well: (under: 1, view: w), expanded: false)
+        list.setExpanded(true)
+        var tallest: CGFloat = 0
+        for _ in 0..<240 { list.advance(by: 1.0 / 120); tallest = max(tallest, list.frame.height) }
+        #expect(tallest == 226)
+    }
+
+    // The motion is the curve, not the display's refresh rate: a 60 Hz and
+    // a 240 Hz screen show the same height at the same moment as 120 Hz.
+    @Test func theMotionIsTheSameAtAnyRefreshRate() {
+        func height(at seconds: Double, hz: Double) -> CGFloat {
+            let list = MenuDisclosureList(rows: rows(3), well: (under: 1, view: well()), expanded: false)
+            list.setExpanded(true)
+            for _ in 0..<Int((seconds * hz).rounded()) { list.advance(by: 1 / hz) }
+            return list.frame.height
+        }
+        for t in [0.05, 0.1, 0.2, 0.3] {
+            let reference = height(at: t, hz: 120)
+            #expect(abs(height(at: t, hz: 60) - reference) <= 0.5)
+            #expect(abs(height(at: t, hz: 240) - reference) <= 0.5)
+        }
+    }
+
     @Test func collapsingTheRowsSlideOverTheFadingBand() {
         let r = rows(3), w = well()
         let list = MenuDisclosureList(rows: r, well: (under: 1, view: w), expanded: true)
