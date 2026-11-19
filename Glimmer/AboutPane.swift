@@ -64,7 +64,10 @@ struct AboutPane: View {
                 VStack(spacing: 6) {
                     Text("GPLv3. shimmer's engine is glimmer's, Copyright © 2026 ugfugl.io; shimmer's "
                         + "additions are Copyright © 2026 Kevin Patel.")
-                    Text("The transport is ported from moonlight-common-c and moonlight-qt.")
+                    Text("PC streaming is ported from moonlight-common-c and moonlight-qt. PS5 Remote Play "
+                        + "uses chiaki-ng's libchiaki (AGPLv3). DualSense haptics over Bluetooth build on "
+                        + "SAxense, DS5Dongle and P5M.")
+                    Text("Includes Sparkle, OpenSSL and Opus.")
                     if let url = URL(string: AboutLink.donate) {
                         Link("Support glimmer’s author", destination: url)
                             .foregroundStyle(Color.accentColor)

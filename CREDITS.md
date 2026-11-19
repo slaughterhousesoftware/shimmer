@@ -2,9 +2,9 @@
 
 **shimmer is a fork of [glimmer](https://github.com/Se7enbrc/glimmer)** by
 [Se7enbrc](https://github.com/Se7enbrc) (Copyright © 2026 ugfugl.io, GPLv3).
-shimmer adds macOS Picture in Picture on top of glimmer's engine and is
-distributed under the same license; everything below about Glimmer's lineage
-applies to shimmer unchanged.
+shimmer adds macOS Picture in Picture, PS5 Remote Play and a menu bar app on
+top of glimmer's engine and is distributed under the same license; everything
+below about Glimmer's lineage applies to shimmer unchanged.
 
 Glimmer's Swift streaming transport was **ported from
 [moonlight-common-c](https://github.com/moonlight-stream/moonlight-common-c)**,
@@ -103,6 +103,13 @@ No code was copied — that project is Objective-C/AppKit over Core Data and
 shimmer is Swift/SwiftUI over a different model layer, so both were
 reimplemented — but the design is theirs, and the `/appasset` box-art request
 follows the same convention every Moonlight client uses. Thank you.
+
+## Bundled libraries
+
+The app bundle carries three libraries under their own licenses:
+[Sparkle](https://sparkle-project.org) (MIT) for updates,
+[OpenSSL](https://www.openssl.org) (Apache-2.0) for TLS and the PS5 session's
+crypto, and [Opus](https://opus-codec.org) (BSD-3-Clause) for decoding audio.
 
 ## Server operating-system icons
 
