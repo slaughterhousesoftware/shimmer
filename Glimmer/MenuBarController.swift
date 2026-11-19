@@ -316,7 +316,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // MARK: - Menu
 
     /// Rebuilt from the model each time the menu opens, so every row reflects
-    /// the moment of opening; nothing here is observed while the menu is up.
+    /// the moment of opening. While it is up, only the servers' status lines
+    /// follow the model (observeServerStatuses), and the streaming server's
+    /// numbers refresh once a second.
     func menuWillOpen(_ menu: NSMenu) {
         // Recorded for shimmerctl: if the icon "doesn't respond" and this
         // never fires, the click never reached Shimmer (status-item clicks
@@ -333,6 +335,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         menuIsOpen = false
+        statusRows = [:]
         hoveredRow = nil
         expandedHostID = nil
         serversList?.stopAnimating()
@@ -405,6 +408,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func populate(_ menu: NSMenu) {
         menu.removeAllItems()
         hoveredRow = nil
+        statusRows = [:]
+        defer { if menuIsOpen { observeServerStatuses() } }
 
         // The top: a Now Playing card for the stream - the app, where, and
         // its controls (MenuNowPlayingCard; Kevin's pick of five mock-ups).
@@ -472,8 +477,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 if streamingHere {
                     statsRow = row
                     row.stats = streamStats(rttMs: lastStreamNumbers.rttMs, mbps: lastStreamNumbers.mbps)
-                    row.sizeToContent()
+                } else {
+                    // The rest show how they are - Online, Asleep, Trust
+                    // needed - once that's known; nothing while it isn't.
+                    row.stats = serverStatus(for: host.id)
+                    statusRows[host.id] = row
                 }
+                row.sizeToContent()
                 rows.append(row)
             }
             let settings = inUseIndex.map { (under: $0, view: streamSettingsWell(for: model.hosts[$0]) as NSView) }
@@ -507,6 +517,36 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // No "Check for Updates…" here, by request. Sparkle still checks on
         // its own at launch, and the command stays in the app menu.
         menu.addItem(action("Quit Shimmer", #selector(quit), key: "q"))
+    }
+
+    // MARK: - Server status
+
+    /// The servers' rows that show a status line (not the one streaming:
+    /// its line is the stream's numbers), until the menu closes.
+    private var statusRows: [String: MenuServerRow] = [:]
+    private var statusObservation = 0
+
+    /// A server's second line: its status (the sidebar's words), or nothing
+    /// until a check has come back - never "Checking…".
+    private func serverStatus(for hostID: String) -> [MenuServerRow.Stat] {
+        let text = model.sidebarStatusText(for: hostID)
+        return text == "Checking…" ? [] : [.init(symbol: nil, text: text)]
+    }
+
+    /// While the menu is open, a status that comes in (a switch's first
+    /// check, a server going to sleep) lands on its row at once.
+    private func observeServerStatuses() {
+        statusObservation += 1
+        let generation = statusObservation
+        withObservationTracking {
+            for id in statusRows.keys { _ = model.sidebarStatusText(for: id) }
+        } onChange: {
+            Task { @MainActor [weak self] in
+                guard let self, self.menuIsOpen, generation == self.statusObservation else { return }
+                for (id, row) in self.statusRows { row.stats = self.serverStatus(for: id) }
+                self.observeServerStatuses()
+            }
+        }
     }
 
     // MARK: - The Now Playing card
@@ -561,10 +601,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             return MenuNowPlayingCard(tile: tile, title: title, subtitle: "Waking \(host.displayName)…",
                                       controls: [cancel])
         }
-        let status = model.selectedHostStatusLine
-        let subtitle = status == "Online" ? host.displayName : "\(host.displayName) · \(status)"
+        // Where it would stream. How that server is doing is its row's
+        // second line in Servers, as the AirPods' batteries are theirs.
         let label = host.isPlayStation ? "Stream PlayStation 5" : model.heroActionLabel
-        return MenuNowPlayingCard(tile: tile, title: title, subtitle: subtitle, controls: [
+        return MenuNowPlayingCard(tile: tile, title: title, subtitle: host.displayName, controls: [
             Control(symbol: "pip.enter", label: "\(label) in Picture in Picture", action: run(#selector(streamHeroInPiP))),
             Control(symbol: "play.fill", label: label, prominent: true, action: run(#selector(streamHero))),
         ])
