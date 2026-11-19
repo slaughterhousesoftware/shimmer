@@ -39,11 +39,15 @@ final class MenuNowPlayingCard: NSView {
 
     /// `onOpen`: a click on the card itself (not its buttons) - the way back
     /// to a stream that is out of sight, as clicking Now Playing opens the app.
+    /// What the card says and offers, to tell whether a rebuilt one differs.
+    let signature: String
+
     init(tile: NSImage, title: String, subtitle: String, controls: [Control], onOpen: (() -> Void)? = nil) {
         self.tile = tile
         self.title = title
         self.subtitle = subtitle
         self.onOpen = onOpen
+        signature = ([title, subtitle, onOpen == nil ? "" : "opens"] + controls.map(\.label)).joined(separator: "\n")
         super.init(frame: NSRect(x: 0, y: 0, width: 307, height: Self.height))
         autoresizingMask = [.width]
         for control in controls {

@@ -409,12 +409,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         hoveredRow = nil
         statusRows = [:]
-        defer { if menuIsOpen { observeServerStatuses() } }
+        defer {
+            if menuIsOpen {
+                observeServerStatuses()
+                observeCard()
+            }
+        }
 
         // The top: a Now Playing card for the stream - the app, where, and
         // its controls (MenuNowPlayingCard; Kevin's pick of five mock-ups).
         let card = NSMenuItem()
-        card.view = nowPlayingCard()
+        let cardView = nowPlayingCard()
+        cardSignature = cardView.signature
+        card.view = cardView
         menu.addItem(card)
 
         // Stream audio, right under the card as the Sound menu's slider sits
@@ -551,6 +558,31 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - The Now Playing card
 
+    /// What the open menu's card shows, and the watch on what it's made of:
+    /// the stream coming up ("Connecting…" to "Streaming from"), ending
+    /// or failing while the menu is open redraws it.
+    private var cardSignature: String?
+    private var cardObservation = 0
+
+    private func observeCard() {
+        cardObservation += 1
+        let generation = cardObservation
+        withObservationTracking {
+            _ = nowPlayingCard().signature
+        } onChange: {
+            Task { @MainActor [weak self] in
+                guard let self, self.menuIsOpen, generation == self.cardObservation else { return }
+                // Many things the card reads change without changing it (a
+                // status poll's timestamp): rebuild only for a real change.
+                if self.nowPlayingCard().signature != self.cardSignature {
+                    self.rebuildOpenMenu()
+                } else {
+                    self.observeCard()
+                }
+            }
+        }
+    }
+
     private func nowPlayingCard() -> MenuNowPlayingCard {
         typealias Control = MenuNowPlayingCard.Control
         guard let host = model.selectedHost else {
@@ -571,7 +603,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // A PS5 is its game, when PSN says which (PlayStationNowPlaying);
         // otherwise the console itself.
         let game = streamHost.isPlayStation ? PlayStationNowPlaying.shared.game : nil
-        let title = streamHost.isPlayStation ? (game?.name ?? "PlayStation 5") : (app?.name ?? model.defaultAppName)
+        // No game but PSN has the account on the PS5: its home screen (the
+        // console's own mark stays the tile - Sony has no home-screen icon).
+        let home = streamHost.isPlayStation && game == nil && PlayStationNowPlaying.shared.homeScreen
+        let title = streamHost.isPlayStation ? (game?.name ?? (home ? "Home Screen" : "PlayStation 5"))
+            : (app?.name ?? model.defaultAppName)
         let tile = game?.tile ?? MenuAppTile.image(streamHost.isPlayStation ? .playStation : .app(app))
         let stop = Control(symbol: "stop.fill", label: "End Stream", action: run(#selector(endStream)))
 

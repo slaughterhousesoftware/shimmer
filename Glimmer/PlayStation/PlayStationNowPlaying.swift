@@ -42,6 +42,8 @@ final class PlayStationNowPlaying {
 
     /// The game on the PS5 as last asked, if the asking is recent.
     private(set) var game: Game?
+    /// The PS5 shows its home screen (the account is on it, nothing running).
+    private(set) var homeScreen = false
     /// For PlayStation settings: signed in, out, or ended by Sony.
     private(set) var status: PSNMobileSession.Status = .signedOut
 
@@ -89,7 +91,10 @@ final class PlayStationNowPlaying {
 
     /// The menu is opening: what's shown must be recent, and is asked again.
     func menuWillOpen() {
-        if let lastAsked, Date().timeIntervalSince(lastAsked) > Self.staleAfter, timer == nil { setGame(nil) }
+        if let lastAsked, Date().timeIntervalSince(lastAsked) > Self.staleAfter, timer == nil {
+            setGame(nil)
+            setHomeScreen(false)
+        }
         ask(unlessAskedWithin: 5)
     }
 
@@ -126,11 +131,13 @@ final class PlayStationNowPlaying {
         } catch PSNMobileSession.Failure.signedOut {
             await loadStatus()
             setGame(nil)
+            setHomeScreen(false)
             return
         } catch {
             // Offline, or Sony having a moment: what's shown stays.
             return
         }
+        setHomeScreen(presence.onPS5HomeScreen)
         guard let playing = presence.ps5Game else {
             setGame(nil)
             return
@@ -178,6 +185,12 @@ final class PlayStationNowPlaying {
     private func setGame(_ new: Game?) {
         guard new != game else { return }
         game = new
+        onChange?()
+    }
+
+    private func setHomeScreen(_ new: Bool) {
+        guard new != homeScreen else { return }
+        homeScreen = new
         onChange?()
     }
 

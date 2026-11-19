@@ -44,6 +44,15 @@ struct PSNPresenceTests {
         #expect(throws: (any Error).self) { try PSNPresence.parse(Data(#"{"error": {}}"#.utf8)) }
     }
 
+    // On the PS5 with nothing running is its home screen; a game, another
+    // console or offline is not.
+    @Test func onThePS5WithNothingRunningIsTheHomeScreen() throws {
+        #expect(try PSNPresence.parse(presence()).onPS5HomeScreen)
+        #expect(try !PSNPresence.parse(tekkenPresence).onPS5HomeScreen)
+        #expect(try !PSNPresence.parse(presence(platform: "PS4")).onPS5HomeScreen)
+        #expect(try !PSNPresence.parse(presence(status: "offline")).onPS5HomeScreen)
+    }
+
     @Test func theCatalogsMasterImageIsTheArtAndNotFoundIsNone() {
         let found = Data("""
         [{"id": 1, "media": {"images": [{"type": "BACKGROUND", "url": "https://image.api.playstation.com/bg.png"},

@@ -45,6 +45,10 @@ struct PSNPresence: Equatable, Sendable {
         return games.first
     }
 
+    /// On a PS5 with nothing running: its home screen. (Presence lists
+    /// media apps as titles too, so an empty list is the home screen.)
+    var onPS5HomeScreen: Bool { online && platform == "PS5" && games.isEmpty }
+
     enum ParseError: Error { case notPresence }
 
     static func parse(_ data: Data) throws -> PSNPresence {
