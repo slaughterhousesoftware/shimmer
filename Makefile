@@ -489,6 +489,16 @@ dmg:
 	@echo "▶ Building $(DMG_NAME)..."
 	@rm -rf "$(DIST_DIR)" && mkdir -p "$(DIST_DIR)"
 	@scripts/make-dmg.sh "$(GLIMMER_APP_SRC)" "$(DIST_DIR)/$(DMG_NAME)" "Shimmer $(MARKETING_VERSION)"
+	@# The DMG itself is signed, notarized and stapled too, so the download
+	@# passes Gatekeeper on its own (spctl -t install), not just the app inside.
+	@if [ -n "$(strip $(DEVELOPER_ID))" ]; then \
+		echo "▶ Signing + notarizing $(DMG_NAME)..."; \
+		codesign --force --timestamp --keychain "$(SIGN_KEYCHAIN)" -s "$(DEVELOPER_ID)" "$(DIST_DIR)/$(DMG_NAME)" && \
+		xcrun notarytool submit "$(DIST_DIR)/$(DMG_NAME)" --keychain-profile "$(NOTARY_PROFILE)" \
+			--keychain "$(SIGN_KEYCHAIN)" --wait && \
+		xcrun stapler staple "$(DIST_DIR)/$(DMG_NAME)" && \
+		spctl -a -vv -t install "$(DIST_DIR)/$(DMG_NAME)"; \
+	fi
 	@echo "  ✓ $(DIST_DIR)/$(DMG_NAME)"
 	@shasum -a 256 "$(DIST_DIR)/$(DMG_NAME)"
 
