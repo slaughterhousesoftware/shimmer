@@ -59,7 +59,6 @@ let accentFade = rgb(0x6A, 0x3F, 0xD0, 0.0)
 let cool = rgb(0xFF, 0xFF, 0xFF, 0.60) // lift behind the app icon
 let coolFade = rgb(0xFF, 0xFF, 0xFF, 0.0)
 let arrowColor = rgb(0x3A, 0x33, 0x4A, 0.34) // dark plum, kept faint
-let captionColor = rgb(0x3A, 0x33, 0x4A, 0.55)
 
 func linearGradient(_ stops: [(CGFloat, CGColor)]) -> CGGradient {
     let colors = stops.map { $0.1 } as CFArray
@@ -88,9 +87,6 @@ func render(scale: CGFloat) -> Data? {
         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
     ) else { return nil }
 
-    NSGraphicsContext.saveGraphicsState()
-    defer { NSGraphicsContext.restoreGraphicsState() }
-    NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
     ctx.scaleBy(x: scale, y: scale)
 
     // CoreGraphics is bottom-left origin; the geometry above is top-left, as
@@ -156,19 +152,6 @@ func render(scale: CGFloat) -> Data? {
     ctx.addLine(to: CGPoint(x: gapEnd, y: shaftY))
     ctx.addLine(to: CGPoint(x: gapEnd - head, y: shaftY - head * 0.62))
     ctx.strokePath()
-
-    // Caption, centred below the icons. The only text in the image.
-    let caption = "Drag Shimmer to Applications"
-    let attrs: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-        .foregroundColor: NSColor(cgColor: captionColor) ?? .black,
-        .kern: 0.4
-    ]
-    let size = (caption as NSString).size(withAttributes: attrs)
-    (caption as NSString).draw(
-        at: CGPoint(x: (winW - size.width) / 2, y: y(332)),
-        withAttributes: attrs
-    )
 
     guard let image = ctx.makeImage() else { return nil }
     let out = NSMutableData()
