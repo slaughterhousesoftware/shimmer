@@ -90,7 +90,9 @@ private struct HostContextMenu: ViewModifier {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("Shown in the launcher and PC list. Leave empty (or 'Use default name') to show the PC's own hostname.")
+                Text(host.isPlayStation
+                     ? "Shown in the menu bar and the server list. Leave it empty to use the console's own name."
+                     : "Shown in the menu bar and the server list. Leave it empty to use the PC's own name.")
             }
             .confirmationDialog(
                 "Remove \(host.displayName)?",
@@ -100,7 +102,9 @@ private struct HostContextMenu: ViewModifier {
                 Button(host.isPlayStation ? "Remove Console" : "Remove PC", role: .destructive) { model.unpair(host) }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("Shimmer will forget this PC and leave a clean state. You can pair again at any time.")
+                Text(host.isPlayStation
+                     ? "Shimmer will forget this PS5. To stream it again, pair it with a new code from the console."
+                     : "Shimmer will forget this PC. You can pair it again at any time.")
             }
     }
 }

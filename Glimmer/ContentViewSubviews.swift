@@ -17,8 +17,14 @@ import SwiftUI
 
 struct FirstPCSetup: View {
     let nearby: [HostDiscovery.Discovered]
+    /// PS5s answering discovery, with the name each is shown under.
+    var playStations: [(console: PlayStationDiscovery.Found, name: String)] = []
     @Binding var address: String
+    /// The typed address is being looked up.
+    var looking = false
     let connect: (String) -> Void
+    var pairPC: (HostDiscovery.Discovered) -> Void = { _ in }
+    var pairPlayStation: (PlayStationDiscovery.Found, String) -> Void = { _, _ in }
     var error: String? = nil
 
     private var trimmedAddress: String {
@@ -59,7 +65,7 @@ struct FirstPCSetup: View {
                                                 in: RoundedRectangle(cornerRadius: 7))
                                     .accessibilityElement(children: .combine)
                                 } else {
-                                    Text("Add your first PC to get started.")
+                                    Text("Add a PC or PS5 to get started.")
                                         .foregroundStyle(.secondary)
                                 }
                             }
@@ -70,58 +76,45 @@ struct FirstPCSetup: View {
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(spacing: 0) {
                             HStack(spacing: 10) {
-                                TextField("PC address or Tailscale IP", text: $address)
+                                TextField("IP address or hostname", text: $address)
                                     .font(.system(size: 14))
                                     .textFieldStyle(.roundedBorder)
                                     .controlSize(.large)
                                     .frame(height: FirstPCMetrics.buttonHeight)
                                     .disableAutocorrection(true)
-                                    .accessibilityLabel("PC IP address, hostname, or Tailscale address")
-                                    .help("Enter the PC’s IP address or hostname, including a Tailscale address")
+                                    .disabled(looking)
+                                    .accessibilityLabel("PC or PS5 IP address, hostname, or Tailscale address")
+                                    .help("A PC running Sunshine or a PS5, by IP address or hostname (a Tailscale address works too)")
                                     .onSubmit(submit)
-                                Button("Connect", action: submit)
+                                Button(action: submit) {
+                                    ZStack {
+                                        Text("Connect").opacity(looking ? 0 : 1)
+                                        if looking { ProgressView().controlSize(.small) }
+                                    }
+                                }
                                     .buttonStyle(.borderedProminent)
                                     .buttonBorderShape(.roundedRectangle(radius: 5))
                                     .controlSize(.large)
-                                    .disabled(trimmedAddress.isEmpty)
+                                    .disabled(trimmedAddress.isEmpty || looking)
                             }
                             .frame(height: FirstPCMetrics.buttonHeight)
                         }
-                        if !nearby.isEmpty {
+                        if !nearby.isEmpty || !playStations.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Nearby PCs")
+                                Text("Nearby")
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundStyle(.secondary)
                                     .padding(.leading, 2)
                                 ForEach(nearby) { pc in
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "desktopcomputer")
-                                            .font(.system(size: 16))
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 22)
-                                            .accessibilityHidden(true)
-                                        Text(pc.displayName)
-                                            .font(.system(size: 14))
-                                            .foregroundStyle(.primary)
-                                            .lineLimit(1)
-                                        Spacer(minLength: 8)
-                                        Button {
-                                            address = pc.host
-                                            connect(pc.host)
-                                        } label: {
-                                            Text("Pair")
-                                                .font(.system(size: 13))
-                                                .frame(minWidth: 40)
-                                        }
-                                            .buttonStyle(.bordered)
-                                            .buttonBorderShape(.roundedRectangle(radius: 5))
-                                            .controlSize(.small)
-                                            .help("Pair with \(pc.displayName)")
-                                            .accessibilityLabel("Pair with nearby PC \(pc.displayName), \(pc.host)")
+                                    nearbyRow(name: pc.displayName,
+                                              logo: HostSystemKind.resolve(isPlayStation: false, ttl: nil,
+                                                                           serverName: pc.displayName),
+                                              address: pc.host) { pairPC(pc) }
+                                }
+                                ForEach(playStations, id: \.console.id) { item in
+                                    nearbyRow(name: item.name, logo: .playStation, address: item.console.address) {
+                                        pairPlayStation(item.console, item.name)
                                     }
-                                    .padding(.leading, 10)
-                                    .padding(.trailing, 4)
-                                    .modifier(FirstPCRowStyle())
                                 }
                             }
                         }
@@ -143,8 +136,37 @@ struct FirstPCSetup: View {
     }
 
     private func submit() {
-        guard !trimmedAddress.isEmpty else { return }
+        guard !trimmedAddress.isEmpty, !looking else { return }
         connect(trimmedAddress)
+    }
+
+    private func nearbyRow(name: String, logo: HostSystemKind, address: String,
+                           pair: @escaping () -> Void) -> some View {
+        HStack(spacing: 10) {
+            HostSystemLogo(kind: logo, size: 18)
+                .frame(width: 22)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(name)
+                .font(.system(size: 14))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button(action: pair) {
+                Text("Pair")
+                    .font(.system(size: 13))
+                    .frame(minWidth: 40)
+            }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.roundedRectangle(radius: 5))
+                .controlSize(.small)
+                .disabled(looking)
+                .help("Pair with \(name)")
+                .accessibilityLabel("Pair with nearby \(logo == .playStation ? "PS5" : "PC") \(name), \(address)")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 4)
+        .modifier(FirstPCRowStyle())
     }
 }
 

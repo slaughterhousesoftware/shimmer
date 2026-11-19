@@ -522,4 +522,61 @@ struct CLIAgentInstructionsTests {
             #expect(!paragraph.contains("\n"), "a line break inside: \(paragraph.prefix(40))")
         }
     }
+
+    // MARK: Add by Address
+
+    @Test func aTypedAddressThatAnswersPlayStationDiscoveryIsAPS5() async {
+        let outcome = await AddressLookup.identify("ps5.local",
+                                                   resolve: { _ in "192.168.50.22" },
+                                                   playStation: { $0 == "192.168.50.22" ? "PS5-661" : nil },
+                                                   sunshine: { _, _ in false })
+        #expect(outcome == .playStation(name: "PS5-661", address: "192.168.50.22"))
+    }
+
+    @Test func aTypedAddressWithSunshineIsAPCAndKeepsWhatWasTyped() async {
+        let outcome = await AddressLookup.identify("gaming-pc.local",
+                                                   resolve: { _ in "10.0.0.5" },
+                                                   playStation: { _ in nil },
+                                                   sunshine: { host, port in host == "gaming-pc.local" && port == 47989 })
+        #expect(outcome == .pc(address: "gaming-pc.local"))
+    }
+
+    @Test func aTypedPortIsSunshinesAndNeverAskedForAPS5() async {
+        let outcome = await AddressLookup.identify("pc.local:48000",
+                                                   resolve: { _ in Issue.record("resolved"); return nil },
+                                                   playStation: { _ in Issue.record("asked a PS5"); return nil },
+                                                   sunshine: { host, port in host == "pc.local" && port == 48000 })
+        #expect(outcome == .pc(address: "pc.local:48000"))
+    }
+
+    @Test func whenNothingAnswersTheMessageCoversAPCAndAPS5() async {
+        let outcome = await AddressLookup.identify("192.168.1.99",
+                                                   resolve: { $0 },
+                                                   playStation: { _ in nil },
+                                                   sunshine: { _, _ in false })
+        guard case .nothing(let message) = outcome else { Issue.record("\(outcome)"); return }
+        #expect(message.contains("192.168.1.99"))
+        #expect(message.contains("Sunshine"))
+        #expect(message.contains("PS5"))
+    }
+
+    @Test func aNameThatDoesntResolveSaysSo() async {
+        let outcome = await AddressLookup.identify("nowhere.invalid",
+                                                   resolve: { _ in nil },
+                                                   playStation: { _ in nil },
+                                                   sunshine: { _, _ in false })
+        #expect(outcome == .nothing(AddressLookup.notFound))
+    }
+
+    @Test func aLiteralIPv4IsUsedAsIs() async {
+        #expect(await AddressLookup.ipv4(for: "192.168.50.22") == "192.168.50.22")
+        #expect(await AddressLookup.ipv4(for: "localhost") == "127.0.0.1")
+    }
+
+    @MainActor @Test func aLonePS5UnderSonysNameIsShownAsPlayStation() {
+        #expect(PlayStationNaming.shownName("PS5-661", among: ["PS5-661"], added: 0) == "PlayStation")
+        #expect(PlayStationNaming.shownName("PS5-661", among: ["PS5-661", "PS5-123"], added: 0) == "PS5-661")
+        #expect(PlayStationNaming.shownName("PS5-661", among: ["PS5-661"], added: 1) == "PS5-661")
+        #expect(PlayStationNaming.shownName("Living Room", among: ["Living Room"], added: 0) == "Living Room")
+    }
 }

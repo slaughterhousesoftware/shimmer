@@ -28,6 +28,20 @@ extension Host {
     }
 }
 
+/// What a console not added yet is called.
+@MainActor
+enum PlayStationNaming {
+    /// "PlayStation" for the only console, still under Sony's default name,
+    /// with none added yet - what it will be called once added. Otherwise its
+    /// own name, so two consoles can be told apart.
+    static func shownName(_ name: String, among names: [String],
+                          added: Int = PlayStationStore.shared.consoles.count) -> String {
+        guard added == 0, Host.isSonyDefaultName(name),
+              names.filter(Host.isSonyDefaultName).count <= 1 else { return name }
+        return Host.genericPlayStationName
+    }
+}
+
 extension LibraryApp {
     /// The one launchable entry of a PS5 host: the console itself.
     static let playStationHome = LibraryApp(id: 1, name: "PlayStation 5", hdr: false, hidden: false)

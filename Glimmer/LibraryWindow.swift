@@ -17,9 +17,10 @@ struct ComputersTab: View {
     @State private var discovered: [HostDiscovery.Discovered] = []
     @State private var nearbyPlayStations: [PlayStationDiscovery.Found] = []
     @State private var showManualAddress = false
-    @State private var pendingManualAddress: String?
+    @State private var pendingManualAddress: AddressLookup.Outcome?
     @State private var setupAddress = ""
     @State private var setupError: String?
+    @State private var lookingUpAddress = false
     @State private var appRefreshTask: Task<Void, Never>?
     @State private var refreshingApps = false
     @State private var appRefreshFailed = false
@@ -70,8 +71,20 @@ struct ComputersTab: View {
                 if pairingTarget != nil {
                     detail
                 } else {
-                    FirstPCSetup(nearby: nearby, address: $setupAddress,
-                                 connect: connectFirstPC, error: setupError)
+                    FirstPCSetup(nearby: nearby, playStations: unregisteredPlayStations.map {
+                                     ($0, PlayStationNaming.shownName($0.name, among: unregisteredPlayStations.map(\.name)))
+                                 },
+                                 address: $setupAddress, looking: lookingUpAddress,
+                                 connect: connectFirstPC,
+                                 pairPC: { pc in
+                                     pairingTarget = PCPairingTarget(name: pc.displayName, address: pc.host,
+                                                                     startImmediately: true)
+                                 },
+                                 pairPlayStation: { console, name in
+                                     pairingTarget = PCPairingTarget(name: name, address: console.address,
+                                                                     isPlayStation: true)
+                                 },
+                                 error: setupError)
                         .disabled(model.pairingInFlight)
                 }
             } else {
@@ -143,28 +156,53 @@ struct ComputersTab: View {
         }
     }
 
+    /// The welcome page's field: the same lookup as Add by Address, with
+    /// its answer shown on the page.
     private func connectFirstPC(address: String) {
-        guard !model.pairingInFlight else { return }
+        guard !model.pairingInFlight, !lookingUpAddress else { return }
         let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !address.isEmpty else { return }
         setupError = nil
         setupAddress = address
-        if let host = NearbyPCList.savedPC(at: address, in: model.hosts) {
-            model.selectHost(host)
-            pairingTarget = nil
+        if NearbyPCList.savedPC(at: address, in: model.hosts) != nil {
+            open(.pc(address: address))
             return
         }
-        let name = nearby.first { $0.host == address }?.displayName ?? address
-        // A PS5 answers PlayStation discovery; anything else pairs as a PC -
-        // the same question "Add by Address…" asks. Without it, a first
-        // machine that is a PS5 was sent through Sunshine pairing and failed
-        // with "make sure Sunshine is running".
+        lookingUpAddress = true
         Task {
-            if let ps5 = await PlayStationDiscovery.probe(address: address) {
-                pairingTarget = PCPairingTarget(name: ps5.hostName ?? "PS5", address: address, isPlayStation: true)
+            let outcome = await AddressLookup.identify(address)
+            lookingUpAddress = false
+            guard setupAddress == address else { return }
+            if case .nothing(let message) = outcome {
+                setupError = message
             } else {
-                pairingTarget = PCPairingTarget(name: name, address: address, startImmediately: true)
+                open(outcome)
             }
+        }
+    }
+
+    /// A machine found at a typed address: a saved one is selected, a PS5
+    /// goes to its registration, a PC straight into Sunshine pairing.
+    private func open(_ outcome: AddressLookup.Outcome) {
+        let address: String
+        switch outcome {
+        case .playStation(_, let ip): address = ip
+        case .pc(let typed): address = typed
+        case .nothing: return
+        }
+        if let host = NearbyPCList.savedPC(at: address, in: model.hosts) {
+            pairingTarget = nil
+            model.selectHost(host)
+            return
+        }
+        switch outcome {
+        case .playStation(let name, let ip):
+            pairingTarget = PCPairingTarget(name: PlayStationNaming.shownName(name, among: [name]),
+                                            address: ip, isPlayStation: true)
+        case .pc(let typed):
+            let name = nearby.first { $0.host == typed }?.displayName ?? typed
+            pairingTarget = PCPairingTarget(name: name, address: typed, startImmediately: true)
+        case .nothing: break
         }
     }
 
@@ -203,7 +241,7 @@ struct ComputersTab: View {
                             .padding(.top, model.hosts.isEmpty ? 0 : 10)
                         ForEach(nearby) { pc in
                             Button {
-                                                pairingTarget = PCPairingTarget(name: pc.displayName, address: pc.host)
+                                pairingTarget = PCPairingTarget(name: pc.displayName, address: pc.host)
                             } label: {
                                 NearbyPCRow(pc: pc, selected: pairingTarget?.address == pc.host)
                             }
@@ -213,16 +251,17 @@ struct ComputersTab: View {
                             .accessibilityLabel("\(pc.displayName), nearby PC, not added, \(pc.host)")
                         }
                         ForEach(unregisteredPlayStations) { ps in
+                            let name = PlayStationNaming.shownName(ps.name, among: unregisteredPlayStations.map(\.name))
                             Button {
-                                                pairingTarget = PCPairingTarget(name: ps.name, address: ps.address,
-                                                                isPlayStation: true)
+                                pairingTarget = PCPairingTarget(name: name, address: ps.address, isPlayStation: true)
                             } label: {
-                                NearbyPlayStationRow(console: ps, selected: pairingTarget?.address == ps.address)
+                                NearbyPlayStationRow(console: ps, name: name,
+                                                     selected: pairingTarget?.address == ps.address)
                             }
                             .buttonStyle(.plain)
                             .disabled(model.pairingInFlight)
-                            .help("Register \(ps.name) to stream it")
-                            .accessibilityLabel("\(ps.name), nearby PlayStation 5, not added, \(ps.address)")
+                            .help("Pair \(name) to stream it")
+                            .accessibilityLabel("\(name), nearby PlayStation 5, not added, \(ps.address)")
                         }
                     }
                 }
@@ -277,30 +316,19 @@ struct ComputersTab: View {
                 .frame(height: 16)
         }
         .disabled(model.pairingInFlight)
-        .help("Add a PC using an IP address or hostname")
+        .help("Add a PC or PS5 by its IP address or hostname")
         .popover(isPresented: $showManualAddress,
                  attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-            ManualAddressPopover(cancel: { showManualAddress = false }) { address in
-                pendingManualAddress = address
+            ManualAddressPopover(isSaved: { NearbyPCList.savedPC(at: $0, in: model.hosts) != nil },
+                                 cancel: { showManualAddress = false }) { outcome in
+                pendingManualAddress = outcome
                 showManualAddress = false
             }
             .onDisappear {
-                guard let address = pendingManualAddress else { return }
+                // Navigate once the popover has gone, not under it.
+                guard let outcome = pendingManualAddress else { return }
                 pendingManualAddress = nil
-                if let host = NearbyPCList.savedPC(at: address, in: model.hosts) {
-                    pairingTarget = nil
-                    model.selectHost(host)
-                } else {
-                    // A PS5 answers PlayStation discovery; anything else pairs as a PC.
-                    Task {
-                        if let ps5 = await PlayStationDiscovery.probe(address: address) {
-                            pairingTarget = PCPairingTarget(name: ps5.hostName ?? "PS5", address: address,
-                                                            isPlayStation: true)
-                        } else {
-                            pairingTarget = PCPairingTarget(name: "Add PC", address: address, startImmediately: true)
-                        }
-                    }
-                }
+                open(outcome)
             }
         }
     }
@@ -318,7 +346,8 @@ struct ComputersTab: View {
     @ViewBuilder
     private var detail: some View {
         if let target = pairingTarget, target.isPlayStation {
-            PlayStationPairingPane(target: target) { id in
+            PlayStationPairingPane(target: target,
+                                   cancel: model.hosts.isEmpty ? { pairingTarget = nil } : nil) { id in
                 if let host = model.hosts.first(where: { $0.id == id }) {
                     model.selectHost(host)
                     pairingTarget = nil
@@ -344,9 +373,9 @@ struct ComputersTab: View {
                 // half-typed on one PC must not commit into the next.
                 .id(host.id)
         } else {
-            ContentUnavailableView("No PC selected",
+            ContentUnavailableView("Nothing Selected",
                                    systemImage: "display",
-                                   description: Text("Pick one on the left to see its apps."))
+                                   description: Text("Pick a PC or PS5 on the left."))
         }
     }
 
@@ -554,6 +583,7 @@ struct NearbyPCList {
 
 private struct NearbyPlayStationRow: View {
     let console: PlayStationDiscovery.Found
+    let name: String
     let selected: Bool
     var body: some View {
         HStack(spacing: 8) {
@@ -562,7 +592,7 @@ private struct NearbyPlayStationRow: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
-                Text(console.name).font(.system(size: 13)).lineLimit(1)
+                Text(name).font(.system(size: 13)).lineLimit(1)
                 Text(console.address).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)

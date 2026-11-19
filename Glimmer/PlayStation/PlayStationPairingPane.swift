@@ -12,6 +12,8 @@ import WebKit
 struct PlayStationPairingPane: View {
     @Environment(AppModel.self) private var model
     let target: PCPairingTarget
+    /// Back to the welcome page, when there is no sidebar to leave by.
+    var cancel: (() -> Void)? = nil
     let paired: (String) -> Void
 
     @State private var account = PlayStationStore.shared.account
@@ -48,6 +50,11 @@ struct PlayStationPairingPane: View {
                     if let error {
                         PCConnectionErrorBanner(message: error)
                             .multilineTextAlignment(.leading)
+                    }
+                    if let cancel {
+                        Button("Cancel", action: cancel)
+                            .keyboardShortcut(.cancelAction)
+                            .disabled(isPairing)
                     }
                 }
                 .font(.system(size: 13))
