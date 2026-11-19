@@ -133,14 +133,11 @@ final class MenuNowPlayingCard: NSView {
     /// and centred on the capitals, its edge under the title's first letter
     /// (a point in: the letter's side bearing), 4 pt before the words; both
     /// in the system's orange. On the subtitle's own baseline (checked at
-    /// 2x: the same pixel rows as the normal subtitle's capitals), and
-    /// clipped short of the buttons.
+    /// 2x: the same pixel rows as the normal subtitle's capitals), ending
+    /// in "…" 10 pt short of the buttons, as the normal subtitle does.
     private func drawAlert(in rect: NSRect) {
         let font = NSFont.systemFont(ofSize: 11)
         let baseline = rect.maxY - font.ascender
-        NSGraphicsContext.saveGraphicsState()
-        defer { NSGraphicsContext.restoreGraphicsState() }
-        NSBezierPath(rect: rect.insetBy(dx: 0, dy: -4)).addClip()
         var x = rect.minX + 1
         if let glyph = MenuStatGlyph.image("exclamationmark.triangle.fill") {
             let s = glyph.size
@@ -149,7 +146,8 @@ final class MenuNowPlayingCard: NSView {
             MenuStatGlyph.draw(glyph, in: NSRect(x: x, y: y, width: s.width, height: s.height), colour: .systemOrange)
             x += s.width + 4
         }
-        MenuText.draw(subtitle, font: font, colour: .systemOrange, x: x, baseline: baseline, flipped: false)
+        MenuText.draw(subtitle, font: font, colour: .systemOrange, x: x, baseline: baseline, flipped: false,
+                      maxWidth: rect.maxX - x)
     }
 
     // MARK: The card itself as a button (only when it has somewhere to go)
@@ -223,8 +221,48 @@ final class MenuRoundButton: NSView {
         guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config)
         else { return }
         let s = glyph.size
-        glyph.draw(in: NSRect(x: ((bounds.width - s.width) / 2).rounded(), y: ((bounds.height - s.height) / 2).rounded(),
-                              width: s.width, height: s.height))
+        var origin = NSPoint(x: ((bounds.width - s.width) / 2).rounded(), y: ((bounds.height - s.height) / 2).rounded())
+        // A circular arrow centres on its circle, not its box: the arrowhead
+        // pokes out of the top, so the box-centred circle sat 1.3 pt low and
+        // 0.3 pt left (measured at 8x, 2026-11-18).
+        if let circle = Self.circleCentre(of: glyph, symbol: symbol) {
+            let mid = NSPoint(x: bounds.midX, y: bounds.midY)
+            origin.x += ((mid.x - (origin.x + circle.x)) * 2).rounded() / 2
+            origin.y += ((mid.y - (origin.y + circle.y)) * 2).rounded() / 2
+        }
+        glyph.draw(in: NSRect(origin: origin, size: s))
+    }
+
+    private static var circleCentres: [String: NSPoint] = [:]
+
+    /// Where a circular arrow's circle is centred in its image (bottom-left
+    /// origin): its ink's horizontal middle, half the ink's width above the
+    /// ink's bottom - the arc is a full-width circle, the head adds only height.
+    private static func circleCentre(of glyph: NSImage, symbol: String) -> NSPoint? {
+        guard symbol.hasPrefix("arrow.clockwise") || symbol.hasPrefix("arrow.counterclockwise") else { return nil }
+        if let known = circleCentres[symbol] { return known }
+        let scale: CGFloat = 8
+        let w = Int(glyph.size.width * scale), h = Int(glyph.size.height * scale)
+        guard w > 0, h > 0, let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8,
+                                                        samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { return nil }
+        rep.size = glyph.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        glyph.draw(in: NSRect(origin: .zero, size: glyph.size))
+        NSGraphicsContext.restoreGraphicsState()
+        var minX = w, maxX = -1, maxRow = -1
+        for row in 0..<h { for x in 0..<w where (rep.colorAt(x: x, y: row)?.alphaComponent ?? 0) > 0.3 {
+            minX = min(minX, x); maxX = max(maxX, x); maxRow = max(maxRow, row)
+        } }
+        guard maxX >= minX else { return nil }
+        // Rows count down from the top: the ink's bottom edge, in points up.
+        let bottom = glyph.size.height - CGFloat(maxRow + 1) / scale
+        let width = CGFloat(maxX - minX + 1) / scale
+        let centre = NSPoint(x: CGFloat(minX + maxX + 1) / 2 / scale, y: bottom + width / 2)
+        circleCentres[symbol] = centre
+        return centre
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
