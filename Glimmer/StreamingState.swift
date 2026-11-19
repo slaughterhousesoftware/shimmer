@@ -31,12 +31,16 @@ enum PairingPhase: Equatable {
 /// Actionable pairing failures which do not disclose PIN or signature checks.
 enum PairingAttemptFailure: Error, Equatable {
     case timedOut, busy, disconnected
+    /// Sunshine still holds this Mac's previous request (it keeps one per
+    /// client for 5 minutes, even after we cancel) and refuses a new one.
+    case previousRequestOpen
 
     var message: String {
         switch self {
         case .timedOut: "The code wasn't entered in time. Try again to get a new code."
         case .busy: "Sunshine has another pairing request open. Close it on the PC, then try again."
         case .disconnected: "The connection to Sunshine was lost. Check that Sunshine is running, then try again."
+        case .previousRequestOpen: "Sunshine is still holding this Mac's last pairing request. It clears within 5 minutes; try again then."
         }
     }
 }

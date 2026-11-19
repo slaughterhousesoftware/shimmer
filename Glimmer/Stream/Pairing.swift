@@ -383,6 +383,7 @@ public actor PairingClient {
             usePaired: usePaired,
             timeout: timeout
         )
+        if let refusal = Self.pairingRefusal(response) { throw refusal }
         try Self.verifyResponseStatus(response)
         guard Self.xmlString(response, tag: "paired") == "1" else {
             throw StreamError.pairingFailed(failureMessage)

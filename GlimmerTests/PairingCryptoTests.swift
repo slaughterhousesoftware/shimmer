@@ -359,6 +359,25 @@ extension PairingProtocolRegressionTests {
         #expect(PinnedCertStore.load(forHostID: id) == nil)
     }
 
+    @Test func sunshineRefusingANewRequestIsReportedAsSuch() async throws {
+        let identity = try await IdentityManager.shared.generateKeyPairAndCert()
+        for (code, expected) in [("409", PairingAttemptFailure.previousRequestOpen), ("503", .busy)] {
+            let id = "pairing-refused-test-\(UUID().uuidString)"
+            defer { PinnedCertStore.delete(forHostID: id) }
+            let info = ServerInfo(address: "test.invalid", uniqueId: id, serverName: "Test PC")
+            // Sunshine's actual reply when this client's last request is still pending.
+            let body = "<root status_code=\"\(code)\" status_message=\"refused\"><paired>0</paired></root>"
+            let network = NetworkClient(server: info, transport: { _, _, _, _, _, _, _ in
+                .init(status: 200, body: Data(body.utf8))
+            }, identity: { (identity.certPEM, identity.keyPEM, "refused-test-install") })
+            let error = await #expect(throws: PairingAttemptFailure.self) {
+                _ = try await PairingClient(network: network, server: info).pair(pin: "4821")
+            }
+            #expect(error == expected)
+            #expect(PinnedCertStore.load(forHostID: id) == nil)
+        }
+    }
+
     @Test func busyPairingIsReportedWithoutChangingTheSavedPin() async throws {
         let identity = try await IdentityManager.shared.generateKeyPairAndCert()
         let id = "pairing-busy-test-\(UUID().uuidString)"

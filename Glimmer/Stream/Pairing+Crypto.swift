@@ -287,6 +287,19 @@ extension PairingClient {
         throw StreamError.pairingFailed("host returned status \(code) \(message)")
     }
 
+    /// Sunshine's refusals to open a pairing session at all, which deserve
+    /// their own message instead of the generic "Pairing failed":
+    /// 409 - this client's previous request is still pending (Sunshine keeps
+    ///       it for 5 minutes and has no way for us to withdraw it);
+    /// 503 - too many requests from other devices are pending.
+    static func pairingRefusal(_ xml: XMLNode) -> PairingAttemptFailure? {
+        switch xml.firstChild(named: "root")?.attributes["status_code"] {
+        case "409": .previousRequestOpen
+        case "503": .busy
+        default: nil
+        }
+    }
+
     static func xmlString(_ xml: XMLNode, tag: String) -> String? {
         // The root node wraps everything; XMLNode.string(forChild:) only looks
         // one level down, so we hop through <root> first.
