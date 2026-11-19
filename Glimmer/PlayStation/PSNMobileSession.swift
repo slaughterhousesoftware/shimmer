@@ -14,15 +14,11 @@
 //  tokens without a sign-in, as PXPlay does. When both are spent the session
 //  ends quietly and PlayStation settings offer "Sign In Again".
 //
-//  Both live in the login keychain (one item), read without UI: a build whose
-//  signature the item doesn't trust gets no password prompt, just "signed
-//  out". (Checked 2026-11-18: an LAContext with interactionNotAllowed does
-//  NOT stop the login keychain's prompt - the read sat behind a dialog; the
-//  old SecKeychainSetUserInteractionAllowed(false) does, failing at once.)
+//  Both live in one private file (FilePSNCredentialStore - why not the
+//  keychain is there), so a sign-in lasts across Shimmer's own updates.
 //
 
 import Foundation
-import Security
 
 enum PSNMobileAuth {
     static let clientID = "09515159-7237-4370-9b40-3806e67c0891"
@@ -161,99 +157,54 @@ protocol PSNCredentialStore: Sendable {
     func clear()
 }
 
-/// One generic-password item in the login keychain, JSON inside.
+/// The sign-in as a private file beside the PS5 registrations
+/// (consoles.json, which already holds Remote Play's keys the same way):
+/// ~/Library/Application Support/Shimmer/PlayStation/psn-session.json, the
+/// folder 0700 and the file 0600 from its first byte.
 ///
-/// An item this build can't open - left by an older build signed another
-/// way, or a Debug build on the same Mac - can't be read or deleted without
-/// the keychain's password (it can be overwritten, uselessly). So it's left
-/// alone: the next sign-in saves under a fresh account name and remembers
-/// which.
-struct KeychainPSNCredentialStore: PSNCredentialStore, @unchecked Sendable {
-    var service = "Shimmer PlayStation Network"
-    var defaults: UserDefaults = .standard
-    static let accountKey = "PSN.presenceKeychainAccount"
-    static let defaultAccount = "presence"
-
-    private var account: String { defaults.string(forKey: Self.accountKey) ?? Self.defaultAccount }
-
-    private func query(_ account: String) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-         kSecAttrAccount as String: account]
-    }
-
-    /// No keychain dialog, ever: a poller must not raise one. Process-wide,
-    /// and Shimmer keeps nothing else in a keychain.
-    private static let quiet: Void = {
-        _ = SecKeychainSetUserInteractionAllowed(false)
-    }()
+/// Not the keychain: Shimmer is signed with a local certificate, no Apple
+/// team, and for such an app macOS ties a keychain item to the exact build
+/// that saved it - the next build can't read it (-25293, measured
+/// 2026-11-18 with two builds under the same certificate and identifier),
+/// so every install signed PSN out. Changing an item's access needs the
+/// Mac's login password, which an app doesn't have.
+struct FilePSNCredentialStore: PSNCredentialStore {
+    var file: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Shimmer/PlayStation/psn-session.json")
 
     func load() -> PSNCredentials? {
-        Self.quiet
-        var query = query(account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else {
-            if status != errSecItemNotFound {
-                Diag.warn("PSN sign-in not readable from the keychain (\(status))", "PlayStation")
-            }
-            return nil
-        }
+        guard let data = try? Data(contentsOf: file) else { return nil }
         return try? JSONDecoder().decode(PSNCredentials.self, from: data)
     }
 
     func save(_ credentials: PSNCredentials) -> Bool {
         guard let data = try? JSONEncoder().encode(credentials) else { return false }
-        Self.quiet
-        let current = account
-        switch readStatus(current) {
-        case errSecSuccess:
-            let update = SecItemUpdate(query(current) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-            if update == errSecSuccess { return true }
-        case errSecItemNotFound:
-            if add(data, account: current) { return true }
-        default:
-            // There but not ours: macOS lets this build overwrite such an
-            // item, then won't let it read it back (measured). A new name.
-            break
+        let fm = FileManager.default
+        let folder = file.deletingLastPathComponent()
+        let temp = folder.appendingPathComponent(".\(file.lastPathComponent).\(UUID().uuidString)")
+        do {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            // Private from the start, then moved into place in one step.
+            guard fm.createFile(atPath: temp.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            if rename(temp.path, file.path) != 0 { throw CocoaError(.fileWriteUnknown) }
+            return true
+        } catch {
+            try? fm.removeItem(at: temp)
+            Diag.warn("PSN sign-in not saved (\(error.localizedDescription))", "PlayStation")
+            return false
         }
-        let fresh = "\(Self.defaultAccount)-\(UUID().uuidString.prefix(8).lowercased())"
-        guard add(data, account: fresh) else { return false }
-        defaults.set(fresh, forKey: Self.accountKey)
-        Diag.info("PSN sign-in saved under a new keychain name (the old item belongs to another build)", "PlayStation")
-        return true
-    }
-
-    private func readStatus(_ account: String) -> OSStatus {
-        var query = query(account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        return SecItemCopyMatching(query as CFDictionary, &result)
-    }
-
-    private func add(_ data: Data, account: String) -> Bool {
-        var add = query(account)
-        add[kSecValueData as String] = data
-        add[kSecAttrLabel as String] = service
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        let status = SecItemAdd(add as CFDictionary, nil)
-        if status != errSecSuccess, status != errSecDuplicateItem {
-            Diag.warn("PSN sign-in not saved to the keychain (\(status))", "PlayStation")
-        }
-        return status == errSecSuccess
     }
 
     func clear() {
-        Self.quiet
-        SecItemDelete(query(account) as CFDictionary)
+        try? FileManager.default.removeItem(at: file)
     }
 }
 
 /// Access tokens on demand, one refresh at a time.
 actor PSNMobileSession {
-    static let shared = PSNMobileSession(store: KeychainPSNCredentialStore())
+    static let shared = PSNMobileSession(store: FilePSNCredentialStore())
 
     enum Failure: Error, Equatable {
         case signedOut

@@ -101,6 +101,33 @@ private func scratchDefaults() -> UserDefaults {
     return defaults
 }
 
+/// The sign-in is a private file, so it outlives the build that saved it
+/// (a keychain item wouldn't: macOS ties it to the exact build).
+struct FilePSNCredentialStoreTests {
+    @Test func aSignInIsKeptPrivatelyAndReadByAnyLaterInstance() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("psn-store-\(UUID().uuidString)/PlayStation")
+        defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
+        let file = folder.appendingPathComponent("psn-session.json")
+        let saved = PSNCredentials(refreshToken: "r", refreshExpiry: Date(timeIntervalSince1970: 1_000), npsso: "n",
+                                   onlineID: "someone")
+        #expect(FilePSNCredentialStore(file: file).save(saved))
+        // Another instance - as the next build would be - reads it.
+        #expect(FilePSNCredentialStore(file: file).load() == saved)
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+        let folderAttributes = try FileManager.default.attributesOfItem(atPath: folder.path)
+        #expect((folderAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+        // Saving again replaces it; no temporary files left behind.
+        var renewed = saved
+        renewed.refreshToken = "r2"
+        #expect(FilePSNCredentialStore(file: file).save(renewed))
+        #expect(FilePSNCredentialStore(file: file).load()?.refreshToken == "r2")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["psn-session.json"])
+        FilePSNCredentialStore(file: file).clear()
+        #expect(FilePSNCredentialStore(file: file).load() == nil)
+    }
+}
+
 struct PSNMobileSessionTests {
     @Test func signedOutThereIsNoToken() async {
         let session = PSNMobileSession(store: MemoryStore(), defaults: scratchDefaults())
