@@ -29,6 +29,8 @@ final class MenuNowPlayingCard: NSView {
     private let tile: NSImage
     private let title: String
     private let subtitle: String
+    /// The subtitle is a stream's error: drawn in orange after a warning.
+    private let isAlert: Bool
     private let onOpen: (() -> Void)?
     private var buttons: [MenuRoundButton] = []
     private var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
@@ -42,12 +44,17 @@ final class MenuNowPlayingCard: NSView {
     /// What the card says and offers, to tell whether a rebuilt one differs.
     let signature: String
 
-    init(tile: NSImage, title: String, subtitle: String, controls: [Control], onOpen: (() -> Void)? = nil) {
+    /// `alert`: the subtitle is a short error label and this its whole
+    /// sentence, for the tooltip and VoiceOver.
+    init(tile: NSImage, title: String, subtitle: String, alert: String? = nil, controls: [Control],
+         onOpen: (() -> Void)? = nil) {
         self.tile = tile
         self.title = title
         self.subtitle = subtitle
+        isAlert = alert != nil
         self.onOpen = onOpen
-        signature = ([title, subtitle, onOpen == nil ? "" : "opens"] + controls.map(\.label)).joined(separator: "\n")
+        signature = ([title, subtitle, alert ?? "", onOpen == nil ? "" : "opens"] + controls.map(\.label))
+            .joined(separator: "\n")
         super.init(frame: NSRect(x: 0, y: 0, width: 307, height: Self.height))
         autoresizingMask = [.width]
         for control in controls {
@@ -63,7 +70,8 @@ final class MenuNowPlayingCard: NSView {
         setFrameSize(NSSize(width: min(max(307, needed.rounded(.up)), 380), height: Self.height))
         setAccessibilityElement(true)
         setAccessibilityRole(onOpen == nil ? .group : .button)
-        setAccessibilityLabel("\(title), \(subtitle)")
+        setAccessibilityLabel("\(title), \(alert ?? subtitle)")
+        toolTip = alert
         layoutButtons()
     }
 
@@ -111,9 +119,37 @@ final class MenuNowPlayingCard: NSView {
         (title as NSString).draw(with: NSRect(x: textX, y: card.midY + 1, width: textWidth, height: titleHeight),
                                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                                  attributes: Self.titleAttributes)
-        (subtitle as NSString).draw(with: NSRect(x: textX, y: card.midY - 15, width: textWidth, height: subtitleHeight),
-                                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                                    attributes: Self.subtitleAttributes)
+        let subtitleRect = NSRect(x: textX, y: card.midY - 15, width: textWidth, height: subtitleHeight)
+        if isAlert {
+            drawAlert(in: subtitleRect)
+        } else {
+            (subtitle as NSString).draw(with: subtitleRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                                        attributes: Self.subtitleAttributes)
+        }
+    }
+
+    /// An error in the subtitle's place and type: Apple's filled warning
+    /// triangle, cut to the ink height of the AirPods row's glyphs (9.5 pt)
+    /// and centred on the capitals, its edge under the title's first letter
+    /// (a point in: the letter's side bearing), 4 pt before the words; both
+    /// in the system's orange. On the subtitle's own baseline (checked at
+    /// 2x: the same pixel rows as the normal subtitle's capitals), and
+    /// clipped short of the buttons.
+    private func drawAlert(in rect: NSRect) {
+        let font = NSFont.systemFont(ofSize: 11)
+        let baseline = rect.maxY - font.ascender
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSBezierPath(rect: rect.insetBy(dx: 0, dy: -4)).addClip()
+        var x = rect.minX + 1
+        if let glyph = MenuStatGlyph.image("exclamationmark.triangle.fill") {
+            let s = glyph.size
+            let middle = baseline + font.capHeight / 2
+            let y = ((middle - s.height / 2) * 2).rounded() / 2
+            MenuStatGlyph.draw(glyph, in: NSRect(x: x, y: y, width: s.width, height: s.height), colour: .systemOrange)
+            x += s.width + 4
+        }
+        MenuText.draw(subtitle, font: font, colour: .systemOrange, x: x, baseline: baseline, flipped: false)
     }
 
     // MARK: The card itself as a button (only when it has somewhere to go)

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Glimmer
@@ -35,6 +36,27 @@ struct StreamFailureCopyTests {
             .contains("TCP 48010"))
         #expect(StreamFailureCopy.connect(.hostRefused(step: "PLAY", code: 503), hostName: "Den PC")
             .contains("PLAY returned 503"))
+    }
+
+    // The card's two or three words: every PS5 failure gets its own, short
+    // enough to sit beside the card's buttons; anything else a fallback.
+    @Test func everyFailureHasAShortHeadlineForTheCard() {
+        let failures: [(PlayStationFailure, String)] = [
+            (.inUse, "In use elsewhere"), (.registrationRejected, "Pair it again"),
+            (.accountNotRecognised, "Wrong account"), (.passcodeRequired, "Passcode needed"),
+            (.remotePlayCrashed, "Restart the PS5"), (.versionMismatch, "Update Shimmer"),
+            (.didNotWake, "Didn't wake up"), (.noAnswer, "Remote Play is off"), (.unreachable(""), "Not answering"),
+        ]
+        for (failure, expected) in failures {
+            let headline = StreamFailureCopy.headline(StreamFailureCopy.playStation(failure, hostName: "PS5-661"))
+            #expect(headline == expected, "\(failure)")
+        }
+        #expect(StreamFailureCopy.headline(StreamFailureCopy.playStationEndedForLocalController(hostName: "PS5-661"))
+                == "Remote Play ended")
+        #expect(StreamFailureCopy.headline("Stream to bazzite ended unexpectedly.") == "Stream ended")
+        #expect(StreamFailureCopy.headline("Something new went wrong.") == "Couldn't stream")
+        let width = ("Blocked by a firewall" as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width
+        #expect(width < 130)
     }
 
     @Test func everyPs5RefusalNamesItsOwnFix() {

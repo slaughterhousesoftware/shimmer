@@ -644,29 +644,6 @@ struct MenuNowPlayingCardTests {
     }
 }
 
-@MainActor
-struct MenuAlertRowTests {
-    @Test func theFirstSentenceIsTheHeadlineTheRestTheAdvice() {
-        let (headline, detail) = MenuAlertRow.split("PS5-661 isn't answering. It's turned off. Turn it on.")
-        #expect(headline == "PS5-661 isn't answering")
-        #expect(detail == "It's turned off. Turn it on.")
-        let one = MenuAlertRow.split("Couldn't start audio for bazzite.")
-        #expect(one.headline == "Couldn't start audio for bazzite" && one.detail == nil)
-    }
-
-    // A server row's height for a headline alone; the advice adds 14 pt a
-    // line, its last baseline 6 pt above the bottom.
-    @Test @MainActor func theRowGrowsWithTheAdvice() {
-        let alone = MenuAlertRow(message: "Couldn't start audio for bazzite.", width: 308) {}
-        #expect(alone.frame.height == 32 && alone.frame.width == 308)
-        let message = StreamFailureCopy.playStation(.unreachable(""), hostName: "PS5-661")
-        let row = MenuAlertRow(message: message, width: 308) {}
-        let lines = MenuAlertRow.wrap(MenuAlertRow.split(message).detail ?? "", width: 308 - 48 - 40)
-        #expect(lines.count >= 2 && lines.joined(separator: " ").hasPrefix("It's turned off"))
-        #expect(row.frame.height == 28 + CGFloat(lines.count - 1) * 14 + 6)
-    }
-}
-
 /// The streaming server's row: the AirPods row's layout - one 32 pt row,
 /// the stream's numbers on a second line under the name.
 @MainActor

@@ -122,6 +122,43 @@ enum StreamFailureCopy {
         return message.last.map { "?!".contains($0) } == true ? message : message + "."
     }
 
+    /// Two or three words for the menu's card, where the whole sentence
+    /// doesn't fit (the sentence is its tooltip): what went wrong, matched
+    /// from the sentences above, most specific first.
+    static func headline(_ message: String) -> String {
+        let text = message.lowercased()
+        let table: [(String, String)] = [
+            ("isn't answering", "Not answering"),
+            ("ended remote play", "Remote Play ended"),
+            ("in use by another device", "In use elsewhere"),
+            ("didn't wake up", "Didn't wake up"),
+            ("is on but didn't answer", "Remote Play is off"),
+            ("passcode", "Passcode needed"),
+            ("doesn't recognise the playstation account", "Wrong account"),
+            ("doesn't recognise this mac", "Pair it again"),
+            ("no longer accepts this mac", "Pair it again"),
+            ("remote play version", "Update Shimmer"),
+            ("stopped working", "Restart the PS5"),
+            ("trust", "Trust needed"),
+            ("cert", "Trust needed"),
+            ("restart sunshine", "Restart Sunshine"),
+            ("update sunshine", "Update Sunshine"),
+            ("vpn or firewall", "Network blocked"),
+            ("firewall", "Blocked by a firewall"),
+            ("video decoder", "Decoder failed"),
+            ("start audio", "Audio failed"),
+            ("security error", "Security error"),
+            ("stopped before it started", "Stopped"),
+            ("stopped answering", "Stopped answering"),
+            ("took too long", "Took too long"),
+            ("couldn't start the app", "App didn't start"),
+            ("ended unexpectedly", "Stream ended"),
+            ("was interrupted", "Connection lost"),
+            ("couldn't reach", "Couldn't connect"),
+        ]
+        return table.first { text.contains($0.0) }?.1 ?? "Couldn't stream"
+    }
+
     /// A PS5 ended a live stream while no controller was connected to this
     /// Mac: most likely the controller is connected to the console itself
     /// and signed in there as the account Remote Play uses.
@@ -156,7 +193,6 @@ enum StreamFailureCopy {
             return "\(hostName) is on but didn't answer. Check that Remote Play is enabled on it "
                 + "(Settings › System › Remote Play), then try again."
         case .unreachable:
-            // First sentence: the menu's headline (MenuAlertRow).
             return "\(hostName) isn't answering. It's turned off or not on this network. "
                 + "Turn it on or put it in rest mode, then try again."
         }

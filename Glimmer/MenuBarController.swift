@@ -335,6 +335,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         menuIsOpen = false
+        // A failed attempt's error, shown on the card: said, and done with.
+        if errorShownInMenu {
+            errorShownInMenu = false
+            if !model.isStreaming { model.dismissStreamError() }
+        }
         statusRows = [:]
         hoveredRow = nil
         expandedHostID = nil
@@ -434,18 +439,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         menu.addItem(volume)
 
-        // A stream that didn't start: one row in the menu's own type, under
-        // the card's controls (MenuAlertRow). A click puts it away and the
-        // menu stays up.
-        if let error = model.nativeStreamError {
-            menu.addItem(separator())
-            let alert = NSMenuItem()
-            alert.view = MenuAlertRow(message: error, width: Self.menuWidth) { [weak self] in
-                self?.model.dismissStreamError()
-                self?.rebuildOpenMenu()
-            }
-            menu.addItem(alert)
-        }
 
         // The servers, listed the way Control Center lists Focus modes and
         // sound outputs: a round mark per machine - its Settings avatar, in
@@ -534,8 +527,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// A server's second line: its status (the sidebar's words), or nothing
     /// until a check has come back - never "Checking…".
     private func serverStatus(for hostID: String) -> [MenuServerRow.Stat] {
-        // A failed stream's error has its own row above (MenuAlertRow); the
-        // server's line stays what the machine is - Offline, not "interrupted".
+        // A failed stream's error is on the card; the server's line stays
+        // what the machine is - Offline, not "interrupted".
         let text = model.sidebarStatusText(for: hostID, ignoringStreamError: true)
         return text == "Checking…" ? [] : [.init(symbol: nil, text: text)]
     }
@@ -562,6 +555,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// the stream coming up ("Connecting…" to "Streaming from"), ending
     /// or failing while the menu is open redraws it.
     private var cardSignature: String?
+    /// The card showed a stream's error while the menu was open.
+    private var errorShownInMenu = false
     private var cardObservation = 0
 
     private func observeCard() {
@@ -637,9 +632,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             return MenuNowPlayingCard(tile: tile, title: title, subtitle: "Waking \(host.displayName)…",
                                       controls: [cancel])
         }
+        let label = host.isPlayStation ? "Stream PlayStation 5" : model.heroActionLabel
+        // The last attempt failed: the card says so in two words (the whole
+        // sentence is its tooltip) and its button tries again (Kevin's pick
+        // of six mock-ups, 2026-11-18). Seen once, it goes when the menu
+        // closes (menuDidClose).
+        if let error = model.nativeStreamError, (model.streamErrorHostID ?? host.id) == host.id {
+            errorShownInMenu = true
+            return MenuNowPlayingCard(tile: tile, title: title, subtitle: StreamFailureCopy.headline(error), alert: error,
+                                      controls: [
+                Control(symbol: "pip.enter", label: "Try Again in Picture in Picture", action: run(#selector(streamHeroInPiP))),
+                Control(symbol: "arrow.clockwise", label: "Try Again", prominent: true, action: run(#selector(streamHero))),
+            ])
+        }
         // Where it would stream. How that server is doing is its row's
         // second line in Servers, as the AirPods' batteries are theirs.
-        let label = host.isPlayStation ? "Stream PlayStation 5" : model.heroActionLabel
         return MenuNowPlayingCard(tile: tile, title: title, subtitle: host.displayName, controls: [
             Control(symbol: "pip.enter", label: "\(label) in Picture in Picture", action: run(#selector(streamHeroInPiP))),
             Control(symbol: "play.fill", label: label, prominent: true, action: run(#selector(streamHero))),
