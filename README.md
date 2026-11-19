@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/menu-unfold.webp" width="490" alt="Shimmer's menu bar menu opening on a Mac: Steam Big Picture on bazzite with Stream and Picture in Picture buttons, a volume slider, then the server's resolution, frame rate, bitrate, HDR and mouse settings unfolding and folding away">
+  <img src="docs/assets/menu-unfold.webp" width="490" alt="Shimmer's menu bar menu on a Mac while it streams a PS5: PlayStation 5 Remote Play with Picture in Picture and End Stream buttons, a volume slider, then the PS5's resolution, frame rate, bitrate and HDR settings unfolding and folding away">
 </p>
 
 Shimmer is a native Mac client for game streaming. It plays games from a PC
