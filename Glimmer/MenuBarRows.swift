@@ -958,19 +958,27 @@ final class MenuBitrateRow: NSView {
 /// A line of small grey text under a setting.
 final class MenuNoteRow: NSView {
     private let text: String
+    static let font = NSFont.systemFont(ofSize: 12)
+    /// Room above the line, so it reads as a note on the settings rather
+    /// than a caption of the control over it; the line sits centred.
+    static let height: CGFloat = 34
+    static let baselineFromBottom: CGFloat = 9
 
     init(_ text: String) {
         self.text = text
-        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 22))
+        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: Self.height))
         autoresizingMask = [.width]
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(text)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func draw(_ dirtyRect: NSRect) {
-        (text as NSString).draw(at: NSPoint(x: MenuRowView.contentInset, y: 5), withAttributes: [
-            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
-            .foregroundColor: MenuInk.secondary,
-        ])
+        let width = (text as NSString).size(withAttributes: [.font: Self.font]).width
+        let x = ((bounds.width - width) / 2 * 2).rounded() / 2
+        MenuText.draw(text, font: Self.font, colour: MenuInk.secondary, x: x,
+                      baseline: Self.baselineFromBottom, flipped: isFlipped)
     }
 }

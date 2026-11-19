@@ -367,6 +367,9 @@ final class AppModel {
     /// spins instead of going blank until that answer, or 12 s, says what
     /// it shows next.
     var awaitingStatusAfterStream = false
+    /// A stream setting was changed in the menu during this stream, so the
+    /// menu says it applies to the next one. Cleared when a stream ends.
+    @ObservationIgnored var streamSettingsChangedMidStream = false
     @ObservationIgnored var awaitingStatusAfterStreamToken: UUID?
     /// That check's task, and the token that tells its end from a newer one's.
     @ObservationIgnored var streamCheckTask: Task<Void, Never>?

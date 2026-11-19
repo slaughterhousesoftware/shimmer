@@ -387,6 +387,7 @@ extension AppModel {
     /// stays one site - never duplicate any of this elsewhere (a second
     /// "cleanup" is how zombie state is made).
     func cleanupAfterStream(host: Host, caughtError: Error?) {
+        streamSettingsChangedMidStream = false
         AWDLGuard.shared.streamEnded()
         GameModeBoost.shared.streamLive(false, enabled: gameModeDuringStreams)
         if let caughtError, self.connectCancelRequested || Self.isCancellation(caughtError) {

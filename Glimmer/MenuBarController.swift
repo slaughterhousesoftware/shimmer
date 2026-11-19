@@ -399,6 +399,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// Rebuilds once a slider's drag is over, not under it (its tracking
+    /// runs in the event-tracking mode; this waits for the default one).
+    private func rebuildOpenMenuAfterTracking() {
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            MainActor.assumeIsolated { self?.rebuildOpenMenu() }
+        }
+    }
+
     private func populate(_ menu: NSMenu) {
         menu.removeAllItems()
         hoveredRow = nil
@@ -761,21 +769,30 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func streamSettingsWell(for host: Host) -> MenuDisclosureWell {
         var groups: [MenuDisclosureWell.Group] = []
         func section(_ title: String, _ view: NSView) { groups.append(.init(title: title, view: view)) }
+        let live = model.isStreaming && model.activeStreamHostID == host.id
+        // Mid-stream, the first change brings in the note that it waits for
+        // the next stream (not shown before anything changes).
+        let changed: () -> Void = { [weak self] in
+            guard live, let self, !self.model.streamSettingsChangedMidStream else { return }
+            self.model.streamSettingsChangedMidStream = true
+            self.rebuildOpenMenuAfterTracking()
+        }
         if host.isPlayStation {
             let settings = PlayStationSettings.forConsole(host.id)
             let heights = [720, 1080], rates = [30, 60]
             section("Resolution", MenuSegmentRow(labels: heights.map { "\($0)p" },
                                                  selected: heights.firstIndex(of: settings.height),
-                                                 accessibilityTitle: "Resolution") { settings.height = heights[$0] })
+                                                 accessibilityTitle: "Resolution") { settings.height = heights[$0]; changed() })
             section("Frame Rate", MenuSegmentRow(labels: rates.map(String.init), selected: rates.firstIndex(of: settings.fps),
-                                                 accessibilityTitle: "Frame rate") { settings.fps = rates[$0] })
+                                                 accessibilityTitle: "Frame rate") { settings.fps = rates[$0]; changed() })
             let stops = BitrateSlider.stopsMbps.filter { PlayStationSettings.bitrateRangeMbps.contains($0) }
             section("Bitrate", MenuBitrateRow(stops: stops, mbps: settings.bitrateAuto ? nil : settings.bitrateMbps,
                                               autoMbps: settings.height > 720 ? PlayStationSettings.presetBitrateMbps : nil) {
                 if let mbps = $0 { settings.bitrateMbps = mbps; settings.bitrateAuto = false } else { settings.bitrateAuto = true }
+                changed()
             })
             section("HDR", MenuSegmentRow(labels: ["Off", "On"], selected: settings.hdr ? 1 : 0,
-                                          accessibilityTitle: "HDR") { settings.hdr = $0 == 1 })
+                                          accessibilityTitle: "HDR") { settings.hdr = $0 == 1; changed() })
         } else {
             let model = model
             let sizes = CommonResolution.allCases
@@ -783,6 +800,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             section("Resolution", MenuSegmentRow(labels: sizes.map { $0 == .uhd4K ? "4K" : $0.shortLabel },
                                                  selected: selectedSize, accessibilityTitle: "Resolution") { [weak self] in
                 model.apply(.standard(sizes[$0]))
+                changed()
                 // Automatic's number follows the size.
                 self?.rebuildOpenMenu()
             })
@@ -792,17 +810,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             section("Frame Rate", MenuSegmentRow(labels: rates.map(String.init), selected: rates.firstIndex(of: model.customFPS),
                                                  accessibilityTitle: "Frame rate") { [weak self] in
                 model.apply(.fixed(rates[$0]))
+                changed()
                 self?.rebuildOpenMenu()
             })
             section("Bitrate", MenuBitrateRow(stops: BitrateSlider.stopsMbps,
                                               mbps: model.bitrateAuto ? nil : model.manualBitrateMbps,
                                               autoMbps: model.recommendedBitrateMbpsNow) {
                 if let mbps = $0 { model.manualBitrateMbps = mbps; model.bitrateAuto = false } else { model.bitrateAuto = true }
+                changed()
             })
             section("HDR", MenuSegmentRow(labels: ["Off", "On"], selected: model.customHDR ? 1 : 0,
-                                          accessibilityTitle: "HDR") { model.customHDR = $0 == 1 })
+                                          accessibilityTitle: "HDR") { model.customHDR = $0 == 1; changed() })
         }
-        if model.isStreaming, model.activeStreamHostID == host.id {
+        if live, model.streamSettingsChangedMidStream {
             groups.append(.init(title: nil, view: MenuNoteRow("Changes apply to the next stream.")))
         }
         // The mouse, live (a PlayStation has none): the menu's old
