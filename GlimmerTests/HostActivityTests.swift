@@ -66,6 +66,29 @@ struct HostActivityTests {
         #expect(model.hostStatusIndicator(for: host.id, at: Self.now) == .offline)
     }
 
+    /// A PS5 says whether it's resting; silence from one is just Offline. A
+    /// PC that doesn't answer may be asleep or off - no telling which.
+    @Test @MainActor func aRestingPS5IsInRestModeASilentOneOffline() {
+        let model = AppModel()
+        let ps5 = Self.host(Glimmer.Host.playStationIDPrefix + "test"), pc = Self.host("rest-pc")
+        model.hosts = [ps5, pc]
+        model.selectedHost = ps5
+        model.hostLiveStatus = HostLiveStatus(hostID: ps5.id, state: .asleep, capturedAt: Self.now, restMode: true)
+        #expect(model.hostStatusLine(for: ps5.id, at: Self.now) == "Rest mode")
+        #expect(model.hostStatusIndicator(for: ps5.id, at: Self.now) == .offline)
+        model.hostLiveStatus = HostLiveStatus(hostID: ps5.id, state: .asleep, capturedAt: Self.now)
+        #expect(model.hostStatusLine(for: ps5.id, at: Self.now) == "Offline")
+        model.selectedHost = pc
+        model.hostLiveStatus = HostLiveStatus(hostID: pc.id, state: .asleep, capturedAt: Self.now)
+        #expect(model.hostStatusLine(for: pc.id, at: Self.now) == "Asleep or offline")
+        // The record a row shows once another machine is selected keeps it.
+        model.recordReachability(from: HostLiveStatus(hostID: ps5.id, state: .asleep, capturedAt: Self.now,
+                                                      restMode: true))
+        #expect(model.sidebarStatusText(for: ps5.id, at: Self.now) == "Rest mode")
+        model.recordReachability(false, for: ps5.id, at: Self.now)
+        #expect(model.sidebarStatusText(for: ps5.id, at: Self.now) == "Offline")
+    }
+
     @Test @MainActor func connectionProgressIsNotAStreamingClaimAndBelongsToOneHost() {
         let model = AppModel()
         model.isStreaming = true

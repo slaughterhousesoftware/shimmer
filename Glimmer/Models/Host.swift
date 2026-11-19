@@ -393,6 +393,9 @@ struct HostLiveStatus: Equatable {
     /// inherit the previous route's latency reading.
     var probedAddress: String? = nil
     var probedAt: Date? = nil
+    /// `.asleep` because it said so: a PS5 that answered discovery as
+    /// resting (rest mode), not one that didn't answer at all.
+    var restMode = false
 
     static let stale: TimeInterval = 60
 

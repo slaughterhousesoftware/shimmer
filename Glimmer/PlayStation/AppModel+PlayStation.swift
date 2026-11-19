@@ -97,7 +97,8 @@ extension AppModel {
         await publishLiveStatus(HostLiveStatus(
             hostID: host.id, state: state, rttMs: status == nil ? nil : rttMs,
             sunshineVersion: status?.systemVersion, capturedAt: Date(),
-            probedAddress: console.address, probedAt: started), expectedHostID: host.id)
+            probedAddress: console.address, probedAt: started, restMode: status?.power == .standby),
+            expectedHostID: host.id)
     }
 
     // MARK: Stream

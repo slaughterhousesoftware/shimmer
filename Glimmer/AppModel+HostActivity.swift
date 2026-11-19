@@ -8,13 +8,15 @@ enum HostStatusIndicator {
 struct HostReachabilitySample: Equatable {
     let reachable: Bool
     let capturedAt: Date
+    /// Not reachable for streaming, but answering: a PS5 in rest mode.
+    var restMode = false
 
     func isFresh(at now: Date) -> Bool { now.timeIntervalSince(capturedAt) <= HostLiveStatus.stale }
 }
 
 extension AppModel {
-    func recordReachability(_ reachable: Bool, for hostID: String, at now: Date = .now) {
-        hostReachability[hostID] = HostReachabilitySample(reachable: reachable, capturedAt: now)
+    func recordReachability(_ reachable: Bool, for hostID: String, at now: Date = .now, restMode: Bool = false) {
+        hostReachability[hostID] = HostReachabilitySample(reachable: reachable, capturedAt: now, restMode: restMode)
     }
 
     /// The selected machine's own status counts as a check too, so it stays
@@ -22,7 +24,7 @@ extension AppModel {
     func recordReachability(from live: HostLiveStatus) {
         switch live.state {
         case .unknown: return
-        case .asleep: recordReachability(false, for: live.hostID, at: live.capturedAt)
+        case .asleep: recordReachability(false, for: live.hostID, at: live.capturedAt, restMode: live.restMode)
         case .idle, .reachable, .streamingApp, .streamingUnknownApp, .certMismatch:
             recordReachability(true, for: live.hostID, at: live.capturedAt)
         }
@@ -55,7 +57,15 @@ extension AppModel {
             if own != "Checking…" { return own }
         }
         guard let sample = freshReachability(for: hostID, at: now) else { return "Checking…" }
-        return sample.reachable ? "Online" : "Asleep or offline"
+        return sample.reachable ? "Online" : notAnsweringText(for: hostID, restMode: sample.restMode)
+    }
+
+    /// A machine that can't stream now. A PS5 says whether it's resting
+    /// (discovery answers "standby") or there's no answer at all; a PC that
+    /// doesn't answer may be asleep or off, and there's no telling which.
+    private func notAnsweringText(for hostID: String, restMode: Bool) -> String {
+        if restMode { return "Rest mode" }
+        return hosts.first { $0.id == hostID }?.isPlayStation == true ? "Offline" : "Asleep or offline"
     }
 
     /// One freshness/identity check for the status text and launch target.
@@ -89,7 +99,7 @@ extension AppModel {
         case .reachable: return "Online · status unavailable"
         case .streamingApp: return "Online"
         case .streamingUnknownApp: return "Online"
-        case .asleep: return "Asleep or offline"
+        case .asleep: return notAnsweringText(for: hostID, restMode: live.restMode)
         case .certMismatch: return "Trust needed - pair again"
         case .unknown: return "Checking…"
         }
