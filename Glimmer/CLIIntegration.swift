@@ -6,37 +6,32 @@ enum ShimmerCLIAgentInstructions {
     static func quote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
-    static func text(hostName: String? = nil, address: String? = nil,
+    /// The prompt "Copy Instructions" puts on the clipboard: plain paragraphs
+    /// (no line breaks inside a sentence, so it pastes cleanly into a chat
+    /// box), the CLI's real commands, and the selected server as what it is.
+    static func text(hostName: String? = nil, address: String? = nil, isPlayStation: Bool = false,
                      bundleURL: URL = Bundle.main.bundleURL) -> String {
-        let executable = bundleURL.appendingPathComponent("Contents/Resources/shimmerctl")
-        let context = zip(hostName.map { [$0] } ?? [], address.map { [$0] } ?? [])
-            .map { "PC name: \($0.0)\nPC address: \($0.1)" }.first
-            ?? "Ask which PC to investigate before running host-specific checks."
-        let doctor = address.map { "doctor --host \(quote($0))" } ?? "doctor --host <PC-address>"
-        return """
-        Diagnose Shimmer using its CLI. Find shimmerctl on PATH; otherwise use
-        \(quote(executable.path)). Read --help and the bundled CLI.md (the source
-        documentation is docs/CLI.md). The CLI requires Python 3; find an existing
-        interpreter or explain if it is missing.
-
-        \(context)
-
-        Start with `doctor`: it reports what the running app is doing (screen,
-        anything stuck loading, permissions, its background helpers), launchd's view
-        of those helpers, the PC's ports, and the commands that fix what it finds.
-        Then `fix auto` applies every fix that needs no person and lists the rest.
-        `state` prints the app's live state; `logs --last 10m` has the detail. To
-        find out why a stream misbehaves, `set recording on` records the next
-        stream (one JSON object per second, in ~/Library/Logs/Shimmer); `set` also
-        takes stats, keep-awake, cmd-keys and mouse-input. If the app doesn't answer, `fix relaunch`. To check a specific PC: \(doctor).
-        If no apps appear, check the paired /applist request, hidden apps and
-        Sunshine's configuration; the doctor command
-        does not by itself verify pairing or the app list.
-
-        Preserve pairing and settings, never request private keys, and do not
-        interrupt an active stream. Diagnose first, make targeted fixes where
-        authorized, and verify the result in Shimmer.
-        """
+        let executable = quote(bundleURL.appendingPathComponent("Contents/Resources/shimmerctl").path)
+        let kind = isPlayStation ? "a PlayStation 5 (Remote Play)" : "a PC running Sunshine or Apollo"
+        let server: String
+        if let hostName, let address {
+            server = "The server selected in Shimmer is \(hostName), \(kind), at \(address)."
+        } else {
+            server = "No server is selected in Shimmer. Ask me which PC or PS5 to look at before running checks that need one."
+        }
+        let pcDoctor = address.map { "`shimmerctl doctor --host \(quote($0))`" } ?? "`shimmerctl doctor --host <address>`"
+        let serverChecks = isPlayStation
+            ? "For a PS5, doctor asks the console the way Shimmer does; Remote Play must be on (PS5: Settings > System > Remote Play), and only one device can use it at a time."
+            : "For a PC, \(pcDoctor) checks it directly. Doctor checks Sunshine's ports but not pairing or the app list: if no apps show up, check the paired /applist request, hidden apps and Sunshine's configuration."
+        let paragraphs = [
+            "Help me fix a problem with Shimmer, a Mac app that streams games from a gaming PC (Sunshine or Apollo) or a PlayStation 5.",
+            "Shimmer comes with a command-line tool, shimmerctl, at \(executable) (`shimmerctl` below means that path). It needs Python 3; find an installed one, or tell me if there isn't one. Start by reading its --help and the CLI.md beside it.",
+            server,
+            "Start with `shimmerctl doctor`: it reports what the app is doing, anything stuck, permissions, its background helper, whether the server answers, and the commands that fix what it finds. `shimmerctl fix auto` applies every fix that needs no person and lists the rest. `shimmerctl state` shows the app's live state and `shimmerctl logs --last 10m` the detail. To find out why a stream misbehaves, `shimmerctl set recording on` records the next stream (one JSON object per second, in ~/Library/Logs/Shimmer); turn it off afterwards. If the app stops responding, `shimmerctl fix relaunch`.",
+            serverChecks,
+            "Ground rules: keep pairings and settings as they are unless I agree, never ask for private keys or passwords, and don't end a stream that's running. Diagnose first, then make targeted fixes, and check the result in Shimmer.",
+        ]
+        return paragraphs.joined(separator: "\n\n")
     }
 }
 

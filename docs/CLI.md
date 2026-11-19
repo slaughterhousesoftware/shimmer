@@ -30,7 +30,10 @@ scripts/shimmerctl test-stream --host gaming-pc --seconds 12
    It reports the running app's own state - which screen is up, the selected
    PC's status, the stream phase, anything still `loading`, permissions, the
    login helper - plus launchd's view of that helper (one launchd can't spawn
-   shows `spawn_failing`), the PC's ports, and a `fixes` list.
+   shows `spawn_failing`), the PC's ports, and a `fixes` list. A selected PS5
+   has no Sunshine ports: `doctor` asks it the way Shimmer does (discovery,
+   UDP 9302) and reports `playstation_ready`, `playstation_resting` (Shimmer
+   wakes it) or `playstation_unreachable`.
 2. `shimmerctl fix auto` applies every fix that needs no person: re-checking
    the PC (`refresh`), re-registering a login helper launchd can't start
    (`login-item`), cancelling a stuck connect (`cancel-connect`). It lists the

@@ -51,6 +51,15 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(cli.diagnosis(reachable, reachable, permission_denied=True),
                          "macos_local_network_denied")
 
+    def test_a_playstation_is_judged_by_its_discovery_reply_not_sunshine_ports(self):
+        self.assertEqual(cli.playstation_diagnosis({"answered": True, "status": "HTTP/1.1 200 Ok"}),
+                         "playstation_ready")
+        self.assertEqual(cli.playstation_diagnosis({"answered": True, "status": "HTTP/1.1 620 Server Standby"}),
+                         "playstation_resting")
+        self.assertEqual(cli.playstation_diagnosis({"answered": False}), "playstation_unreachable")
+        self.assertEqual(cli.playstation_diagnosis({"answered": False}, permission_denied=True),
+                         "macos_local_network_denied")
+
     def test_both_ports_down_is_a_host_or_route_failure(self):
         self.assertEqual(cli.diagnosis({"reachable": False}, {"reachable": False}),
                          "host_unreachable")

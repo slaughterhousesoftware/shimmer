@@ -174,6 +174,31 @@ def diagnosis(http, https, permission_denied=False):
     return "ports_reachable"
 
 
+def playstation_probe(host, timeout=1.5, attempts=3):
+    """A PS5 answers discovery (UDP 9302) on its network whenever it's on or
+    resting with its network on: "200 Ok" ready, "620 Server Standby" resting."""
+    query = b"SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00030010\n"
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(timeout / attempts)
+        for _ in range(attempts):
+            try:
+                sock.sendto(query, (host, 9302))
+                reply, _ = sock.recvfrom(4096)
+            except OSError:
+                continue
+            status = reply.decode("utf-8", "replace").splitlines()[0] if reply else ""
+            return {"answered": True, "status": status}
+    return {"answered": False}
+
+
+def playstation_diagnosis(probe, permission_denied=False):
+    if permission_denied:
+        return "macos_local_network_denied"
+    if not probe.get("answered"):
+        return "playstation_unreachable"
+    return "playstation_ready" if " 200 " in probe.get("status", "") + " " else "playstation_resting"
+
+
 def log_entries(last="10m", start=None):
     args = ["/usr/bin/log", "show", "--style", "ndjson", "--info",
             "--predicate", 'subsystem == "io.ugfugl.Glimmer" OR '
@@ -217,16 +242,22 @@ def doctor(args):
         result["app"]["stale"] = state.get("stale")
     result["launchd"] = {"login_helper": launchd_job("com.kevinbpatel.shimmer.LoginHelper",
                                                      "gui/%d" % __import__("os").getuid())}
+    playstation = False
     if not args.host and state:
         selected = state.get("selected_host") or {}
         args.host = selected.get("local_address") or selected.get("manual_address")
+        # A PS5 has no Sunshine ports: ask it the way Shimmer does.
+        playstation = str(selected.get("id", "")).startswith("ps5-")
     if not args.host:
         result["diagnosis"] = "no_host"
-        result["guidance"] = "No PC is selected in Shimmer; pass --host."
+        result["guidance"] = "No server is selected in Shimmer; pass --host."
         return result, 1
     result["host"] = args.host
-    result["ports"] = {"http": tcp_probe(args.host, args.http_port),
-                       "https": tcp_probe(args.host, args.https_port)}
+    if playstation:
+        result["playstation"] = playstation_probe(args.host)
+    else:
+        result["ports"] = {"http": tcp_probe(args.host, args.http_port),
+                           "https": tcp_probe(args.host, args.https_port)}
     try:
         entries = log_entries(last=args.last)
         result["recent_errors"] = [entry for entry in entries if any(
@@ -239,7 +270,10 @@ def doctor(args):
     except (RuntimeError, subprocess.TimeoutExpired) as error:
         result["logs_error"] = str(error)
         permission_denied = False
-    result["diagnosis"] = diagnosis(result["ports"]["http"], result["ports"]["https"], permission_denied)
+    if playstation:
+        result["diagnosis"] = playstation_diagnosis(result["playstation"], permission_denied)
+    else:
+        result["diagnosis"] = diagnosis(result["ports"]["http"], result["ports"]["https"], permission_denied)
     issues = (result.get("app") or {}).get("issues") or []
     result["fixes"] = sorted({"shimmerctl fix " + ISSUE_FIX[item["id"]]
                               for item in issues if item["id"] in ISSUE_FIX})
@@ -248,9 +282,13 @@ def doctor(args):
         "secure_port_unreachable": "The PC answers on HTTP but not HTTPS. Check Sunshine's HTTPS listener and firewall. An exhausted accept queue requires restarting Sunshine; re-pairing does not repair that listener.",
         "host_unreachable": "Check the PC's power, address, route, and Sunshine service.",
         "http_port_unreachable": "Check Sunshine's HTTP listener and firewall.",
-        "ports_reachable": "TCP ports answer. This alone does not prove pairing, TLS, or video works; use test-stream for an app-level test."
+        "ports_reachable": "TCP ports answer. This alone does not prove pairing, TLS, or video works; use test-stream for an app-level test.",
+        "playstation_ready": "The PS5 is on and answering. If streams still fail, read logs (category PlayStation): Remote Play must be on (PS5: Settings > System > Remote Play), and only one device can use it at a time.",
+        "playstation_resting": "The PS5 is in rest mode; Shimmer wakes it when a stream starts.",
+        "playstation_unreachable": "The PS5 doesn't answer: it's off, unplugged, or resting with its network turned off (PS5: Settings > System > Power Saving > Features Available in Rest Mode)."
     }[result["diagnosis"]]
-    return result, 0 if result["diagnosis"] == "ports_reachable" and not result["fixes"] else 1
+    healthy = result["diagnosis"] in ("ports_reachable", "playstation_ready", "playstation_resting")
+    return result, 0 if healthy and not result["fixes"] else 1
 
 
 def test_stream(args):

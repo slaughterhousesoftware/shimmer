@@ -74,12 +74,21 @@ struct AppPane: View {
                 LabeledContent {
                     CLICopyButton("Copy Instructions") {
                         ShimmerCLIAgentInstructions.text(hostName: model.selectedHost?.displayName,
-                            address: model.selectedHostRouteAddress)
+                            address: model.selectedHostRouteAddress,
+                            isPlayStation: model.selectedHost?.isPlayStation == true)
                     }
+
                 } label: {
                     Text("Coding agents")
+                    // The form's own second-line style, which a custom
+                    // LabeledContentStyle doesn't apply.
                     Text("Lets AI coding tools diagnose problems.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
+                // Centred on the two-line label, as the switches above are;
+                // the form's own layout sat the button on the first line.
+                .labeledContentStyle(CentredLabeledContent())
             } header: {
                 FormSectionHeader("Help")
             }
@@ -108,5 +117,17 @@ struct AppPane: View {
         guard launchAtLogin else { loginItemNeedsApproval = false; return }
         let service = SMAppService.loginItem(identifier: LoginItemManager.helperBundleID)
         loginItemNeedsApproval = (service.status == .requiresApproval)
+    }
+}
+
+/// A form row whose control sits centred against a two-line label, as a
+/// switch does, rather than on the label's first line.
+struct CentredLabeledContent: LabeledContentStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) { configuration.label }
+            Spacer(minLength: 12)
+            configuration.content
+        }
     }
 }

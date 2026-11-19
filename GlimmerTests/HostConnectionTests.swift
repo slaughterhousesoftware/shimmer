@@ -6,11 +6,11 @@ import Testing
 struct HostConnectionTests {
     @Test func emptyAppsAgentPromptNamesThePCAndUsesTheExistingCLI() {
         let prompt = HostAppTroubleshootingPrompt.text(hostName: "Gaming PC", address: "gaming.local")
-        #expect(prompt.contains("PC name: Gaming PC"))
+        #expect(prompt.contains("The server selected in Shimmer is Gaming PC"))
         #expect(prompt.contains("doctor --host 'gaming.local'"))
-        #expect(prompt.contains("docs/CLI.md"))
+        #expect(prompt.contains("CLI.md"))
         #expect(prompt.contains("paired /applist request"))
-        #expect(prompt.contains("does not by itself verify pairing or the app list"))
+        #expect(prompt.contains("not pairing or the app list"))
         #expect(!prompt.contains("BEGIN PRIVATE KEY"))
     }
 
@@ -505,7 +505,21 @@ struct CLIAgentInstructionsTests {
         let prompt = ShimmerCLIAgentInstructions.text(bundleURL: URL(fileURLWithPath: "/Apps/Shimmer's copy.app"))
         #expect(prompt.contains("/Contents/Resources/shimmerctl"))
         #expect(prompt.contains("Shimmer'\\''s copy.app"))
-        #expect(prompt.contains("Ask which PC"))
+        #expect(prompt.contains("Ask me which PC or PS5"))
         #expect(prompt.contains("Python 3"))
+    }
+
+    // Whole paragraphs - no line break inside a sentence - and the server
+    // named as what it is.
+    @Test func agentInstructionsArePlainParagraphsAndNameTheServer() {
+        let ps5 = ShimmerCLIAgentInstructions.text(hostName: "PlayStation", address: "192.168.50.22", isPlayStation: true)
+        #expect(ps5.contains("PlayStation, a PlayStation 5 (Remote Play), at 192.168.50.22"))
+        #expect(ps5.contains("Remote Play must be on"))
+        #expect(!ps5.contains("Sunshine's ports"))
+        let pc = ShimmerCLIAgentInstructions.text(hostName: "bazzite", address: "192.168.50.40")
+        #expect(pc.contains("bazzite, a PC running Sunshine or Apollo"))
+        for paragraph in pc.components(separatedBy: "\n\n") {
+            #expect(!paragraph.contains("\n"), "a line break inside: \(paragraph.prefix(40))")
+        }
     }
 }
