@@ -1,8 +1,13 @@
 # Changelog
 
-## Shimmer (unreleased) - based on glimmer 2026.9.0
+## 1.0.0 - 2026-11-19
 
-Everything below glimmer 2026.9.0 in this file is upstream glimmer's history.
+The first Shimmer release: a Mac game-streaming client for PCs running
+Sunshine and for the PS5, built around Picture in Picture and the DualSense.
+Signed with Developer ID and notarized; installed copies update themselves.
+
+Shimmer is a fork of glimmer 2026.9.0. Everything from `## 2026.9.0` down in
+this file is upstream glimmer's history.
 
 ### Picture in Picture
 - ⌃⌥P, or Picture in Picture in the menu bar, moves the stream into macOS's
@@ -54,28 +59,35 @@ Everything below glimmer 2026.9.0 in this file is upstream glimmer's history.
   Wi-Fi, restoring it afterwards.
 
 ### One window
-- Servers, Stream, General and About tabs replace the launcher and the
+- Servers, General, Controller and About tabs replace the launcher and the
   separate Settings window, laid out like a native Mac utility.
-- Servers lists paired and nearby PCs, pairs them in place, shows each PC's
-  apps with Stream / Resume, the Mac's connection route, and an opt-in latency
-  test. PCs can show a Linux, Windows, SteamOS or macOS logo.
+- Servers lists your PCs and PS5s and the ones nearby, pairs them in place,
+  and holds each machine's stream settings. Add by Address takes a PC's or a
+  PS5's IP address or hostname and works out which it is. PCs can show a
+  Linux, Windows, SteamOS or macOS logo.
 - Settings are grouped with clear labels, descriptions and native buttons;
   the scrolling pages size the window to their content.
 
 ### Menu bar
-- While streaming, the icon is the app you're streaming, with the
-  controller's battery. End Stream and Picture in Picture rows. The item can
-  hide when idle.
+- The icon shows the connected controller and its battery, drawn after
+  Steam's controller glyphs, or the app you're streaming; a pyramid spinner
+  while connecting.
+- The menu is a Liquid Glass panel: the app on the selected server with
+  Stream, Picture in Picture and End Stream, the stream volume, and each
+  server's resolution, frame rate, bitrate and HDR, which unfold in place.
 
 ### Streaming and input
-- Stop disconnects; Quit ends the game on the PC.
-- "Disable mouse input" stops forwarding the mouse and never grabs the
-  pointer. "Keep the Mac awake" while streaming.
+- End Stream disconnects and leaves the game running; "Quit the game when the
+  stream ends" ends it on the PC instead.
+- Mouse Off (in the menu) stops forwarding the mouse and never grabs the
+  pointer. The Mac stays awake while a stream runs.
 - A PC's manual address (for example its Tailscale address) is used when the
   home address isn't reachable. A stream dropped by sleep or a network change
   no longer leaves a stale error.
-- An opt-in 60 ms ceiling on the audio playout cushion. Codec caps remove
-  whole codec families. Colour on SDR displays is no longer over-saturated.
+- "Prefer low audio latency" caps the audio playout cushion at 60 ms. Colour
+  on SDR displays is no longer over-saturated.
+- "Game Mode while streaming" raises Bluetooth controller polling, so input
+  arrives about twice as fast.
 - Less CPU at high bitrates: finding the frame boundaries in the incoming
   video was the largest cost in the app at ~190 Mbps, and now skips most of
   the bytes it used to read.
@@ -87,11 +99,8 @@ Everything below glimmer 2026.9.0 in this file is upstream glimmer's history.
   or on another Mac over SSH ([docs/CLI.md](docs/CLI.md)).
 
 ### Removed
-- glimmer's Wi-Fi helper, which paused AirDrop's radio during a stream. It
-  needed a root background daemon and a macOS approval, and macOS didn't keep
-  it registered reliably across updates. If an earlier build registered it,
-  the first launch marks it unregistered; macOS may keep the old job loaded
-  until the next restart.
+- glimmer's root Wi-Fi helper daemon (see Wi-Fi above for its replacement).
+  If an earlier build registered it, the first launch marks it unregistered.
 
 ### Ported from later glimmer releases
 - Identity storage never reads or deletes Keychain items (glimmer 8aaaaa5).

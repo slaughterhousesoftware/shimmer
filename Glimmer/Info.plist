@@ -77,24 +77,17 @@
 		<string>_nvstream._tcp</string>
 		<string>_nvstream-tcp._tcp</string>
 	</array>
-	<!-- Sparkle auto-update. shimmer is a fork: SUFeedURL is DELIBERATELY moved
-	     off upstream glimmer's appcast (se7enbrc.github.io/glimmer), otherwise a
-	     shimmer build would offer to "update" itself into stock glimmer and lose
-	     Picture in Picture. It now points at shimmer's own (not-yet-published)
-	     appcast, so no update is ever offered until releases exist there; when
-	     they do, SUPublicEDKey must be replaced with shimmer's own ed25519
-	     public key (the one below is upstream's and will not verify shimmer
-	     releases). Automatic checks are off for the same reason.
+	<!-- Sparkle auto-update. Shimmer's own feed (the committed appcast.xml on
+	     the repo's main branch) and Shimmer's own ed25519 key; an update signed
+	     with any other key, upstream glimmer's included, is refused.
 	     SUEnableInstallerLauncherService routes the install through Sparkle's XPC
 	     installer service (unsandboxed, no entitlement needed). -->
 	<key>SUFeedURL</key>
-	<string>https://kevinbpatel.github.io/shimmer/appcast.xml</string>
+	<string>https://raw.githubusercontent.com/slaughterhousesoftware/shimmer/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>bUc9IWEtH/FuDUIsGqyDIVy/1gvlPtBkFXNcVO/TrPU=</string>
+	<string>6BqoZSH1kMXwxAm7dVb7CwH7aJAIQzueShz3AuR8xws=</string>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
-	<key>SUEnableAutomaticChecks</key>
-	<false/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>

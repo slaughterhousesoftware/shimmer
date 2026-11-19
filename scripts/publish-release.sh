@@ -1,13 +1,13 @@
 #!/bin/bash
 #
 # publish-release.sh - publish a Sparkle auto-update for the just-built, notarized
-# Glimmer bundle. PROMPT-FREE from any session: the EdDSA key comes from the
+# Shimmer bundle. PROMPT-FREE from any session: the EdDSA key comes from the
 # signing creds file (scripts/signing-creds.sh), GitHub from the gh token. Called
 # by `make release-publish` AFTER `make dist` (so the bundle is Developer-ID
 # signed, notarized, stapled, and a DMG already exists in <dist-dir>).
 #
 # Steps: ZIP the notarized bundle → EdDSA-sign the ZIP → create/upload the GitHub
-# release on the public repo → insert the item into the Pages-hosted appcast.xml.
+# release on the public repo → insert the item into the committed appcast.xml (served raw from main).
 # (The public repo itself is the GPLv3 corresponding source, at the release tag.)
 #
 # Args: <short-version> <build-number> <app-path> <dist-dir> <releases-repo>
@@ -19,7 +19,7 @@ CREDS="$HERE/scripts/signing-creds.sh"
 TOOLS="$("$HERE/scripts/sparkle-tools.sh")"
 ZIP="$DIST/Shimmer-$SHORT.zip"
 DMG="$DIST/Shimmer-$SHORT.dmg"
-TAG="$SHORT"
+TAG="v$SHORT"
 ASSET_URL="https://github.com/$REPO/releases/download/$TAG/Shimmer-$SHORT.zip"
 APPCAST="appcast.xml"
 
@@ -28,12 +28,14 @@ APPCAST="appcast.xml"
 	echo "ERR: SPARKLE_ED_PRIVATE_KEY missing from $($CREDS path) - run 'make sparkle-keys' once" >&2; exit 1; }
 
 # The release tag is advertised as the GPLv3 source, so it must be the exact commit
-# we built: require local HEAD == origin/main before pinning the tag below.
-git -C "$HERE" fetch --quiet origin main
+# we built: require local HEAD == the fork's main before pinning the tag below.
+# `shimmer` is this fork's remote; `origin` is upstream glimmer, never pushed to.
+REMOTE="${SHIMMER_REMOTE:-shimmer}"
+git -C "$HERE" fetch --quiet "$REMOTE" main
 HEAD_SHA="$(git -C "$HERE" rev-parse HEAD)"
-MAIN_SHA="$(git -C "$HERE" rev-parse origin/main)"
+MAIN_SHA="$(git -C "$HERE" rev-parse "$REMOTE/main")"
 [ "$HEAD_SHA" = "$MAIN_SHA" ] || {
-	echo "ERR: local HEAD ($HEAD_SHA) != origin/main ($MAIN_SHA)." >&2
+	echo "ERR: local HEAD ($HEAD_SHA) != $REMOTE/main ($MAIN_SHA)." >&2
 	echo "  Bump Version.xcconfig, commit, merge to main, then 'git pull --ff-only' before publishing -" >&2
 	echo "  the release tag is the GPLv3 source and must match the built commit." >&2
 	exit 1
@@ -74,32 +76,37 @@ echo "  ✓ signed ($LENGTH bytes)"
 # what the appcast <description> carries - one source of truth, so the GitHub
 # release and Sparkle's "what's new" can never disagree. A version with no
 # section falls back to the old one-line boilerplate rather than shipping empty.
-NOTES="$(mktemp -t glimmer-notes)"
+NOTES="$(mktemp -t shimmer-notes)"
 trap 'rm -f "$NOTES"' EXIT
 if "$HERE/scripts/changelog.py" --version "$SHORT" --changelog "$HERE/CHANGELOG.md" >"$NOTES" 2>/dev/null \
 	&& [ -s "$NOTES" ]; then
 	echo "  ✓ release notes from CHANGELOG.md ($(wc -l <"$NOTES" | tr -d ' ') lines)"
 else
 	echo "  ! no '## $SHORT' section in CHANGELOG.md - using boilerplate release notes" >&2
-	printf 'Glimmer %s. Auto-updates via Sparkle; the notarized DMG is attached.\n' "$SHORT" >"$NOTES"
+	printf 'Shimmer %s. Download the DMG below; installed copies update themselves.\n' "$SHORT" >"$NOTES"
 fi
 printf '\nSource: this repo at tag %s (GPLv3).\n' "$TAG" >>"$NOTES"
 
 echo "Publishing GitHub release ${TAG} to ${REPO}"
 ASSETS=("$ZIP")
 [ -f "$DMG" ] && ASSETS+=("$DMG")
+# Checksums for people who verify by hand (the DMG is also notarized + stapled).
+SUMS="$DIST/SHA256SUMS.txt"
+( cd "$DIST" && shasum -a 256 "$(basename "$ZIP")" $( [ -f "$DMG" ] && basename "$DMG" ) ) >"$SUMS"
+ASSETS+=("$SUMS")
+{ printf '\nSHA-256:\n```\n'; cat "$SUMS"; printf '```\n'; } >>"$NOTES"
 if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
 	gh release upload "$TAG" "${ASSETS[@]}" -R "$REPO" --clobber
 else
-	gh release create "$TAG" "${ASSETS[@]}" -R "$REPO" --target "$HEAD_SHA" --title "Glimmer $SHORT" \
-		--notes-file "$NOTES"
+	gh release create "$TAG" "${ASSETS[@]}" -R "$REPO" --target "$HEAD_SHA" --title "Shimmer $SHORT" \
+		--notes-file "$NOTES" ${SHIMMER_DRAFT:+--draft}
 fi
 echo "  ✓ release published"
 
-# Single source of truth: the committed appcast.xml IS what Pages serves
-# (main:/appcast.xml). Edit it in the tree and commit + push to main (no `gh api`
+# Single source of truth: the committed appcast.xml IS the feed
+# (main:/appcast.xml, served by raw.githubusercontent.com). Edit it in the tree and commit + push to main (no `gh api`
 # PUT), so the committed copy never drifts. Committed AFTER the tag is pinned.
-echo "▶ Updating the committed appcast (main:/$APPCAST is what Pages serves)..."
+echo "▶ Updating the committed appcast (main:/$APPCAST is the feed)..."
 "$HERE/scripts/update-appcast.py" "$HERE/$APPCAST" \
 	--short-version "$SHORT" --version "$BUILD" \
 	--url "$ASSET_URL" --ed-signature "$ED_SIG" --length "$LENGTH" --min-system 26.0 \
@@ -110,12 +117,12 @@ else
 	git -C "$HERE" add "$APPCAST"
 	# A pre-commit hook may reformat the machine-written appcast and abort the
 	# first commit; re-stage the fixed file and retry once.
-	if ! git -C "$HERE" commit -m "appcast: Glimmer $SHORT" --quiet; then
+	if ! git -C "$HERE" commit -m "appcast: Shimmer $SHORT" --quiet; then
 		git -C "$HERE" add "$APPCAST"
-		git -C "$HERE" commit -m "appcast: Glimmer $SHORT" --quiet
+		git -C "$HERE" commit -m "appcast: Shimmer $SHORT" --quiet
 	fi
-	git -C "$HERE" push --quiet origin HEAD:main
+	git -C "$HERE" push --quiet "$REMOTE" HEAD:main
 	echo "  ✓ appcast committed + pushed to main → $(git -C "$HERE" rev-parse --short HEAD)"
 fi
 
-echo "✅ Published Glimmer $SHORT - Sparkle clients see it within a day (or now via Check for Updates...)."
+echo "✅ Published Shimmer $SHORT - Sparkle clients see it within a day (or now via Check for Updates...)."

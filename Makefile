@@ -70,7 +70,7 @@ NOTARY_PROFILE  ?= glimmer-notary
 # the file ONCE (`make creds-init`, see docs/RELEASE.md); everything after that
 # is automatic. Override the path per-invocation with
 # `make dist SIGNING_CREDS=/path/to/creds` (or GLIMMER_SIGNING_CREDS in env).
-SIGNING_CREDS   ?= $(HOME)/.config/glimmer/signing.env
+SIGNING_CREDS   ?= $(HOME)/.config/shimmer/signing.env
 export GLIMMER_SIGNING_CREDS := $(SIGNING_CREDS)
 CREDS           := scripts/signing-creds.sh
 # Dedicated signing keychain - kept SEPARATE from the login keychain so signing
@@ -101,9 +101,9 @@ DIST_DIR        := $(DERIVED)/dist
 BUILD_NUMBER    := $(shell sed -n 's/^CURRENT_PROJECT_VERSION = \(.*\)/\1/p' Glimmer/Version.xcconfig | tr -d ' ')
 # Repo that hosts the Sparkle appcast (GitHub Pages) + release assets - the
 # public source repo itself.
-RELEASES_REPO   ?= Se7enbrc/glimmer
-# Homebrew tap that carries the cask (`brew install --cask se7enbrc/glimmer/glimmer`).
-TAP_REPO        ?= Se7enbrc/homebrew-glimmer
+RELEASES_REPO   ?= slaughterhousesoftware/shimmer
+# Homebrew tap that carries the cask. Empty = no tap yet; the bump is skipped.
+TAP_REPO        ?=
 export RELEASES_REPO TAP_REPO
 # Which release `make brew-bump` points the cask at - the one being built by default.
 VERSION         ?= $(MARKETING_VERSION)
@@ -581,14 +581,14 @@ sparkle-keys:
 	if $(CREDS) get SPARKLE_ED_PRIVATE_KEY --optional | grep -q .; then \
 		echo "  • SPARKLE_ED_PRIVATE_KEY already in $$($(CREDS) path)"; \
 	else \
-		TMP="$$(mktemp)"; trap 'rm -f "$$TMP"' EXIT; \
-		"$$TOOLS/generate_keys" >/dev/null 2>&1 || true; \
-		"$$TOOLS/generate_keys" -x "$$TMP" >/dev/null 2>&1; \
-		$(CREDS) set SPARKLE_ED_PRIVATE_KEY "$$(cat "$$TMP")"; \
+		TMPD="$$(mktemp -d)"; trap 'rm -rf "$$TMPD"' EXIT; \
+		"$$TOOLS/generate_keys" --account shimmer >/dev/null 2>&1 || true; \
+		"$$TOOLS/generate_keys" --account shimmer -x "$$TMPD/key" >/dev/null 2>&1; \
+		$(CREDS) set SPARKLE_ED_PRIVATE_KEY "$$(cat "$$TMPD/key")"; \
 		echo "  ✓ private key stored in $$($(CREDS) path) - BACK IT UP"; \
 	fi; \
 	echo "  SUPublicEDKey for Info.plist:"; \
-	"$$TOOLS/generate_keys" -p
+	"$$TOOLS/generate_keys" --account shimmer -p
 
 # Build + notarize + staple (via `dist`), then publish a Sparkle update: ZIP the
 # notarized bundle, EdDSA-sign it (key from the creds file), upload the ZIP + DMG
@@ -601,9 +601,9 @@ release-publish: dist
 		"$(MARKETING_VERSION)" "$(BUILD_NUMBER)" \
 		"$(DERIVED)/Build/Products/Release/Shimmer.app" \
 		"$(DIST_DIR)" "$(RELEASES_REPO)"
-	@scripts/homebrew-bump.sh "$(MARKETING_VERSION)" || { \
+	@[ -z "$(TAP_REPO)" ] || scripts/homebrew-bump.sh "$(MARKETING_VERSION)" || { \
 		echo "" >&2; \
-		echo "WARNING: Glimmer $(MARKETING_VERSION) IS published (release + appcast) -" >&2; \
+		echo "WARNING: Shimmer $(MARKETING_VERSION) IS published (release + appcast) -" >&2; \
 		echo "  only the Homebrew cask bump failed. Recover with: make brew-bump" >&2; \
 		exit 1; \
 	}

@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# homebrew-bump.sh - point the Homebrew cask at a published Glimmer release.
+# homebrew-bump.sh - point the Homebrew cask at a published Shimmer release.
 # Downloads the release DMG, computes its sha256 from the real bytes, rewrites
-# version + sha256 in the tap's Casks/glimmer.rb, then commits and pushes.
+# version + sha256 in the tap's Casks/shimmer.rb, then commits and pushes.
 #
 # Run this AFTER the GitHub release exists (scripts/publish-release.sh uploads
 # it); `make release-publish` calls it as the last step. Safe to re-run: if the
@@ -16,21 +16,22 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${1:-$(sed -n 's/^MARKETING_VERSION = \(.*\)/\1/p' "$HERE/Glimmer/Version.xcconfig" | tr -d ' ')}"
-RELEASES_REPO="${RELEASES_REPO:-Se7enbrc/glimmer}"
-TAP_REPO="${TAP_REPO:-Se7enbrc/homebrew-glimmer}"
-TAP_DIR="${GLIMMER_TAP_CACHE:-$HOME/.cache/glimmer/homebrew-glimmer}"
-CASK="Casks/glimmer.rb"
-DMG="Glimmer-$VERSION.dmg"
+RELEASES_REPO="${RELEASES_REPO:-slaughterhousesoftware/shimmer}"
+TAP_REPO="${TAP_REPO:?set TAP_REPO to the tap repo, e.g. owner/homebrew-tap}"
+TAP_DIR="${GLIMMER_TAP_CACHE:-$HOME/.cache/shimmer/homebrew-tap}"
+CASK="Casks/shimmer.rb"
+DMG="Shimmer-$VERSION.dmg"
+TAG="v$VERSION"
 
 [ -n "$VERSION" ] || { echo "ERR: no version given and none found in Glimmer/Version.xcconfig" >&2; exit 1; }
 
 # The cask pins a sha256, so the release asset must already be published.
-gh release view "$VERSION" -R "$RELEASES_REPO" >/dev/null 2>&1 || {
+gh release view "$TAG" -R "$RELEASES_REPO" >/dev/null 2>&1 || {
 	echo "ERR: release $VERSION not found on $RELEASES_REPO - publish it first ('make release-publish')" >&2; exit 1; }
 
 echo "▶ Downloading $DMG to checksum it..."
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-gh release download "$VERSION" -R "$RELEASES_REPO" -p "$DMG" -D "$TMP" --clobber
+gh release download "$TAG" -R "$RELEASES_REPO" -p "$DMG" -D "$TMP" --clobber
 SHA="$(shasum -a 256 "$TMP/$DMG" | cut -d' ' -f1)"
 echo "  ✓ sha256 $SHA"
 
@@ -61,6 +62,6 @@ if git -C "$TAP_DIR" diff --quiet -- "$CASK"; then
 fi
 
 git -C "$TAP_DIR" add "$CASK"
-git -C "$TAP_DIR" commit --quiet -m "glimmer $VERSION"
+git -C "$TAP_DIR" commit --quiet -m "shimmer $VERSION"
 git -C "$TAP_DIR" push --quiet origin HEAD:main
-echo "✅ Homebrew cask bumped to $VERSION - 'brew install --cask se7enbrc/glimmer/glimmer'."
+echo "✅ Homebrew cask bumped to $VERSION - in $TAP_REPO."
